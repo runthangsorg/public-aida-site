@@ -100,9 +100,15 @@ describe("the page", () => {
   );
 
   it("makes no third-party network requests", () => {
-    // Only XML namespaces may look like URLs in shipped files.
-    const external = /https?:\/\/(?!www\.w3\.org\/)/i;
-    const hits = shipped.filter((path) => external.test(read(path)));
+    // Only the XML namespace host may appear in shipped files.
+    const allowedHosts = new Set(["www.w3.org"]);
+    const hits: string[] = [];
+    for (const path of shipped) {
+      for (const match of read(path).matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) {
+        const host = (match[1] ?? "").toLowerCase();
+        if (!allowedHosts.has(host)) hits.push(`${path}: ${host}`);
+      }
+    }
     expect(hits).toEqual([]);
   });
 });

@@ -214,9 +214,18 @@ body {
 /* ---------- portrait ---------- */
 
 .portrait {
+  position: relative;
   margin: 0;
   justify-self: center;
   width: min(100%, 440px);
+}
+
+.motes {
+  position: absolute;
+  inset: -8% -12%;
+  width: 124%;
+  height: 116%;
+  pointer-events: none;
 }
 
 .avatar {
