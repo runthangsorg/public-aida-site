@@ -28,7 +28,19 @@ const OUT = resolve(ROOT, "public", "audio");
 const MODEL = process.env.AIDA_TTS_MODEL ?? "gemini-2.5-flash-tts";
 const VOICE = "Sulafat"; // the prebuilt "Warm" voice
 const LOCATION = process.env.GOOGLE_CLOUD_LOCATION ?? "global";
-const { line } = JSON.parse(readFileSync(resolve(ROOT, "src", "intro.json"), "utf8"));
+
+/** The spoken line: one short, printable sentence from src/intro.json, nothing else. */
+function introLine() {
+  const parsed = JSON.parse(readFileSync(resolve(ROOT, "src", "intro.json"), "utf8"));
+  const text = typeof parsed.line === "string" ? parsed.line.trim() : "";
+  // Printable characters only (no control codes), and short enough for one take.
+  const printable = /^[\p{L}\p{N}\p{P}\p{Zs}]{1,240}$/u;
+  if (!printable.test(text)) {
+    throw new Error("src/intro.json `line` must be 1–240 printable characters.");
+  }
+  return text;
+}
+const line = introLine();
 
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], ...opts }).trim();
@@ -93,12 +105,26 @@ async function synthesise() {
   }
   const json = await response.json();
   const parts = json.candidates?.[0]?.content?.parts ?? [];
-  const audio = parts.find((part) => part.inlineData?.data);
+  const audio = parts.find((part) => typeof part.inlineData?.data === "string");
   if (!audio) throw new Error(`No audio in response: ${JSON.stringify(json).slice(0, 600)}`);
-  const mime = audio.inlineData.mimeType ?? "";
+  const mime = String(audio.inlineData.mimeType ?? "");
+  if (!/^audio\/(L16|wav|x-wav)\b/i.test(mime)) throw new Error(`Unexpected audio type: ${mime}`);
   const rate = Number(/rate=(\d+)/.exec(mime)?.[1] ?? 24000);
+  if (!(rate >= 8000 && rate <= 48000)) throw new Error(`Unexpected sample rate in ${mime}`);
   console.log(`Received ${mime}`);
   return toWav(Buffer.from(audio.inlineData.data, "base64"), rate);
+}
+
+/** Only ever write a bounded, well-formed WAV under .tmp/. */
+function checkedWav(bytes) {
+  const MAX = 16 * 1024 * 1024; // a few minutes of 24 kHz mono, far above one line
+  if (!Buffer.isBuffer(bytes) || bytes.length < 44 + 2400 || bytes.length > MAX) {
+    throw new Error(`Audio payload is ${bytes.length} bytes; expected a short WAV.`);
+  }
+  if (bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error("Audio payload is not a WAV container.");
+  }
+  return bytes;
 }
 
 function encode(rawWav) {
@@ -106,7 +132,7 @@ function encode(rawWav) {
   mkdirSync(OUT, { recursive: true });
   const raw = resolve(TMP, "intro-raw.wav");
   const wav = resolve(TMP, "intro.wav");
-  writeFileSync(raw, rawWav);
+  writeFileSync(raw, checkedWav(rawWav));
 
   // Trim leading/trailing silence and normalise loudness. Rhubarb reads this
   // same file, so mouth cues and audio share one timeline.
