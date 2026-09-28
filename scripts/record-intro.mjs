@@ -15,7 +15,7 @@
 // Working file (kept):  .tmp/intro.wav, for scripts/lipsync.mjs
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -130,18 +130,20 @@ function checkedWav(bytes) {
 function encode(rawWav) {
   mkdirSync(TMP, { recursive: true });
   mkdirSync(OUT, { recursive: true });
-  const raw = resolve(TMP, "intro-raw.wav");
   const wav = resolve(TMP, "intro.wav");
-  writeFileSync(raw, checkedWav(rawWav));
 
-  // Trim leading/trailing silence and normalise loudness. Rhubarb reads this
-  // same file, so mouth cues and audio share one timeline.
+  // Trim leading/trailing silence and normalise loudness. The raw take is
+  // piped straight into ffmpeg and never written to disk; Rhubarb reads the
+  // trimmed file, so mouth cues and audio share one timeline.
   const trim =
     "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.12," +
     "areverse,silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.3,areverse," +
     "loudnorm=I=-16:TP=-1.5:LRA=11";
-  sh("ffmpeg", ["-y", "-loglevel", "error", "-i", raw, "-af", trim, "-ar", "24000", "-ac", "1", wav]);
-  unlinkSync(raw);
+  sh(
+    "ffmpeg",
+    ["-y", "-loglevel", "error", "-f", "wav", "-i", "pipe:0", "-af", trim, "-ar", "24000", "-ac", "1", wav],
+    { input: checkedWav(rawWav), stdio: ["pipe", "pipe", "inherit"] },
+  );
 
   const webm = resolve(OUT, "intro.webm");
   const mp3 = resolve(OUT, "intro.mp3");
