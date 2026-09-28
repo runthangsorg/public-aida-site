@@ -1,0 +1,31 @@
+{
+  "name": "public-aida-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Aida's coming-soon page: a static, lightweight animated introduction.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "size": "node scripts/check-bundle-size.mjs",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build && npm run size"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}
