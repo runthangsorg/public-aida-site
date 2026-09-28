@@ -2,6 +2,7 @@ import "./styles.css";
 import cueSheet from "./intro-cues.json";
 import intro from "./intro.json";
 import { createLipSync, parseCueSheet } from "./lipsync";
+import { startMotes } from "./motes";
 import { REST, renderMouth, type MouthElements } from "./mouth";
 
 const root = document.documentElement;
@@ -119,7 +120,27 @@ const button = byId("meet", HTMLButtonElement);
 const label = byId("meet-label", HTMLSpanElement);
 const captionEl = byId("caption", HTMLParagraphElement);
 
-const speaker = createLipSync(audio, mouth, parseCueSheet(cueSheet), intro.captions, captionEl, root);
+let talkLevel = 0;
+const speaker = createLipSync(
+  audio,
+  mouth,
+  parseCueSheet(cueSheet),
+  intro.captions,
+  captionEl,
+  root,
+  (level) => {
+    talkLevel = level;
+  },
+);
+
+// ---------- motes ----------
+
+if (!reducedMotion.matches) {
+  const canvas = document.getElementById("motes");
+  if (canvas instanceof HTMLCanvasElement) {
+    setTimeout(() => startMotes(canvas, () => talkLevel), WAKE_AT_MS);
+  }
+}
 
 type State = "idle" | "playing" | "done";
 

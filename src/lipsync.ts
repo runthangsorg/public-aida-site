@@ -81,6 +81,7 @@ export function createLipSync(
   captions: Caption[],
   captionEl: HTMLElement,
   root: HTMLElement,
+  onTalk: (level: number) => void = () => undefined,
 ): Speaker {
   let raf = 0;
   let last = 0;
@@ -101,7 +102,9 @@ export function createLipSync(
     const target = speaking ? shapeAt(sheet, t) : REST;
     current = lerpShape(current, target, 1 - Math.exp(-dt / TAU));
     renderMouth(mouth, current);
-    root.style.setProperty("--talk", openness(current).toFixed(3));
+    const level = openness(current);
+    root.style.setProperty("--talk", level.toFixed(3));
+    onTalk(level);
 
     const wanted = speaking ? captionAt(captions, t) : captionIndex;
     if (wanted !== captionIndex) {
@@ -114,6 +117,7 @@ export function createLipSync(
       current = { ...REST };
       renderMouth(mouth, current);
       root.style.setProperty("--talk", "0");
+      onTalk(0);
       return;
     }
     raf = requestAnimationFrame(frame);
