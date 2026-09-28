@@ -4,6 +4,7 @@ import intro from "./intro.json";
 import { createLipSync, parseCueSheet } from "./lipsync";
 import { startMotes } from "./motes";
 import { REST, renderMouth, type MouthElements } from "./mouth";
+import { mountThreads } from "./threads";
 
 const root = document.documentElement;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -141,6 +142,22 @@ if (!reducedMotion.matches) {
     setTimeout(() => startMotes(canvas, () => talkLevel), WAKE_AT_MS);
   }
 }
+
+// ---------- threads into the structure ----------
+
+if (portrait) {
+  mountThreads({
+    stage: byId("stage", HTMLElement),
+    svg: byId("threads", SVGSVGElement),
+    from: portrait,
+    structure: byId("structure", HTMLDivElement),
+  });
+}
+
+// Pause every animation while the tab is hidden; the motes stop themselves.
+document.addEventListener("visibilitychange", () => {
+  root.classList.toggle("is-hidden", document.hidden);
+});
 
 type State = "idle" | "playing" | "done";
 

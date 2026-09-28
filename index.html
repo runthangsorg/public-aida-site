@@ -20,7 +20,16 @@
     <div class="scene">
       <div class="scene-glow" aria-hidden="true"></div>
 
-      <main class="stage">
+      <main class="stage" id="stage">
+        <svg class="threads" id="threads" aria-hidden="true" focusable="false">
+          <path class="wire" data-thread="0" pathLength="1" d="M0 0" />
+          <path class="wire" data-thread="1" pathLength="1" d="M0 0" />
+          <path class="wire" data-thread="2" pathLength="1" d="M0 0" />
+          <path class="pulse" data-thread="0" pathLength="1" d="M0 0" />
+          <path class="pulse" data-thread="1" pathLength="1" d="M0 0" />
+          <path class="pulse" data-thread="2" pathLength="1" d="M0 0" />
+        </svg>
+
         <section class="intro">
           <h1 class="wordmark">
             <span class="sr-only">Aida</span>
@@ -59,6 +68,25 @@
             </button>
             <p class="caption" id="caption" aria-live="polite" aria-atomic="true"></p>
           </div>
+
+          <figure
+            class="works reveal reveal-5"
+            aria-label="Threads of light run from Aida into a small structure of blocks, which light up and begin to work."
+          >
+            <div class="works-tiles" id="structure">
+              <span class="col"><i class="tile"></i><i class="tile"></i></span>
+              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
+              <span class="col"><i class="tile"></i></span>
+              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
+              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
+              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
+              <span class="col"><i class="tile"></i><i class="tile"></i></span>
+              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
+            </div>
+          </figure>
+          <p class="works-line reveal reveal-6">
+            Intelligence, flowing into a business — and bringing it to life.
+          </p>
         </section>
 
         <figure class="portrait" aria-label="Aida">

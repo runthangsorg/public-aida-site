@@ -15,6 +15,14 @@
   --gx: 0px;
   --gy: 0px;
   --talk: 0;
+
+  /* The second beat: once she has settled, her light reaches the structure. */
+  --t-works: 3.25s;
+  --t-wire: 3.45s;
+  --t-pulse: 4.1s;
+  --pulse-gap: 0.25s;
+  --period: 2.2s;
+  --t-lit: 6.05s;
 }
 
 *,
@@ -88,6 +96,7 @@ body {
 }
 
 .stage {
+  position: relative;
   width: 100%;
   max-width: 1160px;
   margin: 0 auto;
@@ -97,6 +106,244 @@ body {
   grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
   align-items: center;
   gap: clamp(24px, 6vw, 96px);
+}
+
+.intro {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- threads of light ---------- */
+
+.threads {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.wire,
+.pulse {
+  fill: none;
+  stroke: var(--gold);
+  stroke-linecap: round;
+}
+
+.wire {
+  stroke-width: 1;
+  stroke-opacity: calc(0.22 + var(--talk) * 0.3);
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1s var(--ease-draw) var(--wire-delay) forwards;
+}
+
+.wire[data-thread="0"] {
+  --wire-delay: var(--t-wire);
+}
+.wire[data-thread="1"] {
+  --wire-delay: calc(var(--t-wire) + 0.15s);
+}
+.wire[data-thread="2"] {
+  --wire-delay: calc(var(--t-wire) + 0.3s);
+}
+
+.pulse {
+  stroke-width: calc(2px + var(--talk) * 1.6px);
+  stroke-dasharray: 0.1 1.5;
+  stroke-dashoffset: 0.1;
+  opacity: 0;
+  animation: travel var(--period) cubic-bezier(0.45, 0, 0.55, 1) var(--pulse-delay) infinite;
+}
+
+.pulse[data-thread="0"] {
+  --pulse-delay: var(--t-pulse);
+}
+.pulse[data-thread="1"] {
+  --pulse-delay: calc(var(--t-pulse) + var(--pulse-gap));
+}
+.pulse[data-thread="2"] {
+  --pulse-delay: calc(var(--t-pulse) + var(--pulse-gap) * 2);
+}
+
+@keyframes travel {
+  0% {
+    stroke-dashoffset: 0.1;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+
+/* ---------- the structure ---------- */
+
+.works {
+  position: relative;
+  width: max-content;
+  margin: 36px 0 0;
+  padding-bottom: 10px;
+}
+
+.works::after {
+  content: "";
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(245 165 36 / 0.5), transparent);
+}
+
+.works-tiles {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+}
+
+/* Each column is a building of its own width; the tiles are its floors. */
+.col:nth-child(1) {
+  --w: 24px;
+}
+.col:nth-child(2) {
+  --w: 34px;
+}
+.col:nth-child(3) {
+  --w: 22px;
+}
+.col:nth-child(4) {
+  --w: 40px;
+}
+.col:nth-child(5) {
+  --w: 28px;
+}
+.col:nth-child(6) {
+  --w: 46px;
+}
+.col:nth-child(7) {
+  --w: 24px;
+}
+.col:nth-child(8) {
+  --w: 36px;
+}
+
+.tile {
+  --d: 0ms;
+  --i: 0;
+  position: relative;
+  display: block;
+  width: var(--w, 30px);
+  height: 14px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.035);
+  box-shadow: inset 0 0 0 1px rgb(243 237 226 / 0.09);
+}
+
+.tile::before,
+.tile::after {
+  content: "";
+  position: absolute;
+  opacity: 0;
+}
+
+.tile::before {
+  inset: 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgb(245 165 36 / 0.36), rgb(245 165 36 / 0.14));
+  box-shadow: inset 0 0 0 1px rgb(245 165 36 / 0.75);
+  animation:
+    light 800ms var(--ease-out) calc(var(--t-lit) + var(--d)) forwards,
+    breathe-tile 4.6s ease-in-out calc(var(--t-lit) + var(--d) + 0.8s) infinite;
+}
+
+.tile::after {
+  inset: -3px;
+  border-radius: 6px;
+  box-shadow: 0 0 16px 3px rgb(245 165 36 / 0.5);
+  animation: light-glow 1.3s ease-out calc(var(--t-lit) + var(--d)) both;
+}
+
+.tile.is-landing {
+  --pulse-delay: calc(var(--t-pulse) + var(--i) * var(--pulse-gap));
+}
+
+.tile.is-landing::after {
+  animation:
+    light-glow 1.3s ease-out calc(var(--t-lit) + var(--d)) both,
+    flash var(--period) linear calc(var(--pulse-delay) + var(--period) * 0.9) infinite;
+}
+
+@keyframes light {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes breathe-tile {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.68;
+  }
+}
+
+@keyframes light-glow {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes flash {
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.85;
+  }
+  35% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.works-line {
+  margin: 14px 0 0;
+  max-width: 36ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--paper-2);
+}
+
+/* Pause everything that moves while the tab is hidden; the motes stop themselves. */
+.is-hidden .stage *,
+.is-hidden .stage *::before,
+.is-hidden .stage *::after {
+  animation-play-state: paused;
 }
 
 /* ---------- intro column ---------- */
@@ -331,7 +578,13 @@ body {
   animation-delay: 3.05s;
 }
 .reveal-4 {
-  animation-delay: 3.5s;
+  animation-delay: 3.7s;
+}
+.reveal-5 {
+  animation-delay: var(--t-works);
+}
+.reveal-6 {
+  animation-delay: calc(var(--t-works) + 0.2s);
 }
 
 .stroke {
@@ -513,5 +766,27 @@ body {
 
   .cta {
     transition: none;
+  }
+
+  /* The structure rests in its lit state; the threads are drawn and still. */
+  .wire {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  .pulse {
+    animation: none;
+    opacity: 0;
+  }
+
+  .tile::before {
+    animation: none;
+    opacity: 1;
+  }
+
+  .tile::after,
+  .tile.is-landing::after {
+    animation: none;
+    opacity: 0;
   }
 }
