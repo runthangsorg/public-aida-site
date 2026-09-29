@@ -1,12 +1,15 @@
 # Aida — coming soon
 
-A lightweight, animated landing page: Aida introduces herself and says she is on her way.
+A lightweight landing page with a motion-graphics entrance: light gathers, "Hello." rises out
+of a blur letter by letter, her name lands in chrome, a bar of light crosses it. Tap, and she says
+hello: her words appear as she speaks them and the glow follows the loudness of her voice.
 
-- Static site, no framework: Vite + TypeScript + plain CSS, layered SVG, CSS animations.
+- Static site, no framework: Vite + TypeScript + plain CSS, the Web Animations API for the
+  entrance, a Web Audio analyser for the glow. No sign-up, no form.
 - No third-party requests: system font stack, self-hosted audio, no analytics.
-- Her voice is a recording made once, not generated on each visit. Mouth shapes are computed
-  offline with Rhubarb Lip Sync and blended against the audio clock.
-- Full `prefers-reduced-motion` path: the settled page, with only fades left.
+- Her voice is a recording made once, not generated on each visit. Word timings come from the
+  caption start times in `src/intro.json` (`src/words.ts`, tested).
+- Full `prefers-reduced-motion` path: the finished composition, no movement; she still speaks.
 - Budget: 60 KB gzipped JS + CSS, enforced in CI.
 
 ## Develop
@@ -24,7 +27,7 @@ credentials, `ffmpeg`, and a Rhubarb Lip Sync release unpacked under `.tmp/` (gi
 
 ```sh
 node scripts/record-intro.mjs   # one Gemini TTS call on Vertex AI, then Opus + MP3 encodes
-node scripts/lipsync.mjs        # Rhubarb -> src/intro-cues.json, and prints the pauses
+node scripts/lipsync.mjs        # Rhubarb -> src/intro-cues.json (duration), and prints the pauses
 ```
 
 Then set the caption start times in `src/intro.json` from the printed pauses. The project id and
