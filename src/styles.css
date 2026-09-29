@@ -1,20 +1,57 @@
-/* Aida — coming soon. A motion-graphics entrance: light gathers, "Hello."
-   rises out of a blur, her name lands, a bar of light crosses it. Then she
-   can say hello, and the glow follows her voice. */
+/* Aida — coming soon. A riso-printed broadcast: cream paper, navy ink, a
+   sunburst that changes colour on every phrase, big words stamped down as she
+   says them, and Aida herself, drawn, blinking and talking in the middle. */
+
+@font-face {
+  font-family: Anton;
+  src: url("/fonts/anton.woff2") format("woff2");
+  font-display: swap;
+}
+
+@property --ray {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ef6aa3;
+}
+
+@property --word {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ec4f93;
+}
+
+@property --word-shadow {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #232c5c;
+}
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --ink: #070b16;
-  --ink-2: #0e1730;
-  --paper: #f3ede2;
-  --paper-2: #b8b3a8;
-  --mute: #8a90a0;
-  --gold: #f5a524;
-  --gold-soft: #e8b86d;
-  --cool: #3a5bd9;
+  --paper: #f1e8d4;
+  --paper-hi: #fbf5e8;
+  --ink: #232c5c;
+  --ink-2: #33407a;
+  --pink: #ec4f93;
+  --orange: #f26b2a;
+  --gold: #f2b632;
 
   --level: 0;
+
+  /* Her size, and where her face sits: the figure is square and her face is
+     43% of the way down it, so the sunburst can centre on her. */
+  --fig: min(128vw, 92svh, 1000px);
+  --face-y: calc(100svh - var(--fig) * 0.525);
+  --word-y: 67svh;
+}
+
+/* On a phone she fills the width, and the big words take the sky above her. */
+@media (orientation: portrait) {
+  :root {
+    --fig: min(150vw, 70svh, 1000px);
+    --word-y: 13svh;
+  }
 }
 
 *,
@@ -30,10 +67,8 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(1100px 760px at 50% 38%, var(--ink-2) 0%, var(--ink) 62%),
-    var(--ink);
-  color: var(--paper);
+  background: var(--paper);
+  color: var(--ink);
   font-family:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
@@ -43,224 +78,409 @@ body {
   overflow-x: hidden;
 }
 
-.scene {
-  position: relative;
-  min-height: 100svh;
-  display: grid;
-  place-items: center;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
   overflow: hidden;
-  isolation: isolate;
-}
-
-/* ---------- light ---------- */
-
-.glow,
-.rays {
-  position: absolute;
-  left: 50%;
-  top: 44%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.glow {
-  width: min(96vw, 980px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgb(245 165 36 / 0.5) 0%,
-    rgb(245 165 36 / 0.16) 26%,
-    rgb(58 91 217 / 0.16) 50%,
-    transparent 70%
-  );
-  filter: blur(18px);
-  z-index: -2;
-}
-
-/* The glow's own breath, and her voice, scale it: --level is 0 when she is quiet. */
-.glow::after {
-  content: "";
-  position: absolute;
-  inset: 22%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgb(255 214 150 / 0.55), transparent 68%);
-  transform: scale(calc(0.85 + var(--level) * 0.9));
-  opacity: calc(0.45 + var(--level) * 0.55);
-  transition:
-    transform 90ms linear,
-    opacity 90ms linear;
-}
-
-.rays {
-  width: min(140vw, 1500px);
-  aspect-ratio: 1;
-  background: repeating-conic-gradient(
-    from 0deg,
-    rgb(245 165 36 / 0.07) 0deg 2deg,
-    transparent 2deg 14deg
-  );
-  mask: radial-gradient(circle, #000 0%, transparent 62%);
-  z-index: -3;
-}
-
-.grain {
-  position: absolute;
-  inset: -40%;
-  background-image: url("/grain.svg");
-  opacity: 0.06;
-  mix-blend-mode: overlay;
-  pointer-events: none;
-  z-index: 3;
-}
-
-/* ---------- words ---------- */
-
-.stage {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  padding: 32px 16px 96px;
-  text-align: center;
-}
-
-.title {
-  position: relative;
-  margin: 0 auto;
-  font-weight: 800;
-  line-height: 0.9;
-  letter-spacing: -0.045em;
-}
-
-.line {
-  display: block;
-  perspective: 900px;
-  transform-origin: 50% 60%;
-}
-
-.line-hello {
-  font-size: clamp(72px, 23vw, 236px);
-}
-
-.line-name {
-  margin-top: 0.06em;
-  font-size: clamp(48px, 14.5vw, 152px);
-}
-
-.word {
-  display: inline-block;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
-.ch {
-  display: inline-block;
-  will-change: transform, filter, opacity;
+.scene {
+  position: relative;
+  height: 100svh;
+  min-height: 520px;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    --ray 420ms ease,
+    --word 420ms ease,
+    --word-shadow 420ms ease;
 }
 
-.im {
-  color: var(--paper-2);
-  font-weight: 600;
-  margin-right: 0.12em;
+/* One colour story per phrase. */
+.scene[data-tone="0"] {
+  --ray: #ef6aa3;
+  --word: var(--pink);
+  --word-shadow: var(--ink);
 }
 
-/* Chrome: a vertical gradient with a horizon line. It is the same for every
-   letter, so it reads as one surface even though each letter moves alone. */
-.name .ch,
-.name:not(:has(.ch)) {
-  background: linear-gradient(
-    180deg,
-    #ffffff 0%,
-    #e9ecf2 38%,
-    #8d95a8 50%,
-    #f3ede2 58%,
-    #e8b86d 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+.scene[data-tone="1"] {
+  --ray: var(--gold);
+  --word: var(--ink);
+  --word-shadow: var(--pink);
 }
 
-.sweep {
+.scene[data-tone="2"] {
+  --ray: var(--ink-2);
+  --word: var(--paper-hi);
+  --word-shadow: var(--pink);
+}
+
+.scene[data-tone="3"] {
+  --ray: var(--orange);
+  --word: var(--pink);
+  --word-shadow: var(--ink);
+}
+
+.art {
   position: absolute;
-  top: -5%;
-  bottom: -5%;
-  left: 0;
-  width: 26%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgb(255 244 222 / 0.85) 50%,
-    transparent
-  );
-  mix-blend-mode: color-dodge;
-  opacity: 0;
+  inset: 0;
+}
+
+/* ---------- the print ---------- */
+
+.burst {
+  position: absolute;
+  left: 50%;
+  top: var(--face-y);
+  width: 240vmax;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+}
+
+.rays {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, var(--ray) 0deg 7.5deg, transparent 7.5deg 15deg);
+}
+
+.is-settled .rays {
+  animation: turn 90s linear infinite;
+}
+
+.halftone {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(circle, rgb(35 44 92 / 0.2) 1.1px, transparent 1.7px) 0 0 / 7px 7px;
+  mask: radial-gradient(closest-side at 50% var(--face-y), transparent 35%, #000 100%);
   pointer-events: none;
 }
 
-.soon {
-  margin: 30px 0 0;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: var(--gold-soft);
+.halo {
+  position: absolute;
+  left: 50%;
+  top: var(--face-y);
+  width: calc(var(--fig) * 0.62);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(251 245 232 / 0.95) 0 38%, rgb(251 245 232 / 0) 70%);
+  transform: translate(-50%, -50%) scale(calc(0.92 + var(--level) * 0.3));
+  transition: transform 90ms linear;
+  z-index: 1;
 }
 
-/* ---------- her voice ---------- */
+/* ---------- her ---------- */
 
-.controls {
-  margin-top: 30px;
+/* Her jacket's hem sits just below the fold, so she runs off the bottom of the page. */
+.aida {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--fig) * -0.045);
+  width: var(--fig);
+  aspect-ratio: 1;
+  translate: -50% 0;
+  z-index: 2;
+}
+
+.sway,
+.bob,
+.head {
+  width: 100%;
+  height: 100%;
+}
+
+.sway {
+  transform-origin: 50% 100%;
+}
+
+.bob {
+  transform-origin: 50% 80%;
+}
+
+.is-settled .sway {
+  animation: sway 6s ease-in-out infinite;
+}
+
+.is-talking .bob {
+  animation: bob 0.44s ease-in-out infinite alternate;
+}
+
+.head {
+  position: relative;
+}
+
+.head img {
+  position: absolute;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+.fig {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* A second impression of her, offset: the misregistered print. */
+.shadow {
+  position: absolute;
+  inset: 0;
+  background: var(--word-shadow);
+  mask: url("/aida/aida-640.webp") center / 100% 100% no-repeat;
+  translate: 1.6% 1%;
+  opacity: 0.85;
+}
+
+/* The drawn mouths and the blink sit over her face; the boxes are where the
+   patches were cut from the 1024 px portrait. */
+.mouth {
+  left: 41.504%;
+  top: 43.457%;
+  width: 18.066%;
+  height: 15.137%;
+  opacity: 0;
+}
+
+.blink {
+  left: 32.227%;
+  top: 29.297%;
+  width: 36.133%;
+  height: 13.672%;
+  opacity: 0;
+}
+
+.head[data-mouth="small"] .m-small,
+.head[data-mouth="mid"] .m-mid,
+.head[data-mouth="wide"] .m-wide,
+.head[data-mouth="round"] .m-round,
+.head[data-mouth="pucker"] .m-pucker,
+.head.is-blinking .blink {
+  opacity: 1;
+}
+
+/* ---------- the big words ---------- */
+
+.bigword {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--word-y);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.bw {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  translate: -50% 0;
+  font-family: Anton, Impact, "Arial Narrow", sans-serif;
+  font-size: min(24svh, 30vw);
+  line-height: 0.92;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--word);
+  -webkit-text-stroke: 0.03em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0.05em 0.05em 0 var(--word-shadow);
+}
+
+.bw .ch {
+  display: inline-block;
+}
+
+/* ---------- labels ---------- */
+
+.card,
+.tape,
+.stamp,
+.caption,
+.cta {
+  position: absolute;
+  z-index: 4;
+}
+
+.card {
+  top: 18px;
+  left: 18px;
+  display: grid;
+  padding: 8px 12px 6px;
+  background: var(--paper-hi);
+  box-shadow: 3px 3px 0 var(--ink);
+  rotate: -2deg;
+  line-height: 1;
+}
+
+.card-k {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.card-v {
+  font-family: Anton, Impact, sans-serif;
+  font-size: 34px;
+  color: var(--pink);
+  font-variant-numeric: tabular-nums;
+}
+
+.tape {
+  top: 20px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgb(251 245 232 / 0.92);
+  box-shadow: 0 1px 0 rgb(35 44 92 / 0.25);
+  rotate: 1.5deg;
+  font:
+    600 12px/1 ui-monospace,
+    "SFMono-Regular",
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--pink);
+}
+
+.is-talking .dot {
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+.date {
+  color: var(--ink-2);
+}
+
+.stamp {
+  right: 7vw;
+  top: 36%;
+  margin: 0;
+  padding: 6px 14px;
+  border: 3px solid var(--pink);
+  border-radius: 6px;
+  color: var(--pink);
+  font-family: Anton, Impact, sans-serif;
+  font-size: clamp(22px, 3vw, 36px);
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  rotate: -9deg;
+  mix-blend-mode: multiply;
+  background: rgb(251 245 232 / 0.55);
+}
+
+.is-motion .stamp {
+  opacity: 0;
+}
+
+.is-motion .is-done .stamp {
+  animation: slam 380ms cubic-bezier(0.22, 1.5, 0.36, 1) both;
+}
+
+@media (orientation: portrait) {
+  .stamp {
+    right: 16px;
+    top: 28svh;
+    font-size: 20px;
+  }
+}
+
+/* The lower third: her words as she says them, the newest underlined. */
+.caption {
+  left: 24px;
+  bottom: 24px;
+  max-width: min(36ch, calc(100% - 48px));
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--paper-hi);
+  box-shadow: 4px 4px 0 var(--ink);
+  rotate: -1deg;
+  font-size: clamp(16px, 1.5vw, 21px);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.caption:empty {
+  visibility: hidden;
+}
+
+.caption .w {
+  display: inline-block;
+}
+
+.caption .now {
+  text-decoration: underline 3px var(--pink);
+  text-underline-offset: 4px;
 }
 
 .cta {
+  right: 24px;
+  bottom: 24px;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 22px 10px 10px;
-  border: 1px solid rgb(243 237 226 / 0.18);
+  gap: 10px;
+  padding: 8px 18px 8px 8px;
+  border: 0;
   border-radius: 999px;
-  background: rgb(243 237 226 / 0.06);
-  backdrop-filter: blur(10px);
-  color: var(--paper);
+  background: var(--ink);
+  color: var(--paper-hi);
+  box-shadow: 3px 3px 0 var(--pink);
   font: inherit;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   cursor: pointer;
   transition:
-    background 200ms ease,
-    border-color 200ms ease,
-    transform 200ms ease;
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .cta:hover {
-  background: rgb(243 237 226 / 0.1);
-  border-color: rgb(243 237 226 / 0.3);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--pink);
 }
 
 .cta:active {
-  transform: scale(0.97);
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--pink);
 }
 
 .cta:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 3px solid var(--gold);
   outline-offset: 3px;
 }
 
 .cta-icon {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: var(--gold);
-  color: var(--ink);
+  background: var(--pink);
+  color: var(--paper-hi);
 }
 
 .icon-bars {
   display: none;
   gap: 3px;
   align-items: center;
-  height: 16px;
+  height: 15px;
 }
 
 .icon-bars i {
@@ -268,20 +488,16 @@ body {
   width: 3px;
   height: 100%;
   border-radius: 2px;
-  background: var(--ink);
+  background: currentColor;
   transform-origin: 50% 100%;
   transform: scaleY(calc(0.3 + var(--level) * 0.9));
 }
 
 .icon-bars i:nth-child(2) {
-  transform: scaleY(calc(0.5 + var(--level) * 0.7));
+  transform: scaleY(calc(0.55 + var(--level) * 0.6));
 }
 
-.icon-bars i:nth-child(3) {
-  transform: scaleY(calc(0.35 + var(--level) * 1));
-}
-
-[data-state="playing"] .icon-play {
+[data-state="playing"] .icon-sound {
   display: none;
 }
 
@@ -289,29 +505,40 @@ body {
   display: flex;
 }
 
-.spoken {
-  min-height: 3.1em;
-  max-width: 26ch;
-  margin: 26px auto 0;
-  font-size: clamp(19px, 2.6vw, 28px);
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-  color: var(--paper);
+/* Waiting for the first tap: the button asks, gently. */
+[data-state="muted"] {
+  animation: nudge 1.8s ease-in-out infinite;
 }
 
-.spoken .w {
-  display: inline-block;
+@media (orientation: portrait) {
+  .caption {
+    left: 16px;
+    right: 16px;
+    bottom: 84px;
+    max-width: none;
+    text-align: center;
+  }
+
+  .cta {
+    right: auto;
+    left: 50%;
+    bottom: 22px;
+    translate: -50% 0;
+  }
 }
 
 .foot {
   position: absolute;
-  bottom: 14px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 12px;
-  color: var(--mute);
+  z-index: 4;
+  left: 50%;
+  bottom: 4px;
+  translate: -50% 0;
+  font:
+    500 10px/1 ui-monospace,
+    Menlo,
+    monospace;
+  letter-spacing: 0.1em;
+  color: rgb(35 44 92 / 0.6);
 }
 
 .foot p {
@@ -320,44 +547,87 @@ body {
 
 /* ---------- motion ---------- */
 
-/* Until the script takes over, the words are there; if it never runs, they stay. */
-.is-motion .ch,
-.is-motion .soon,
-.is-motion .controls,
-.is-motion .glow,
-.is-motion .rays {
+/* Paper grain over everything, like ink on stock. */
+.scene::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  z-index: 5;
+  background-image: url("/grain.svg");
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* Until the entrance runs, the pieces it brings in are not there. */
+.is-motion:not(.is-settled) :is(.burst, .aida, [data-slap]) {
   opacity: 0;
 }
 
-.is-settled .glow {
-  animation: breathe 6s ease-in-out infinite;
+.is-motion .bw.static {
+  display: none;
 }
 
-.is-settled .rays {
-  animation: turn 90s linear infinite;
-}
-
-.is-motion .grain {
+.is-motion .scene::after {
   animation: grain 0.9s steps(5) infinite;
 }
 
-.is-hidden * {
+.is-hidden *,
+.is-hidden .scene::after {
   animation-play-state: paused !important;
-}
-
-@keyframes breathe {
-  0%,
-  100% {
-    transform: translate(-50%, -50%) scale(1);
-  }
-  50% {
-    transform: translate(-50%, -50%) scale(1.05);
-  }
 }
 
 @keyframes turn {
   to {
-    transform: translate(-50%, -50%) rotate(360deg);
+    rotate: 360deg;
+  }
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-1.2deg);
+  }
+  50% {
+    transform: rotate(1.2deg);
+  }
+}
+
+@keyframes bob {
+  from {
+    transform: translateY(0) scale(1);
+  }
+  to {
+    transform: translateY(-0.8%) scale(1.006);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes slam {
+  from {
+    opacity: 0;
+    transform: scale(2.2) rotate(8deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes nudge {
+  0%,
+  100% {
+    box-shadow: 3px 3px 0 var(--pink);
+  }
+  50% {
+    box-shadow:
+      3px 3px 0 var(--pink),
+      0 0 0 8px rgb(236 79 147 / 0.22);
   }
 }
 
@@ -383,7 +653,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glow::after,
+  .halo,
   .cta {
     transition: none;
   }

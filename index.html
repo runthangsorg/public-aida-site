@@ -3,59 +3,92 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#070b16" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f1e8d4" />
     <title>Aida — coming soon</title>
-    <meta name="description" content="Aida is on her way. Tap to hear her say hello." />
+    <meta name="description" content="Aida is on her way. She says hello." />
     <meta property="og:title" content="Aida — coming soon" />
-    <meta property="og:description" content="Aida is on her way. Tap to hear her say hello." />
+    <meta property="og:description" content="Aida is on her way. She says hello." />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/anton.woff2" as="font" type="font/woff2" crossorigin />
+    <link
+      rel="preload"
+      as="image"
+      href="/aida/aida.webp"
+      imagesrcset="/aida/aida-640.webp 640w, /aida/aida.webp 1024w"
+      imagesizes="(orientation: portrait) 128vw, 92vh"
+    />
   </head>
   <body>
-    <div class="scene" id="scene">
-      <div class="glow" aria-hidden="true"></div>
-      <div class="rays" aria-hidden="true"></div>
-      <div class="grain" aria-hidden="true"></div>
+    <div class="scene" id="scene" data-tone="0">
+      <div class="art" id="art">
+        <div class="burst" id="burst" aria-hidden="true"><div class="rays"></div></div>
+        <div class="halftone" aria-hidden="true"></div>
+        <div class="halo" aria-hidden="true"></div>
 
-      <main class="stage">
-        <h1 class="title" aria-label="Hello. I'm Aida.">
-          <span class="line line-hello" aria-hidden="true"><span class="word" data-split>Hello.</span></span>
-          <span class="line line-name" aria-hidden="true"
-            ><span class="word im" data-split>I&rsquo;m</span> <span class="word name" data-split>Aida.</span></span
-          >
-          <span class="sweep" aria-hidden="true"></span>
-        </h1>
-
-        <p class="soon">Coming soon</p>
-
-        <div class="controls">
-          <button class="cta" id="meet" type="button" data-state="idle">
-            <span class="cta-icon" aria-hidden="true">
-              <svg class="icon-play" viewBox="0 0 24 24" width="18" height="18" focusable="false">
-                <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
-              </svg>
-              <span class="icon-bars"><i></i><i></i><i></i><i></i></span>
-            </span>
-            <span class="cta-label" id="meet-label">Hear her say hello</span>
-          </button>
+        <div class="aida" id="aida" aria-hidden="true">
+          <div class="sway">
+            <div class="bob">
+              <div class="head" id="head" data-mouth="closed">
+                <div class="shadow"></div>
+                <img
+                  class="fig"
+                  src="/aida/aida.webp"
+                  srcset="/aida/aida-640.webp 640w, /aida/aida.webp 1024w"
+                  sizes="(orientation: portrait) 128vw, 92vh"
+                  width="1024"
+                  height="1024"
+                  alt=""
+                  fetchpriority="high"
+                />
+                <img class="mouth m-small" src="/aida/mouth-small.webp" alt="" />
+                <img class="mouth m-mid" src="/aida/mouth-mid.webp" alt="" />
+                <img class="mouth m-wide" src="/aida/mouth-wide.webp" alt="" />
+                <img class="mouth m-round" src="/aida/mouth-round.webp" alt="" />
+                <img class="mouth m-pucker" src="/aida/mouth-pucker.webp" alt="" />
+                <img class="blink" src="/aida/blink.webp" alt="" />
+              </div>
+            </div>
+          </div>
         </div>
 
-        <p class="spoken" id="spoken" aria-live="polite" aria-atomic="true"></p>
+        <div class="bigword" id="bigword" aria-hidden="true"><span class="bw static">Hello.</span></div>
+      </div>
 
-        <audio id="voice" preload="none">
-          <source src="/audio/intro.webm" type="audio/webm; codecs=opus" />
-          <source src="/audio/intro.mp3" type="audio/mpeg" />
-        </audio>
-      </main>
+      <h1 class="visually-hidden">Hello. I’m Aida.</h1>
 
-      <footer class="foot">
-        <p>&copy; 2026 Aida</p>
-      </footer>
+      <div class="card ready" data-slap aria-hidden="true">
+        <span class="card-k">Ready</span><span class="card-v" id="ready">97%</span>
+      </div>
+      <div class="tape onair" data-slap aria-hidden="true">
+        <i class="dot"></i><span>On air</span><span class="date" id="date"></span>
+      </div>
+      <p class="stamp" id="soon">Coming soon</p>
+
+      <p class="caption" id="spoken" aria-live="polite">Hello. I’m Aida. I’m not quite ready to meet you yet — but I will be, very soon.</p>
+
+      <button class="cta" id="meet" type="button" data-state="waiting" data-slap>
+        <span class="cta-icon" aria-hidden="true">
+          <svg class="icon-sound" viewBox="0 0 24 24" width="18" height="18" focusable="false">
+            <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" />
+            <path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span class="icon-bars"><i></i><i></i><i></i></span>
+        </span>
+        <span class="cta-label" id="meet-label">Tap to hear her</span>
+      </button>
+
+      <audio id="voice" preload="auto">
+        <source src="/audio/intro.webm" type="audio/webm; codecs=opus" />
+        <source src="/audio/intro.mp3" type="audio/mpeg" />
+      </audio>
+
+      <footer class="foot"><p>&copy; 2026 Aida</p></footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
