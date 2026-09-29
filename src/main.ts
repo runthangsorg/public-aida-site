@@ -239,14 +239,18 @@ button.addEventListener("click", () => {
 });
 
 // Any first tap or key press on the page is the permission the browser wants:
-// she starts again, this time out loud.
+// she starts again, this time out loud. It has to be pointerup, not
+// pointerdown: under the HTML spec's user-activation rules a finger's
+// pointerdown grants nothing (only its pointerup or touchend does), so on a
+// phone play() would still be refused. A mouse has activation from its press
+// by the time it is released, so one listener covers both.
 function firstTouch(event: Event): void {
   if (heard) return;
   if (event.target instanceof Node && button.contains(event.target)) return;
-  if (event instanceof KeyboardEvent && ["Tab", "Shift", "Alt", "Control", "Meta"].includes(event.key)) return;
+  if (event instanceof KeyboardEvent && ["Tab", "Shift", "Alt", "Control", "Meta", "Escape"].includes(event.key)) return;
   void speak(true);
 }
-document.addEventListener("pointerdown", firstTouch);
+document.addEventListener("pointerup", firstTouch);
 document.addEventListener("keydown", firstTouch);
 
 document.addEventListener("visibilitychange", () => {
