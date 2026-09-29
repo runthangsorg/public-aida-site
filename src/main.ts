@@ -1,14 +1,11 @@
 import "./styles.css";
-import cueSheet from "./intro-cues.json";
+import cues from "./intro-cues.json";
 import intro from "./intro.json";
-import { createLipSync, parseCueSheet } from "./lipsync";
-import { startMotes } from "./motes";
-import { REST, renderMouth, type MouthElements } from "./mouth";
-import { mountThreads } from "./threads";
+import { playEntrance, popWord, splitLetters } from "./kinetic";
+import { spokenCount, timeWords, type TimedWord } from "./words";
 
 const root = document.documentElement;
-const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-const coarsePointer = matchMedia("(pointer: coarse)");
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function byId<T extends Element>(id: string, type: new () => T): T {
   const el = document.getElementById(id);
@@ -16,156 +13,50 @@ function byId<T extends Element>(id: string, type: new () => T): T {
   return el;
 }
 
-const portrait = document.querySelector<HTMLElement>(".portrait");
-const eyes = Array.from(document.querySelectorAll<SVGGElement>(".avatar .eye"));
+function one(selector: string): HTMLElement {
+  const el = document.querySelector(selector);
+  if (!(el instanceof HTMLElement)) throw new Error(`Missing ${selector}`);
+  return el;
+}
 
-const mouth: MouthElements = {
-  lips: byId("mouth-lips", SVGPathElement),
-  inner: byId("mouth-inner", SVGPathElement),
-  clip: byId("mouth-clip", SVGPathElement),
-  teeth: byId("mouth-teeth", SVGRectElement),
-  tongue: byId("mouth-tongue", SVGEllipseElement),
-  shine: byId("mouth-shine", SVGEllipseElement),
-};
+// ---------- the entrance ----------
 
-renderMouth(mouth, REST);
-
-// ---------- entrance ----------
-
-const WAKE_AT_MS = 2450;
-const SETTLED_AT_MS = 3800;
-
-if (reducedMotion.matches) {
-  root.classList.add("is-still", "is-awake");
+if (still) {
+  root.classList.add("is-still");
 } else {
-  root.classList.add("is-intro");
-  setTimeout(() => {
-    root.classList.add("is-awake");
-  }, WAKE_AT_MS);
-}
-
-// ---------- blinking ----------
-
-function blinkOnce(): void {
-  for (const eye of eyes) {
-    eye.classList.remove("is-blinking");
-    // Force a style flush so a second blink restarts the animation.
-    void eye.getBoundingClientRect();
-    eye.classList.add("is-blinking");
-  }
-}
-
-for (const eye of eyes) {
-  eye.addEventListener("animationend", () => {
-    eye.classList.remove("is-blinking");
+  root.classList.add("is-motion");
+  const split = (selector: string): HTMLElement[] => splitLetters(one(selector));
+  void playEntrance({
+    glow: one(".glow"),
+    rays: one(".rays"),
+    hello: split(".line-hello .word"),
+    helloLine: one(".line-hello"),
+    im: split(".line-name .im"),
+    name: split(".line-name .name"),
+    sweep: one(".sweep"),
+    soon: one(".soon"),
+    controls: one(".controls"),
+  }).then(() => {
+    root.classList.add("is-settled");
   });
 }
 
-function scheduleBlink(): void {
-  const wait = 2600 + Math.random() * 4400;
-  setTimeout(() => {
-    if (!document.hidden) {
-      blinkOnce();
-      if (Math.random() < 0.2) {
-        setTimeout(blinkOnce, 300);
-      }
-    }
-    scheduleBlink();
-  }, wait);
-}
-
-if (!reducedMotion.matches) {
-  setTimeout(scheduleBlink, WAKE_AT_MS + 900);
-}
-
-// ---------- gaze ----------
-
-const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
-
-if (!reducedMotion.matches && !coarsePointer.matches && portrait) {
-  let px = 0;
-  let py = 0;
-  let raf = 0;
-
-  const update = (): void => {
-    raf = 0;
-    const r = portrait.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height * 0.42;
-    const gx = clamp((px - cx) / (window.innerWidth / 2), -1, 1);
-    const gy = clamp((py - cy) / (window.innerHeight / 2), -1, 1);
-    root.style.setProperty("--gx", `${(gx * 3.2).toFixed(2)}px`);
-    root.style.setProperty("--gy", `${(gy * 2.2).toFixed(2)}px`);
-  };
-
-  window.addEventListener(
-    "pointermove",
-    (event) => {
-      px = event.clientX;
-      py = event.clientY;
-      if (!raf) raf = requestAnimationFrame(update);
-    },
-    { passive: true },
-  );
-
-  document.addEventListener("pointerleave", () => {
-    root.style.setProperty("--gx", "0px");
-    root.style.setProperty("--gy", "0px");
-  });
-}
+// Pause the ambient loops while the tab is hidden.
+document.addEventListener("visibilitychange", () => {
+  root.classList.toggle("is-hidden", document.hidden);
+});
 
 // ---------- her voice ----------
 
 const audio = byId("voice", HTMLAudioElement);
 const button = byId("meet", HTMLButtonElement);
 const label = byId("meet-label", HTMLSpanElement);
-const captionEl = byId("caption", HTMLParagraphElement);
+const spoken = byId("spoken", HTMLParagraphElement);
 
-let talkLevel = 0;
-const speaker = createLipSync(
-  audio,
-  mouth,
-  parseCueSheet(cueSheet),
-  intro.captions,
-  captionEl,
-  root,
-  (level) => {
-    talkLevel = level;
-  },
-);
-
-// ---------- motes ----------
-
-if (!reducedMotion.matches) {
-  const canvas = document.getElementById("motes");
-  if (canvas instanceof HTMLCanvasElement) {
-    setTimeout(() => startMotes(canvas, () => talkLevel), WAKE_AT_MS);
-  }
-}
-
-// ---------- threads into the structure ----------
-
-if (portrait) {
-  mountThreads({
-    stage: byId("stage", HTMLElement),
-    svg: byId("threads", SVGSVGElement),
-    from: portrait,
-    structure: byId("structure", HTMLDivElement),
-  });
-}
-
-// Pause every animation while the tab is hidden; the motes stop themselves.
-document.addEventListener("visibilitychange", () => {
-  root.classList.toggle("is-hidden", document.hidden);
-});
+const words: TimedWord[] = timeWords(intro.captions, cues.duration);
 
 type State = "idle" | "playing" | "done";
-
-const LABELS: Record<State, string> = {
-  idle: "Tap to meet Aida",
-  playing: "Stop",
-  done: "Hear her again",
-};
+const LABELS: Record<State, string> = { idle: "Hear her say hello", playing: "Stop", done: "Hear her again" };
 
 function setState(state: State): void {
   button.dataset.state = state;
@@ -173,41 +64,100 @@ function setState(state: State): void {
   root.classList.toggle("is-speaking", state === "playing");
 }
 
+// The glow follows the loudness of her voice. The audio graph is built on the
+// first tap (browsers only allow sound after one) and only once: an element
+// can feed a single MediaElementSource.
+let analyser: AnalyserNode | null = null;
+let samples: Uint8Array<ArrayBuffer> | null = null;
+
+function listen(): void {
+  if (analyser || still) return;
+  try {
+    const ctx = new AudioContext();
+    const source = ctx.createMediaElementSource(audio);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    samples = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+    source.connect(analyser);
+    analyser.connect(ctx.destination);
+    void ctx.resume();
+  } catch {
+    analyser = null; // She still speaks; the glow just stays calm.
+  }
+}
+
+let shown = 0;
+let level = 0;
+let raf = 0;
+
+function frame(): void {
+  raf = 0;
+  if (analyser && samples) {
+    analyser.getByteTimeDomainData(samples);
+    let sum = 0;
+    for (const s of samples) sum += ((s - 128) / 128) ** 2;
+    const rms = Math.sqrt(sum / samples.length);
+    level += (Math.min(1, rms * 4) - level) * 0.25;
+    root.style.setProperty("--level", level.toFixed(3));
+  }
+  const due = spokenCount(words, audio.currentTime);
+  while (shown < due) {
+    const w = words[shown];
+    if (!w) break;
+    if (w.lead) spoken.textContent = "";
+    const span = document.createElement("span");
+    span.className = "w";
+    span.textContent = w.word;
+    spoken.append(span, " ");
+    if (!still) popWord(span);
+    shown++;
+  }
+  if (!audio.paused) raf = requestAnimationFrame(frame);
+}
+
+function stopListening(): void {
+  if (raf) cancelAnimationFrame(raf);
+  raf = 0;
+  level = 0;
+  root.style.setProperty("--level", "0");
+}
+
 button.addEventListener("click", () => {
   if (!audio.paused) {
     audio.pause();
     audio.currentTime = 0;
-    speaker.stop();
+    stopListening();
     setState("done");
     return;
   }
+  listen();
   audio.currentTime = 0;
+  shown = 0;
+  spoken.textContent = "";
   audio.play().then(
     () => {
       setState("playing");
-      speaker.start();
+      raf = requestAnimationFrame(frame);
     },
     () => {
-      // No audio available (or blocked): still let her say it.
-      captionEl.textContent = intro.line;
+      // No audio (or it was blocked): she still says it, in words.
+      spoken.textContent = intro.line;
       setState("done");
     },
   );
 });
 
 audio.addEventListener("ended", () => {
+  stopListening();
   setState("done");
 });
-audio.addEventListener("pause", () => {
-  if (!audio.ended) speaker.stop();
-});
 
-// Fetch the recording only once the entrance has settled, so it never
-// competes with first paint. It is a few tens of kilobytes.
+// Fetch the recording once the entrance has landed, so it never competes with
+// first paint. It is a few tens of kilobytes.
 setTimeout(
   () => {
     audio.preload = "auto";
     audio.load();
   },
-  reducedMotion.matches ? 600 : SETTLED_AT_MS,
+  still ? 600 : 3600,
 );

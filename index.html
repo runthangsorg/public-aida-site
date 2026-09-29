@@ -6,9 +6,9 @@
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#070b16" />
     <title>Aida — coming soon</title>
-    <meta name="description" content="Aida is on her way. Tap to meet her, and come back very soon." />
+    <meta name="description" content="Aida is on her way. Tap to hear her say hello." />
     <meta property="og:title" content="Aida — coming soon" />
-    <meta property="og:description" content="Aida is on her way. Tap to meet her, and come back very soon." />
+    <meta property="og:description" content="Aida is on her way. Tap to hear her say hello." />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/og.png" />
     <meta property="og:image:width" content="1200" />
@@ -17,228 +17,43 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
-    <div class="scene">
-      <div class="scene-glow" aria-hidden="true"></div>
+    <div class="scene" id="scene">
+      <div class="glow" aria-hidden="true"></div>
+      <div class="rays" aria-hidden="true"></div>
+      <div class="grain" aria-hidden="true"></div>
 
-      <main class="stage" id="stage">
-        <svg class="threads" id="threads" aria-hidden="true" focusable="false">
-          <path class="wire" data-thread="0" pathLength="1" d="M0 0" />
-          <path class="wire" data-thread="1" pathLength="1" d="M0 0" />
-          <path class="wire" data-thread="2" pathLength="1" d="M0 0" />
-          <path class="pulse" data-thread="0" pathLength="1" d="M0 0" />
-          <path class="pulse" data-thread="1" pathLength="1" d="M0 0" />
-          <path class="pulse" data-thread="2" pathLength="1" d="M0 0" />
-        </svg>
-
-        <section class="intro">
-          <h1 class="wordmark">
-            <span class="sr-only">Aida</span>
-            <svg class="wordmark-art" viewBox="0 0 284 112" aria-hidden="true" focusable="false">
-              <g fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
-                <!-- The crossbar is drawn first, in gold, and the stems seat over its ends. -->
-                <path class="stroke stroke-bar" d="M30 66H74" pathLength="1" stroke="var(--gold)" />
-                <path class="stroke stroke-a1" d="M52 13.5 16 94.5" pathLength="1" />
-                <path class="stroke stroke-a2" d="M52 13.5 88 94.5" pathLength="1" />
-                <path class="stroke stroke-i" d="M110 41.5V94.5" pathLength="1" />
-                <path class="stroke stroke-dot" d="M110 15.5v1" pathLength="1" />
-                <circle class="stroke stroke-db" cx="160" cy="68" r="26.5" pathLength="1" />
-                <path class="stroke stroke-ds" d="M186.5 13.5V94.5" pathLength="1" />
-                <circle class="stroke stroke-ab" cx="236" cy="68" r="26.5" pathLength="1" />
-                <path class="stroke stroke-as" d="M262.5 41.5V94.5" pathLength="1" />
-              </g>
-            </svg>
-          </h1>
-
-          <p class="eyebrow reveal reveal-1">Coming soon</p>
-          <p class="lede reveal reveal-2">
-            She is nearly ready to meet you.
-          </p>
-
-          <div class="controls reveal reveal-3">
-            <button class="cta" id="meet" type="button" data-state="idle">
-              <span class="cta-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="22" height="22" focusable="false">
-                  <path class="icon-play" d="M8 5.5v13l11-6.5z" fill="currentColor" />
-                  <path class="icon-stop" d="M7 7h10v10H7z" fill="currentColor" />
-                  <path class="icon-replay" d="M12 5a7 7 0 1 1-6.3 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                  <path class="icon-replay" d="M5 4v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </span>
-              <span class="cta-label" id="meet-label">Tap to meet Aida</span>
-            </button>
-            <p class="caption" id="caption" aria-live="polite" aria-atomic="true"></p>
-          </div>
-
-          <figure
-            class="works reveal reveal-5"
-            aria-label="Threads of light run from Aida into a small structure of blocks, which light up and begin to work."
+      <main class="stage">
+        <h1 class="title" aria-label="Hello. I'm Aida.">
+          <span class="line line-hello" aria-hidden="true"><span class="word" data-split>Hello.</span></span>
+          <span class="line line-name" aria-hidden="true"
+            ><span class="word im" data-split>I&rsquo;m</span> <span class="word name" data-split>Aida.</span></span
           >
-            <div class="works-tiles" id="structure">
-              <span class="col"><i class="tile"></i><i class="tile"></i></span>
-              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
-              <span class="col"><i class="tile"></i></span>
-              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
-              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
-              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
-              <span class="col"><i class="tile"></i><i class="tile"></i></span>
-              <span class="col"><i class="tile"></i><i class="tile"></i><i class="tile"></i><i class="tile"></i></span>
-            </div>
-          </figure>
-          <p class="works-line reveal reveal-6">
-            Intelligence, flowing into a business — and bringing it to life.
-          </p>
-        </section>
+          <span class="sweep" aria-hidden="true"></span>
+        </h1>
 
-        <figure class="portrait" aria-label="Aida">
-          <canvas class="motes" id="motes" aria-hidden="true"></canvas>
-          <svg class="avatar" id="avatar" viewBox="0 0 300 380" aria-hidden="true" focusable="false">
-            <defs>
-              <radialGradient id="g-aura" cx="50%" cy="46%" r="50%">
-                <stop offset="0" stop-color="#f5a524" stop-opacity="0.5" />
-                <stop offset="0.4" stop-color="#f5a524" stop-opacity="0.16" />
-                <stop offset="1" stop-color="#f5a524" stop-opacity="0" />
-              </radialGradient>
-              <radialGradient id="g-skin" cx="46%" cy="36%" r="72%">
-                <stop offset="0" stop-color="#f1cbae" />
-                <stop offset="0.65" stop-color="#e3b191" />
-                <stop offset="1" stop-color="#c88d6c" />
-              </radialGradient>
-              <linearGradient id="g-hair" x1="0.2" y1="0" x2="0.8" y2="1">
-                <stop offset="0" stop-color="#2e1f26" />
-                <stop offset="0.5" stop-color="#1a1116" />
-                <stop offset="1" stop-color="#0f090d" />
-              </linearGradient>
-              <linearGradient id="g-hair-top" x1="0.1" y1="0" x2="0.9" y2="1">
-                <stop offset="0" stop-color="#402d35" />
-                <stop offset="0.55" stop-color="#22161b" />
-                <stop offset="1" stop-color="#150d11" />
-              </linearGradient>
-              <linearGradient id="g-sheen" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stop-color="#c79a7a" stop-opacity="0" />
-                <stop offset="0.5" stop-color="#d9b08c" stop-opacity="0.42" />
-                <stop offset="1" stop-color="#c79a7a" stop-opacity="0" />
-              </linearGradient>
-              <radialGradient id="g-iris" cx="50%" cy="50%" r="50%">
-                <stop offset="0" stop-color="#e6a94e" />
-                <stop offset="0.55" stop-color="#b3722a" />
-                <stop offset="1" stop-color="#55300e" />
-              </radialGradient>
-              <linearGradient id="g-garment" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#1f2740" />
-                <stop offset="1" stop-color="#0b1020" stop-opacity="0" />
-              </linearGradient>
-              <radialGradient id="g-blush" cx="50%" cy="50%" r="50%">
-                <stop offset="0" stop-color="#d97a6c" stop-opacity="0.3" />
-                <stop offset="1" stop-color="#d97a6c" stop-opacity="0" />
-              </radialGradient>
-              <clipPath id="c-eye-l">
-                <path d="M-18-2C-12-11 10-10 18 0C12 8-12 7-18-2Z" />
-              </clipPath>
-              <clipPath id="c-eye-r">
-                <path d="M-18 0C-12-10 10-11 18-2C12 7-12 8-18 0Z" />
-              </clipPath>
-              <clipPath id="c-mouth">
-                <path id="mouth-clip" d="M0 0" />
-              </clipPath>
-            </defs>
+        <p class="soon">Coming soon</p>
 
-            <g class="aura">
-              <circle cx="150" cy="176" r="150" fill="url(#g-aura)" />
-            </g>
+        <div class="controls">
+          <button class="cta" id="meet" type="button" data-state="idle">
+            <span class="cta-icon" aria-hidden="true">
+              <svg class="icon-play" viewBox="0 0 24 24" width="18" height="18" focusable="false">
+                <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
+              </svg>
+              <span class="icon-bars"><i></i><i></i><i></i><i></i></span>
+            </span>
+            <span class="cta-label" id="meet-label">Hear her say hello</span>
+          </button>
+        </div>
 
-            <g class="figure">
-              <g class="body">
-                <path d="M28 384c0-66 60-96 122-96s122 30 122 96Z" fill="url(#g-garment)" />
-                <path d="M126 226v70c0 10 48 10 48 0v-70Z" fill="#d09b7d" />
-                <path d="M126 226c6 26 42 26 48 0-8 12-40 12-48 0Z" fill="#b1785c" opacity="0.75" />
-              </g>
+        <p class="spoken" id="spoken" aria-live="polite" aria-atomic="true"></p>
 
-              <g class="head">
-                <g class="hair-back">
-                  <path d="M150 40C86 40 62 100 64 168c1 46 8 82 24 108 12 20 30 26 42 22h40c12 4 30-2 42-22 16-26 23-62 24-108C238 100 214 40 150 40Z" fill="url(#g-hair)" />
-                </g>
-
-                <ellipse cx="213" cy="166" rx="9" ry="14" fill="#d9a385" />
-                <ellipse cx="213" cy="166" rx="5" ry="9" fill="#c48a6c" opacity="0.5" />
-                <circle cx="214" cy="181" r="2.6" fill="var(--gold)" />
-
-                <path class="face" d="M150 62c42 0 64 42 64 96 0 54-28 90-64 90s-64-36-64-90c0-54 22-96 64-96Z" fill="url(#g-skin)" />
-                <path d="M92 200c10 30 30 46 58 46s48-16 58-46c-8 24-28 38-58 38s-50-14-58-38Z" fill="#b8795c" opacity="0.26" />
-
-                <ellipse cx="110" cy="190" rx="19" ry="9" fill="url(#g-blush)" />
-                <ellipse cx="190" cy="190" rx="19" ry="9" fill="url(#g-blush)" />
-
-                <g class="brows" fill="#2b1e24">
-                  <path d="M99 137c7-11 23-16 42-12l-1 5c-16-3-30 0-41 7Z" />
-                  <path d="M201 137c-7-11-23-16-42-12l1 5c16-3 30 0 41 7Z" />
-                </g>
-
-                <g class="eye eye-l" transform="translate(118 158)">
-                  <g clip-path="url(#c-eye-l)">
-                    <path d="M-18-2C-12-11 10-10 18 0C12 8-12 7-18-2Z" fill="#f8f2ea" />
-                    <path d="M-18-2C-12-11 10-10 18 0C12 2-12 2-18-2Z" fill="#b98a6a" opacity="0.2" />
-                    <g class="iris">
-                      <circle r="8.2" fill="url(#g-iris)" />
-                      <circle r="8.2" fill="none" stroke="#4a2c0f" stroke-width="0.9" opacity="0.6" />
-                      <circle r="3.6" fill="#150f0f" />
-                      <circle cx="-2.6" cy="-2.9" r="1.7" fill="#fff" opacity="0.92" />
-                      <circle cx="2.8" cy="2.5" r="0.8" fill="#fff" opacity="0.5" />
-                    </g>
-                    <path class="lid" d="M-18-2C-12-11 10-10 18 0C12 8-12 7-18-2Z" fill="#e3b191" />
-                  </g>
-                  <path class="lash" d="M-18-2C-12-11 10-10 18 0" fill="none" stroke="#2b1e24" stroke-width="2.4" stroke-linecap="round" />
-                  <path d="M-16 1c6 7 24 8 33 0" fill="none" stroke="#2b1e24" stroke-width="1" stroke-linecap="round" opacity="0.4" />
-                </g>
-
-                <g class="eye eye-r" transform="translate(182 158)">
-                  <g clip-path="url(#c-eye-r)">
-                    <path d="M-18 0C-12-10 10-11 18-2C12 7-12 8-18 0Z" fill="#f8f2ea" />
-                    <path d="M-18 0C-12-10 10-11 18-2C12 2-12 2-18 0Z" fill="#b98a6a" opacity="0.2" />
-                    <g class="iris">
-                      <circle r="8.2" fill="url(#g-iris)" />
-                      <circle r="8.2" fill="none" stroke="#4a2c0f" stroke-width="0.9" opacity="0.6" />
-                      <circle r="3.6" fill="#150f0f" />
-                      <circle cx="-2.6" cy="-2.9" r="1.7" fill="#fff" opacity="0.92" />
-                      <circle cx="2.8" cy="2.5" r="0.8" fill="#fff" opacity="0.5" />
-                    </g>
-                    <path class="lid" d="M-18 0C-12-10 10-11 18-2C12 7-12 8-18 0Z" fill="#e3b191" />
-                  </g>
-                  <path class="lash" d="M-18 0C-12-10 10-11 18-2" fill="none" stroke="#2b1e24" stroke-width="2.4" stroke-linecap="round" />
-                  <path d="M-17 1c9 8 27 7 33 0" fill="none" stroke="#2b1e24" stroke-width="1" stroke-linecap="round" opacity="0.4" />
-                </g>
-
-                <g class="nose" fill="none" stroke="#c4886a" stroke-linecap="round">
-                  <path d="M148 168c-3 10-6 18-2 24" stroke-width="2" opacity="0.5" />
-                  <path d="M143 192c3 3 11 3 14 0" stroke-width="2.2" opacity="0.7" />
-                </g>
-
-                <g class="mouth" id="mouth" transform="translate(150 210)">
-                  <path class="mouth-lips" id="mouth-lips" d="M0 0" fill="#b9625e" />
-                  <path class="mouth-inner" id="mouth-inner" d="M0 0" fill="#3a1518" />
-                  <g clip-path="url(#c-mouth)">
-                    <rect class="mouth-teeth" id="mouth-teeth" x="-22" y="-4" width="44" height="6" rx="2.5" fill="#f5eee5" />
-                    <ellipse class="mouth-tongue" id="mouth-tongue" cx="0" cy="14" rx="13" ry="7" fill="#c9686e" />
-                  </g>
-                  <ellipse class="mouth-shine" id="mouth-shine" cx="0" cy="5" rx="8" ry="1.6" fill="#fff" opacity="0.16" />
-                </g>
-
-                <g class="hair-front">
-                  <path d="M90 138c2-24 16-46 38-54 18 6 52 18 84 54 8-38-8-94-62-94S80 104 90 138Z" fill="url(#g-hair-top)" />
-                  <path d="M128 84c22-2 56 8 84 54-26-30-56-44-84-54Z" fill="#0f090d" opacity="0.35" />
-                  <path d="M132 60c24-8 52 0 70 26" fill="none" stroke="url(#g-sheen)" stroke-width="9" stroke-linecap="round" />
-                  <path d="M88 140c-8 30-8 70 4 108 4 12 16 14 18 2-12-26-14-64-8-100Z" fill="url(#g-hair)" />
-                </g>
-              </g>
-            </g>
-          </svg>
-          <audio id="voice" preload="none">
-            <source src="/audio/intro.webm" type="audio/webm; codecs=opus" />
-            <source src="/audio/intro.mp3" type="audio/mpeg" />
-          </audio>
-        </figure>
+        <audio id="voice" preload="none">
+          <source src="/audio/intro.webm" type="audio/webm; codecs=opus" />
+          <source src="/audio/intro.mp3" type="audio/mpeg" />
+        </audio>
       </main>
 
-      <footer class="foot reveal reveal-4">
+      <footer class="foot">
         <p>&copy; 2026 Aida</p>
       </footer>
     </div>
