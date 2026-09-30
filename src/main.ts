@@ -4,6 +4,7 @@ import intro from "./intro.json";
 import { beatAt, beatsFrom } from "./beats";
 import { mouthAt, readCues, type Mouth } from "./lipsync";
 import { countUp, entrance, fit, jolt, popWord, stamp } from "./motion";
+import { track } from "./track";
 import { spokenCount, timeWords } from "./words";
 
 const root = document.documentElement;
@@ -127,14 +128,15 @@ function frame(): void {
   }
   const over = mode === "sound" ? audio.ended : t >= cues.duration;
   if (over) {
-    finish();
+    finish(true);
     return;
   }
   raf = requestAnimationFrame(frame);
 }
 
-function perform(next: Mode, from: () => number): void {
+function perform(next: "sound" | "silent", from: () => number): void {
   if (raf) cancelAnimationFrame(raf);
+  track("voice", next);
   mode = next;
   clock = from;
   reset();
@@ -142,9 +144,10 @@ function perform(next: Mode, from: () => number): void {
   raf = requestAnimationFrame(frame);
 }
 
-function finish(): void {
+function finish(completed: boolean): void {
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
+  if (completed && (mode === "sound" || mode === "silent")) track("complete", mode);
   mode = "done";
   setMouth("closed");
   scene.classList.remove("is-talking");
@@ -205,6 +208,7 @@ async function speak(fromTap: boolean): Promise<boolean> {
     clearTimeout(timer);
   }
   if (mine !== generation) return true;
+  if (fromTap) track(heard ? "replay" : "tap", "sound");
   heard = true;
   setState("playing");
   perform("sound", () => audio.currentTime);
@@ -225,7 +229,8 @@ function untouched(): boolean {
 
 function stop(): void {
   audio.pause();
-  finish();
+  track("stop", "sound");
+  finish(false);
 }
 
 button.addEventListener("click", () => {
@@ -262,6 +267,8 @@ addEventListener("resize", () => {
 });
 
 // ---------- start ----------
+
+track("view", still ? "still" : "motion");
 
 if (still) {
   root.classList.add("is-still");
