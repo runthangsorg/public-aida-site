@@ -32,7 +32,7 @@ const QUADRANTS = [
 export function renderSwot(summary: Summary): string {
   const cells = QUADRANTS.map(
     ([key, label, cls]) =>
-      `<section class="q q-${cls}" aria-label="${label}"><h3>${label}</h3>${items(summary[key])}</section>`,
+      `<section class="q q-${cls}" data-l="${cls.toUpperCase()}"><h3>${label}</h3>${items(summary[key])}</section>`,
   ).join("");
   return (
     `<figure class="swot">` +

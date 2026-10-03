@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f1e8d4" />
+    <title>Talk to Aida</title>
+    <meta name="description" content="A 20-minute spoken conversation about how your business runs. Aida takes notes as you talk and shows you a summary at the end." />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/anton.woff2" as="font" type="font/woff2" crossorigin />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" /></symbol>
+      <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M15 10V6a3 3 0 0 0-5.6-1.5M9 9v2a3 3 0 0 0 4.6 2.5M5.5 11a6.5 6.5 0 0 0 10.4 5.2M18.5 11a6.4 6.4 0 0 1-.5 2.5M12 17.5V21M8.5 21h7M4 4l16 16" /></symbol>
+      <symbol id="i-keys" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5" /><path d="M6.5 10h1M10.5 10h1M14.5 10h1M17.5 10h.5M7.5 14h9" /></symbol>
+      <symbol id="i-end" viewBox="0 0 24 24"><path d="M3.5 14.5c4.7-4.6 12.3-4.6 17 0l-2.2 2.2-3.2-1.6v-2.6a9 9 0 0 0-6.2 0v2.6l-3.2 1.6z" /></symbol>
+      <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3.5h9l3.5 3.5v13.5H6zM15 3.5V7h3.5M9 11h6.5M9 14.5h6.5M9 18h4" /></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" /><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.5" /><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.5" /><rect x="13" y="13" width="7.5" height="7.5" rx="1.5" /></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12h14M12.5 6l6 6-6 6" /></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" /></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4.5 12h14M13 6.5l5.5 5.5-5.5 5.5" /></symbol>
+    </svg>
+
+    <!-- Her face: the home page's drawn portrait, with the same mouth and blink patches. -->
+    <template id="face">
+      <div class="head" data-mouth="closed">
+        <div class="shadow"></div>
+        <img class="fig" src="/aida/aida-640.webp" srcset="/aida/aida-640.webp 640w, /aida/aida.webp 1024w" sizes="(min-width: 900px) 560px, 92vw" width="1024" height="1024" alt="" />
+        <img class="mouth m-small" src="/aida/mouth-small.webp" alt="" />
+        <img class="mouth m-mid" src="/aida/mouth-mid.webp" alt="" />
+        <img class="mouth m-wide" src="/aida/mouth-wide.webp" alt="" />
+        <img class="mouth m-round" src="/aida/mouth-round.webp" alt="" />
+        <img class="mouth m-pucker" src="/aida/mouth-pucker.webp" alt="" />
+        <img class="blink" src="/aida/blink.webp" alt="" />
+      </div>
+    </template>
+
+    <div class="app" id="app" data-screen="intro">
+      <a class="mark" href="/" aria-label="Aida, home page">Aida</a>
+
+      <!-- ===================== 1. What happens ===================== -->
+      <section class="screen screen-intro" id="intro" aria-labelledby="intro-title">
+        <div class="portrait" data-face aria-hidden="true">
+          <div class="rays"></div>
+          <div class="dots"></div>
+        </div>
+        <div class="copy">
+          <h1 id="intro-title" class="display">Tell Aida how your business runs</h1>
+          <p class="lede">
+            A spoken conversation of about twenty minutes. She asks about your organisation, the tools you use, how the
+            work flows and what gets in the way, and she writes it down as you talk.
+          </p>
+          <ul class="steps">
+            <li>
+              <svg class="ic" aria-hidden="true"><use href="#i-mic" /></svg>
+              <span><strong>You talk, she listens.</strong> About 20 minutes, out loud. You can type an answer whenever you like.</span>
+            </li>
+            <li>
+              <svg class="ic" aria-hidden="true"><use href="#i-note" /></svg>
+              <span><strong>Her notes fill in as you go,</strong> so you can see what she heard and put her right.</span>
+            </li>
+            <li>
+              <svg class="ic" aria-hidden="true"><use href="#i-grid" /></svg>
+              <span><strong>You see a summary at the end:</strong> strengths, weaknesses, opportunities, threats, and the crux.</span>
+            </li>
+          </ul>
+          <form class="consent" id="consent-form" novalidate>
+            <label class="check">
+              <input type="checkbox" id="consent" name="consent" aria-describedby="consent-error" />
+              <span class="box" aria-hidden="true"></span>
+              <span>
+                I agree that the conversation is recorded and transcribed, and a summary is sent to the Aida team.
+                <a href="/privacy/">How we handle it</a>
+              </span>
+            </label>
+            <p class="field-error" id="consent-error" hidden></p>
+            <button class="btn btn-go" type="submit">
+              Start <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+            </button>
+            <p class="aside">Find a quiet spot. Your browser will ask to use the microphone.</p>
+          </form>
+        </div>
+      </section>
+
+      <!-- ===================== 2. About you ===================== -->
+      <section class="screen screen-details" id="details" aria-labelledby="details-title" hidden>
+        <div class="sheet">
+          <header class="sheet-head">
+            <div class="avatar" data-face aria-hidden="true"></div>
+            <div>
+              <h1 id="details-title" class="display">First, a little about you</h1>
+              <p class="lede">So she knows who she is talking to. It takes a minute.</p>
+            </div>
+          </header>
+          <form id="details-form" class="form" novalidate>
+            <div class="alert" id="form-alert" role="alert" hidden></div>
+            <div class="grid">
+              <div class="field">
+                <label for="f-name">Your name</label>
+                <input id="f-name" name="name" type="text" autocomplete="name" maxlength="80" required aria-describedby="e-name" />
+                <p class="field-error" id="e-name" hidden></p>
+              </div>
+              <div class="field">
+                <label for="f-role">Your role</label>
+                <input id="f-role" name="role" type="text" autocomplete="organization-title" maxlength="80" required aria-describedby="e-role" placeholder="Owner, operations lead…" />
+                <p class="field-error" id="e-role" hidden></p>
+              </div>
+              <div class="field">
+                <label for="f-company">Company</label>
+                <input id="f-company" name="company" type="text" autocomplete="organization" maxlength="120" required aria-describedby="e-company" />
+                <p class="field-error" id="e-company" hidden></p>
+              </div>
+              <div class="field">
+                <label for="f-industry">Industry</label>
+                <input id="f-industry" name="industry" type="text" maxlength="80" required aria-describedby="e-industry" placeholder="Construction, care, retail…" />
+                <p class="field-error" id="e-industry" hidden></p>
+              </div>
+              <div class="field">
+                <label for="f-email">Work email</label>
+                <input id="f-email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="160" required aria-describedby="e-email" />
+                <p class="field-error" id="e-email" hidden></p>
+              </div>
+              <div class="field">
+                <label for="f-phone">Phone <span class="opt">optional</span></label>
+                <input id="f-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" aria-describedby="e-phone" />
+                <p class="field-error" id="e-phone" hidden></p>
+              </div>
+              <fieldset class="field field-wide" aria-describedby="e-teamSize">
+                <legend>How many people work there?</legend>
+                <div class="chips" id="team-sizes"></div>
+                <p class="field-error" id="e-teamSize" hidden></p>
+              </fieldset>
+            </div>
+            <div class="actions">
+              <button class="btn btn-quiet" type="button" id="details-back">Back</button>
+              <button class="btn btn-go" type="submit" id="details-go">
+                <span class="label">Continue</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ===================== 3. The microphone ===================== -->
+      <section class="screen screen-mic" id="mic" aria-labelledby="mic-title" hidden>
+        <div class="sheet sheet-narrow">
+          <div class="avatar avatar-lg" data-face aria-hidden="true"></div>
+          <h1 id="mic-title" class="display">Can she hear you?</h1>
+          <p class="lede" id="mic-text">Your browser is asking to use your microphone. Choose Allow and the conversation starts.</p>
+          <p class="wait" id="mic-wait"><span class="spinner" aria-hidden="true"></span> Waiting for your browser…</p>
+          <div class="actions" id="mic-actions" hidden>
+            <button class="btn btn-quiet" type="button" id="mic-type">Type instead</button>
+            <button class="btn btn-go" type="button" id="mic-retry">Try again</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== 4. The conversation ===================== -->
+      <section class="screen screen-room" id="room" aria-labelledby="room-title" hidden>
+        <h1 id="room-title" class="visually-hidden">Your conversation with Aida</h1>
+        <header class="bar">
+          <div class="where">
+            <p class="stage-now"><span id="stage-label">Getting ready</span> <span class="count" id="stage-count"></span></p>
+            <ol class="stages" id="stages" aria-label="Interview stages"></ol>
+          </div>
+          <p class="clock" aria-label="Time so far">
+            <span class="t" id="clock" role="timer" aria-live="off">0:00</span>
+            <span class="of" id="clock-of">of about 20 min</span>
+          </p>
+        </header>
+
+        <div class="stage" id="stage" data-face>
+          <div class="rays" aria-hidden="true"></div>
+          <div class="dots" aria-hidden="true"></div>
+          <div class="halo" aria-hidden="true"></div>
+          <p class="status" id="status" data-state="connecting">
+            <i class="dot" aria-hidden="true"></i><span id="status-text">Connecting</span>
+          </p>
+        </div>
+
+        <div class="captions" id="captions">
+          <div class="line line-aida" id="line-aida" hidden>
+            <p class="who">Aida</p>
+            <p class="said" id="said-aida"></p>
+          </div>
+          <div class="line line-you" id="line-you" hidden>
+            <p class="who" id="who-you">You</p>
+            <p class="said" id="said-you"></p>
+          </div>
+          <p class="hint" id="hint">She will start in a moment. Talk as you would on a call; you can interrupt her.</p>
+        </div>
+        <p class="visually-hidden" id="announce" aria-live="polite"></p>
+        <p class="visually-hidden" id="link-status" role="status"></p>
+
+        <form class="typer" id="typer" hidden>
+          <label class="visually-hidden" for="typed">Type your answer</label>
+          <input id="typed" type="text" maxlength="2000" autocomplete="off" placeholder="Type your answer…" enterkeyhint="send" />
+          <button class="btn btn-go btn-icon" type="submit" aria-label="Send">
+            <svg class="ic" aria-hidden="true"><use href="#i-send" /></svg>
+          </button>
+        </form>
+
+        <aside class="notebook" id="notebook" aria-labelledby="nb-title" data-open="false">
+          <button class="nb-peek" type="button" id="nb-toggle" aria-expanded="false" aria-controls="nb-body">
+            <svg class="ic" aria-hidden="true"><use href="#i-note" /></svg>
+            <span class="nb-count" id="nb-count">Notes</span>
+            <span class="nb-latest" id="nb-latest">She writes here as you talk</span>
+            <svg class="ic chev" aria-hidden="true"><use href="#i-up" /></svg>
+          </button>
+          <div class="nb-body" id="nb-body">
+            <header class="nb-head">
+              <h2 id="nb-title">Aida’s notes</h2>
+              <button class="btn-icon nb-close" type="button" id="nb-close" aria-label="Close notes">
+                <svg class="ic" aria-hidden="true"><use href="#i-close" /></svg>
+              </button>
+            </header>
+            <p class="nb-empty" id="nb-empty">She writes down what she learns as you talk. If she gets something wrong, just tell her.</p>
+            <div class="nb-groups" id="nb-groups" aria-live="polite" aria-relevant="additions"></div>
+          </div>
+        </aside>
+
+        <div class="controls" id="controls">
+          <button class="ctl" type="button" id="mute" aria-pressed="false">
+            <span class="ctl-ic">
+              <svg class="ic on" aria-hidden="true"><use href="#i-mic" /></svg>
+              <svg class="ic off" aria-hidden="true"><use href="#i-mic-off" /></svg>
+              <i class="meter" aria-hidden="true"></i>
+            </span>
+            <span class="ctl-label" id="mute-label">Mute</span>
+          </button>
+          <button class="ctl" type="button" id="type" aria-expanded="false" aria-controls="typer">
+            <span class="ctl-ic"><svg class="ic" aria-hidden="true"><use href="#i-keys" /></svg></span>
+            <span class="ctl-label">Type</span>
+          </button>
+          <button class="ctl ctl-end" type="button" id="end">
+            <span class="ctl-ic"><svg class="ic" aria-hidden="true"><use href="#i-end" /></svg></span>
+            <span class="ctl-label">End</span>
+          </button>
+        </div>
+        <div class="confirm" id="confirm" role="group" aria-labelledby="confirm-q" hidden>
+          <p id="confirm-q">End the conversation now?</p>
+          <button class="btn btn-quiet" type="button" id="confirm-no">Keep talking</button>
+          <button class="btn btn-stop" type="button" id="confirm-yes">End now</button>
+        </div>
+      </section>
+
+      <!-- ===================== 5. What she heard ===================== -->
+      <section class="screen screen-end" id="end-screen" aria-labelledby="end-title" hidden>
+        <header class="end-head">
+          <div class="avatar avatar-lg" data-face aria-hidden="true"></div>
+          <div>
+            <h1 id="end-title" class="display" tabindex="-1">Thank you</h1>
+            <p class="lede" id="end-lede">Here is what Aida heard. The Aida team will read it and be in touch soon.</p>
+          </div>
+        </header>
+        <div class="readback" id="readback"></div>
+        <footer class="end-foot">
+          <p id="end-meta"></p>
+          <a class="btn btn-quiet" href="/">Back to the home page</a>
+        </footer>
+      </section>
+    </div>
+    <script type="module" src="/src/talk/main.ts"></script>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 # Aida — coming soon
 
-A coming-soon page styled like a riso-printed broadcast. A sunburst spins open, Aida pops up
+A coming-soon page styled like a riso-printed broadcast, and an interview room at `/talk/`. A sunburst spins open, Aida pops up
 and says hello, and big words stamp down as she speaks them, with the colours changing on every
 phrase. She is drawn and she talks: her mouth follows the recording's lip-sync cues, and she
 blinks and sways.
@@ -26,6 +26,31 @@ npm ci
 npm run dev        # local server
 npm run check      # typecheck, lint, tests, build, bundle budget
 ```
+
+## Talk to her: `/talk/`
+
+A second page runs a spoken interview of about twenty minutes: a short consent screen, a
+details form, the microphone, then a live room where she talks (Gemini Live audio through this
+site's own `/api/talk` socket), captions both sides, fills a notebook grouped by section and
+moves a stage bar; it ends on a SWOT read-back. The browser half lives in `src/talk/`; the
+server half is not in this repository.
+
+- Pure, tested modules: `pcm.ts` (PCM16 and resampling), `protocol.ts` and `state.ts` (frames
+  into what the room shows), `swot.ts` (the read-back, escaped), `details.ts`, `mouth.ts`.
+- Light on a weak laptop: nothing animates while the room is quiet; her mouth is read from the
+  playback analyser about 15 times a second, only while she speaks; the microphone worklet posts
+  every 64 ms, not every render quantum; the paper grain is a 2 KB tile. Four cores or fewer,
+  4 GB of memory or less, or reduced motion: a still face and a "speaking" ring instead.
+
+Try it without the backend, against a local stand-in that speaks the same protocol:
+
+```sh
+npm run build
+node scripts/talk-mock.mjs --voice      # then open http://localhost:8790/talk/
+```
+
+`--scenario nosummary|drop|quiet` and `--pace` change the script; the file's header lists the
+`/mock/*` controls used for scripted screenshots.
 
 ## Re-record her line
 

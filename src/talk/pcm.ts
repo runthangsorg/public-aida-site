@@ -108,19 +108,22 @@ export class Resampler {
       this.last = frame[0] ?? 0;
       this.pos = 0;
     }
-    const at = (i: number): number => (i < 0 ? this.last : (frame[i] ?? 0));
-    const out: number[] = [];
     // Interpolate between index floor(pos) and floor(pos)+1, both of which
     // must already be known: the last usable position is frame.length - 1.
-    while (this.pos <= frame.length - 1) {
-      const lo = Math.floor(this.pos);
-      const t = this.pos - lo;
-      out.push(at(lo) * (1 - t) + at(lo + 1) * t);
-      this.pos += this.step;
+    const end = frame.length - 1;
+    const count = this.pos <= end ? Math.floor((end - this.pos) / this.step) + 1 : 0;
+    const out = new Float32Array(count);
+    for (let k = 0; k < count; k++) {
+      const pos = this.pos + k * this.step;
+      const lo = Math.floor(pos);
+      const t = pos - lo;
+      const a = lo < 0 ? this.last : (frame[lo] ?? 0);
+      const b = frame[lo + 1] ?? 0;
+      out[k] = a * (1 - t) + b * t;
     }
-    this.pos -= frame.length;
-    this.last = frame[frame.length - 1] ?? 0;
-    return Float32Array.from(out);
+    this.pos += count * this.step - frame.length;
+    this.last = frame[end] ?? 0;
+    return out;
   }
 }
 
