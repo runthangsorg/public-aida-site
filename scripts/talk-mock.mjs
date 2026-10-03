@@ -25,7 +25,7 @@
 // 404, 429 or 503, to show those messages.
 
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 
@@ -386,8 +386,15 @@ async function serveFile(req, res) {
   let file = join(DIR, path);
   if (!file.startsWith(DIR)) return json(res, 403, { error: "forbidden" });
   try {
-    if ((await stat(file)).isDirectory()) file = join(file, "index.html");
-    const data = await readFile(file);
+    // Read first and fall back on a directory, rather than stat-then-read (a check-then-use race).
+    let data;
+    try {
+      data = await readFile(file);
+    } catch (err) {
+      if (err?.code !== "EISDIR") throw err;
+      file = join(file, "index.html");
+      data = await readFile(file);
+    }
     res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", "Cache-Control": "no-store" });
     res.end(data);
   } catch {
