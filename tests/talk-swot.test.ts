@@ -3,7 +3,7 @@ import type { Summary } from "../src/talk/protocol";
 import { groupNotes } from "../src/talk/state";
 import { escapeHtml, renderNotes, renderSummary, renderSwot } from "../src/talk/swot";
 import { checkDetails, refusal, startBody } from "../src/talk/details";
-import { mouthFor, shapeFromWaveform } from "../src/talk/mouth";
+import { mouthFor, shapeFromSpectrum } from "../src/talk/mouth";
 
 const summary: Summary = {
   strengths: ["A loyal team", "Clear pricing"],
@@ -114,32 +114,45 @@ describe("the details form", () => {
 
 describe("her mouth in a live conversation", () => {
   const RATE = 24_000;
-  const tone = (hz: number, amp: number): Float32Array =>
-    Float32Array.from({ length: 256 }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / RATE));
-  const hiss = (amp: number): Float32Array => Float32Array.from({ length: 256 }, (_, i) => (i % 2 ? amp : -amp));
+  const BINS = 512; // FFT_SIZE 1024
+  /** A dB spectrum with a quiet floor and peaks at the given frequencies. */
+  const spectrum = (peaks: [number, number][]): Float32Array => {
+    const db = new Float32Array(BINS).fill(-110);
+    const binHz = RATE / (2 * BINS);
+    for (const [hz, level] of peaks) {
+      const c = Math.round(hz / binHz);
+      for (let d = -2; d <= 2; d++) if (c + d > 0 && c + d < BINS) db[c + d] = level - Math.abs(d) * 6;
+    }
+    return db;
+  };
+  const wave = (amp: number): Float32Array => Float32Array.from({ length: 1024 }, (_, i) => amp * Math.sin((2 * Math.PI * 220 * i) / RATE));
+  const read = (peaks: [number, number][], amp = 0.3) => {
+    const out = { open: 0, spread: 0.5, peak: 0.3 };
+    shapeFromSpectrum(spectrum(peaks), wave(amp), RATE, out);
+    return out;
+  };
 
-  it("is closed and neutral in silence, and in near-silence", () => {
-    const out = shapeFromWaveform(new Float32Array(256), { open: 1, spread: 0 });
-    expect(out).toEqual({ open: 0, spread: 0.5 });
+  it("is closed and neutral in silence", () => {
+    const out = shapeFromSpectrum(spectrum([]), new Float32Array(1024), RATE, { open: 1, spread: 0 });
+    expect([out.open, out.spread]).toEqual([0, 0.5]);
     expect(mouthFor(out)).toBe("closed");
-    expect(shapeFromWaveform(tone(200, 0.005), { open: 1, spread: 0 }).open).toBe(0);
   });
 
-  it("opens with loudness", () => {
-    const quiet = shapeFromWaveform(tone(200, 0.06), { open: 0, spread: 0 });
-    const loud = shapeFromWaveform(tone(200, 0.3), { open: 0, spread: 0 });
-    expect(quiet.open).toBeGreaterThan(0.1);
-    expect(loud.open).toBeGreaterThan(quiet.open);
-    expect(loud.open).toBeLessThanOrEqual(1);
+  it("tells vowels apart by their formants (owner, 3 Oct: the shapes did not match the words)", () => {
+    expect(mouthFor(read([[750, -20], [1200, -24]]))).toBe("wide"); // "ah": jaw open
+    expect(mouthFor(read([[500, -20], [900, -24]]))).toBe("round"); // "oh": rounded, half open
+    expect(mouthFor(read([[320, -20], [800, -24]]))).toBe("pucker"); // "oo": rounded, nearly closed
+    expect(mouthFor(read([[300, -20], [2300, -24]]))).toBe("small"); // "ee": spread, jaw closed
   });
 
-  it("rounds on a slow vowel-like wave and spreads on hiss", () => {
-    const vowel = shapeFromWaveform(tone(200, 0.3), { open: 0, spread: 0 });
-    const sibilant = shapeFromWaveform(hiss(0.3), { open: 0, spread: 0 });
-    expect(vowel.spread).toBe(0);
-    expect(sibilant.spread).toBe(1);
-    expect(mouthFor(vowel)).toBe("round");
-    expect(mouthFor(sibilant)).toBe("wide");
+  it("gives the small mouth for hiss", () => {
+    expect(mouthFor(read([[6000, -15], [7000, -15], [500, -60]]))).toBe("small"); // "s"
+  });
+
+  it("scales opening to her own recent loudness, so a quiet voice still moves the mouth", () => {
+    const quiet = { open: 0, spread: 0.5, peak: 0.05 };
+    shapeFromSpectrum(spectrum([[750, -20], [1200, -24]]), wave(0.04), RATE, quiet);
+    expect(quiet.open).toBeGreaterThan(0.5);
   });
 
   it("picks each of the drawn mouths somewhere in its range", () => {

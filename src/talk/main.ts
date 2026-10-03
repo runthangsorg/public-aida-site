@@ -544,6 +544,12 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
       setTimeout(() => {
         li.classList.remove("fresh");
       }, 2600);
+      // Where the notebook is open in the room (desktop, tall phones), bring the
+      // new note into view; a closed sheet is left alone.
+      const body = li.closest<HTMLElement>(".nb-body");
+      if (body && getComputedStyle(body).visibility !== "hidden") {
+        li.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+      }
     }
   }
   const count = s.notes.length;
@@ -608,10 +614,11 @@ let mouthSince = 0;
 
 function setMouth(next: Mouth, force = false): void {
   if (next === mouth) return;
-  // Each drawing is held for 200 ms at least, so a syllable reads as a shape
-  // and the page redraws five times a second at most; closing is immediate.
+  // Each drawing is held for 110 ms at least: long enough to read as a shape,
+  // short enough to follow syllables (200 ms lagged a word behind); closing is
+  // immediate.
   const now = performance.now();
-  if (!force && next !== "closed" && now - mouthSince < 200) return;
+  if (!force && next !== "closed" && now - mouthSince < 110) return;
   mouthSince = now;
   const before = mouthImages.get(mouth);
   if (before) before.style.opacity = "0";

@@ -723,7 +723,9 @@ input[aria-invalid="true"]:hover {
   height: 100svh;
   min-height: 560px;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+  /* Her window is a fixed, modest size and the captions take the spare height:
+     the owner asked for Aida smaller and more room for the notes and progress. */
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   grid-template-areas:
     "bar"
     "stage"
@@ -829,6 +831,9 @@ input[aria-invalid="true"]:hover {
   position: relative;
   container-type: size;
   contain: layout paint style;
+  justify-self: center;
+  width: min(calc(100% - 2 * var(--gutter)), 30svh, 270px);
+  aspect-ratio: 1 / 1;
   margin: 0 var(--gutter);
   overflow: hidden;
   border-radius: 26px;
@@ -1768,8 +1773,8 @@ input[aria-invalid="true"]:hover {
   }
 
   .screen-room {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 30vw);
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 42vw);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
     grid-template-areas:
       "bar bar"
       "stage notes"
@@ -1832,7 +1837,7 @@ input[aria-invalid="true"]:hover {
 
   .stage {
     justify-self: center;
-    width: min(100%, 720px);
+    width: min(100%, 44vh, 420px);
     margin: 0;
   }
 
@@ -1917,6 +1922,60 @@ input[aria-invalid="true"]:hover {
   }
 }
 
+/* Phones and tablets with the height for it: the notebook sits open in the
+   room, under her captions, instead of behind a one-line strip, so the space a
+   smaller Aida frees goes to the notes (owner, 3 Oct). Short screens keep the
+   strip and its sheet. */
+@media (max-width: 999px) and (min-height: 700px) {
+  .screen-room {
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  }
+
+  .notebook {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 10px var(--gutter) 0;
+    overflow: hidden;
+    border-radius: 20px;
+    background:
+      linear-gradient(90deg, transparent 22px, rgb(236 79 147 / 0.4) 22px 23.5px, transparent 23.5px),
+      var(--paper-hi);
+    box-shadow: 0 0 0 1.5px var(--rule);
+  }
+
+  .nb-peek,
+  .nb-close {
+    display: none;
+  }
+
+  .nb-body,
+  .notebook[data-open="true"] .nb-body {
+    position: static;
+    flex: 1;
+    height: auto;
+    padding: 0 16px 16px 36px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    visibility: visible;
+    transition: none;
+  }
+
+  .notebook[data-open="true"]::before {
+    display: none;
+  }
+
+  .nb-head {
+    padding: 12px 0 2px;
+  }
+
+  .nb-head h2 {
+    font-size: 22px;
+  }
+}
+
 /* ---------- motion ---------- */
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1985,4 +2044,9 @@ input[aria-invalid="true"]:hover {
     transform: scaleX(1);
     opacity: 0;
   }
+}
+
+/* A note scrolled into view stops below the notebook's sticky heading. */
+.nb-body li {
+  scroll-margin-top: 64px;
 }
