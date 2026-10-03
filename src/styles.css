@@ -136,7 +136,9 @@ body {
   position: absolute;
   left: 50%;
   top: var(--face-y);
-  width: 240vmax;
+  /* Big enough to cover the page from her face outwards, and no bigger: this was 240vmax and
+     rotating, a ~4600px square texture recomposited every frame, which lagged weak laptops. */
+  width: 170vmax;
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   z-index: 0;
@@ -149,9 +151,6 @@ body {
   background: repeating-conic-gradient(from 0deg, var(--ray) 0deg 7.5deg, transparent 7.5deg 15deg);
 }
 
-.is-settled .rays {
-  animation: turn 90s linear infinite;
-}
 
 .halftone {
   position: absolute;
@@ -173,6 +172,8 @@ body {
   transform: translate(-50%, -50%) scale(calc(0.92 + var(--level) * 0.3));
   transition: transform 90ms linear;
   z-index: 1;
+  /* Its own layer, so the glow pulsing never repaints the sunburst behind it. */
+  will-change: transform;
 }
 
 /* ---------- her ---------- */
@@ -186,6 +187,8 @@ body {
   aspect-ratio: 1;
   translate: -50% 0;
   z-index: 2;
+  /* Her own layer: the mouth and blink frames repaint her, not the page behind her. */
+  will-change: transform;
 }
 
 .sway,
@@ -203,7 +206,7 @@ body {
   transform-origin: 50% 80%;
 }
 
-.is-settled .sway {
+.is-talking .sway {
   animation: sway 6s ease-in-out infinite;
 }
 
@@ -381,8 +384,7 @@ body {
   line-height: 1.1;
   text-transform: uppercase;
   rotate: -9deg;
-  mix-blend-mode: multiply;
-  background: rgb(251 245 232 / 0.55);
+  background: rgb(251 245 232 / 0.7);
 }
 
 .is-motion .stamp {
@@ -547,15 +549,15 @@ body {
 
 /* ---------- motion ---------- */
 
-/* Paper grain over everything, like ink on stock. */
+/* Paper grain over everything, like ink on stock. Static, page-sized and plainly blended: an
+   animated, oversized multiply layer forced every pixel of the page to be re-blended each frame. */
 .scene::after {
   content: "";
   position: absolute;
-  inset: -40%;
+  inset: 0;
   z-index: 5;
   background-image: url("/grain.svg");
-  opacity: 0.1;
-  mix-blend-mode: multiply;
+  opacity: 0.06;
   pointer-events: none;
 }
 
@@ -568,19 +570,17 @@ body {
   display: none;
 }
 
-.is-motion .scene::after {
-  animation: grain 0.9s steps(5) infinite;
+
+/* Weak devices (few cores or little memory): she still talks and the mouth still moves; the
+   decorative motion goes. */
+.is-lite.is-talking .sway,
+.is-lite.is-talking .bob {
+  animation: none;
 }
 
 .is-hidden *,
 .is-hidden .scene::after {
   animation-play-state: paused !important;
-}
-
-@keyframes turn {
-  to {
-    rotate: 360deg;
-  }
 }
 
 @keyframes sway {
@@ -631,26 +631,6 @@ body {
   }
 }
 
-@keyframes grain {
-  0% {
-    transform: translate(0, 0);
-  }
-  20% {
-    transform: translate(-3%, 2%);
-  }
-  40% {
-    transform: translate(2%, -3%);
-  }
-  60% {
-    transform: translate(-2%, -1%);
-  }
-  80% {
-    transform: translate(3%, 3%);
-  }
-  100% {
-    transform: translate(0, 0);
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .halo,
