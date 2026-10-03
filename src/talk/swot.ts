@@ -5,7 +5,7 @@
 // string is escaped; nothing here trusts its input.
 
 import type { Summary } from "./protocol";
-import type { NoteGroup } from "./state";
+import { noteStamp, type NoteGroup } from "./state";
 
 export function escapeHtml(text: string): string {
   return text
@@ -76,7 +76,7 @@ export function renderNotes(groups: readonly NoteGroup[]): string {
     .map(
       (g) =>
         `<section class="nb-group" data-section="${escapeHtml(g.section)}"><h3>${escapeHtml(g.label)}</h3>` +
-        `<ul>${g.notes.map((n) => `<li>${escapeHtml(n.text)}</li>`).join("")}</ul></section>`,
+        `<ul>${g.notes.map((n) => `<li><time class="note-time">${noteStamp(n.at)}</time>${escapeHtml(n.text)}</li>`).join("")}</ul></section>`,
     )
     .join("");
 }
