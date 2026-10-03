@@ -544,6 +544,12 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
       setTimeout(() => {
         li.classList.remove("fresh");
       }, 2600);
+      // Where the notebook is open in the room (desktop, tall phones), bring the
+      // new note into view; a closed sheet is left alone.
+      const body = li.closest<HTMLElement>(".nb-body");
+      if (body && getComputedStyle(body).visibility !== "hidden") {
+        li.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+      }
     }
   }
   const count = s.notes.length;
