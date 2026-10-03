@@ -10,7 +10,7 @@
 // would answer it as though it were the first thing said. On `interrupted`
 // the queue is flushed at once, so she stops when the person talks over her.
 
-import { FFT_SIZE, shapeFromWaveform, type MouthShape } from "./mouth";
+import { FFT_SIZE, SMOOTHING, shapeFromSpectrum, type MouthShape } from "./mouth";
 import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, base64ToBytes, encodePcm16, pcm16BytesToFloat, rateOf } from "./pcm";
 import { audioMessage, endMessage, parseFrame, socketUrl, textMessage, type ServerFrame } from "./protocol";
 
@@ -55,6 +55,7 @@ export class Voice {
   private output: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private wave: Float32Array<ArrayBuffer> | null = null;
+  private freq: Float32Array<ArrayBuffer> | null = null;
   private stream: MediaStream | null = null;
   private node: AudioWorkletNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
@@ -83,9 +84,11 @@ export class Voice {
     if (!this.lite && !this.analyser) {
       const analyser = this.output.createAnalyser();
       analyser.fftSize = FFT_SIZE;
+      analyser.smoothingTimeConstant = SMOOTHING;
       analyser.connect(this.output.destination);
       this.analyser = analyser;
       this.wave = new Float32Array(new ArrayBuffer(analyser.fftSize * 4));
+      this.freq = new Float32Array(new ArrayBuffer(analyser.frequencyBinCount * 4));
     }
     this.input ??= newContext(INPUT_RATE);
     for (const ctx of [this.output, this.input]) {
@@ -300,13 +303,14 @@ export class Voice {
 
   /** Her mouth right now, written into `out`. Closed when she is silent. */
   readMouth(out: MouthShape): MouthShape {
-    if (!this.analyser || !this.wave || this.queued <= 0) {
+    if (!this.analyser || !this.wave || !this.freq || !this.output || this.queued <= 0) {
       out.open = 0;
       out.spread = 0.5;
       return out;
     }
     this.analyser.getFloatTimeDomainData(this.wave);
-    return shapeFromWaveform(this.wave, out);
+    this.analyser.getFloatFrequencyData(this.freq);
+    return shapeFromSpectrum(this.freq, this.wave, this.output.sampleRate, out);
   }
 
   /** Close everything: socket, microphone, both contexts. */
