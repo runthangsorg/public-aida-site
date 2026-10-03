@@ -19,38 +19,11 @@ import { audioMessage, endMessage, parseFrame, socketUrl, textMessage, type Serv
 // collects 100 ms before posting, so the page hears from it 10 times a
 // second instead of once per 128-sample render quantum (375 times at 48 kHz):
 // on a weak laptop the main thread has better things to do.
-const CAPTURE = `
-class Capture extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    // The size is kept apart from the buffer: once a buffer is posted (transferred) its length reads 0.
-    this.size = Math.round(sampleRate * 0.1);
-    this.buf = new Float32Array(this.size);
-    this.n = 0;
-  }
-  process(inputs) {
-    const ch = inputs[0] && inputs[0][0];
-    if (!ch) return true;
-    let i = 0;
-    while (i < ch.length) {
-      const take = Math.min(this.size - this.n, ch.length - i);
-      this.buf.set(ch.subarray(i, i + take), this.n);
-      this.n += take;
-      i += take;
-      if (this.n === this.size) {
-        // Loudness is measured here, on the audio thread, not on the page's.
-        let sum = 0;
-        for (let k = 0; k < this.size; k++) sum += this.buf[k] * this.buf[k];
-        this.port.postMessage({ samples: this.buf, level: Math.sqrt(sum / this.size) }, [this.buf.buffer]);
-        this.buf = new Float32Array(this.size);
-        this.n = 0;
-      }
-    }
-    return true;
-  }
-}
-registerProcessor("aida-capture", Capture);
-`;
+/**
+ * The capture worklet ships as its own file (public/talk/capture-worklet.js), not a Blob URL: the
+ * site's Content-Security-Policy allows scripts from 'self' only, and a blob: module would be refused.
+ */
+const CAPTURE_URL = "/talk/capture-worklet.js";
 
 export type MicProblem = "insecure" | "unsupported" | "denied" | "missing" | "failed";
 
@@ -85,7 +58,6 @@ export class Voice {
   private stream: MediaStream | null = null;
   private node: AudioWorkletNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
-  private workletUrl: string | null = null;
   private resampler: Resampler | null = null;
   private readonly chunker = new FrameChunker();
   private socket: WebSocket | null = null;
@@ -161,7 +133,6 @@ export class Voice {
   private async attach(): Promise<void> {
     const stream = this.stream;
     if (!stream) return;
-    this.workletUrl ??= URL.createObjectURL(new Blob([CAPTURE], { type: "text/javascript" }));
     let ctx = this.input ?? newContext(INPUT_RATE);
     let source: MediaStreamAudioSourceNode;
     try {
@@ -175,7 +146,7 @@ export class Voice {
     }
     this.input = ctx;
     if (ctx.state !== "running") await ctx.resume().catch(() => undefined);
-    await ctx.audioWorklet.addModule(this.workletUrl);
+    await ctx.audioWorklet.addModule(CAPTURE_URL);
     const node = new AudioWorkletNode(ctx, "aida-capture");
     node.port.onmessage = (event: MessageEvent<{ samples: Float32Array; level: number }>) => {
       this.capture(event.data.samples, event.data.level);
@@ -348,8 +319,6 @@ export class Voice {
       socket.onclose = null;
       socket.close(1000, "done");
     }
-    if (this.workletUrl) URL.revokeObjectURL(this.workletUrl);
-    this.workletUrl = null;
     for (const ctx of [this.input, this.output]) void ctx?.close().catch(() => undefined);
     this.input = null;
     this.output = null;
