@@ -29,7 +29,7 @@ export type EndReason = "complete" | "ceiling" | "user" | "error";
 export type AidaFrame =
   | { type: "ready"; targetMinutes: number; sections: Stage[] }
   | { type: "section"; id: string }
-  | { type: "note"; section: string; text: string }
+  | { type: "note"; section: string; text: string; at?: number }
   | { type: "summary"; summary: Summary }
   | { type: "reconnecting" }
   | { type: "resumed" }

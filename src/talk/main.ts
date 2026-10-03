@@ -6,6 +6,7 @@ import { NOTE_SECTIONS, noteLabel, type NoteSection, type Stage } from "./protoc
 import {
   formatClock,
   groupNotes,
+  noteStamp,
   initialState,
   latestTurns,
   progress,
@@ -383,7 +384,7 @@ function enterRoom(typing: boolean): void {
   }
   voice.connect(session.id, {
     onFrame: (frame) => {
-      dispatch(frame);
+      dispatch(frame.kind === "aida" && frame.frame.type === "note" ? { ...frame, frame: { ...frame.frame, at: elapsed() } } : frame);
     },
     onClose: () => {
       onSocketClosed();
@@ -537,7 +538,10 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
   for (const note of s.notes) {
     if (known.has(note.id)) continue;
     const li = document.createElement("li");
-    li.textContent = note.text;
+    const stamp = document.createElement("time");
+    stamp.className = "note-time";
+    stamp.textContent = noteStamp(note.at);
+    li.append(stamp, note.text);
     if (prev) li.className = "fresh";
     noteGroup(note.section).append(li);
     if (prev) {
@@ -793,4 +797,34 @@ function showEnd(): void {
   byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(minutes))} min.${ceiling}`;
   app.dataset.ending = reason ?? "";
   show("end");
+  if (session) byId("choices", HTMLFormElement).hidden = false;
 }
+
+byId("choices", HTMLFormElement).addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!session) return;
+  const form = e.currentTarget as HTMLFormElement;
+  const status = byId("choices-status", HTMLParagraphElement);
+  const button = byId("choices-go", HTMLButtonElement);
+  const choices = [...form.querySelectorAll<HTMLInputElement>("input[name=choice]:checked")].map((i) => i.value);
+  const note = byId("choices-note", HTMLTextAreaElement).value;
+  if (!choices.length && !note.trim()) {
+    status.textContent = "Tick at least one, or write a note.";
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "Sending…";
+  fetch("/api/talk/choices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: session.id, choices, note }),
+  })
+    .then((r) => {
+      status.textContent = r.ok ? "Sent. Thank you." : "That did not send. Please try again.";
+      button.disabled = r.ok;
+    })
+    .catch(() => {
+      status.textContent = "That did not send. Please try again.";
+      button.disabled = false;
+    });
+});

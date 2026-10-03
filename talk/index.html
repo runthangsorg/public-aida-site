@@ -262,6 +262,21 @@
           </div>
         </header>
         <div class="readback" id="readback"></div>
+        <form class="choices" id="choices" hidden>
+          <h2 class="readback-title">Tell the Aida team what would help (optional)</h2>
+          <fieldset>
+            <legend class="visually-hidden">What would help</legend>
+            <label><input type="checkbox" name="choice" value="bespoke" /> Something made for us (bespoke)</label>
+            <label><input type="checkbox" name="choice" value="commodity" /> Ready-made tools</label>
+            <label><input type="checkbox" name="choice" value="integration" /> Connect the software we already use</label>
+            <label><input type="checkbox" name="choice" value="workflow" /> Automate a workflow</label>
+            <label><input type="checkbox" name="choice" value="call" /> A follow-up call</label>
+            <label><input type="checkbox" name="choice" value="summary_email" /> Email me this summary</label>
+          </fieldset>
+          <label class="choices-note">Anything to add? <textarea id="choices-note" maxlength="500" rows="2"></textarea></label>
+          <button class="btn" type="submit" id="choices-go">Send</button>
+          <p id="choices-status" role="status"></p>
+        </form>
         <footer class="end-foot">
           <p id="end-meta"></p>
           <a class="btn btn-quiet" href="/">Back to the home page</a>

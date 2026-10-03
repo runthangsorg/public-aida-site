@@ -2050,3 +2050,19 @@ input[aria-invalid="true"]:hover {
 .nb-body li {
   scroll-margin-top: 64px;
 }
+
+.note-time {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted, currentColor);
+  opacity: 0.65;
+}
+
+.choices { margin-top: 28px; display: grid; gap: 12px; }
+.choices fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.choices label { display: flex; gap: 10px; align-items: center; font-size: 17px; }
+.choices .choices-note { display: grid; gap: 6px; }
+.choices textarea { font: inherit; padding: 8px; }
+.choices .btn { justify-self: start; }

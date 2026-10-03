@@ -35,6 +35,14 @@ export interface Note {
   id: number;
   section: NoteSection;
   text: string;
+  /** Seconds into the conversation when she wrote it. */
+  at: number;
+}
+
+/** 4:07 style stamp for a note. */
+export function noteStamp(at: number): string {
+  const s = Math.max(0, Math.round(at));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** The socket's health, for the quiet status line. */
@@ -211,7 +219,7 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       s.stage = f.id;
       return s;
     case "note": {
-      const next = [...s.notes, { id: s.nextId++, section: noteSection(f.section), text: f.text }];
+      const next = [...s.notes, { id: s.nextId++, section: noteSection(f.section), text: f.text, at: f.at ?? 0 }];
       s.notes = next.length > MAX_NOTES ? next.slice(-MAX_NOTES) : next;
       return s;
     }

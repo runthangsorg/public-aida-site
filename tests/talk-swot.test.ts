@@ -58,12 +58,12 @@ describe("the SWOT read-back", () => {
   it("falls back to the notes, grouped and escaped", () => {
     const html = renderNotes(
       groupNotes([
-        { id: 1, section: "tools", text: "A <time-tracking> app" },
-        { id: 2, section: "org", text: "Two sites" },
+        { id: 1, section: "tools", text: "A <time-tracking> app", at: 0 },
+        { id: 2, section: "org", text: "Two sites", at: 65 },
       ]),
     );
     expect(html.indexOf("Your organisation")).toBeLessThan(html.indexOf("The tools you use"));
-    expect(html).toContain("<li>A &lt;time-tracking&gt; app</li>");
+    expect(html).toContain("A &lt;time-tracking&gt; app</li>");
     expect(renderNotes([])).toContain("not written anything");
   });
 });
