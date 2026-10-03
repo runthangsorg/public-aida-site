@@ -9,6 +9,9 @@ import { spokenCount, timeWords } from "./words";
 
 const root = document.documentElement;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** A weak device: few cores or little memory. It keeps the voice and the mouth, and drops the decoration. */
+const nav = navigator as Navigator & { deviceMemory?: number };
+const lite = still || (navigator.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
 
 function byId<T extends Element>(id: string, type: new () => T): T {
   const el = document.getElementById(id);
@@ -103,7 +106,12 @@ function frame(): void {
     let sum = 0;
     for (const s of samples) sum += ((s - 128) / 128) ** 2;
     level += (Math.min(1, Math.sqrt(sum / samples.length) * 4) - level) * 0.25;
-    root.style.setProperty("--level", level.toFixed(3));
+    // Restyle only on a visible change, and only the scene: a custom property on the root
+    // restyled the whole page every frame.
+    if (Math.abs(level - shownLevel) > 0.03) {
+      shownLevel = level;
+      scene.style.setProperty("--level", level.toFixed(2));
+    }
   }
   const due = spokenCount(words, t);
   while (shown < due) {
@@ -115,7 +123,7 @@ function frame(): void {
     span.className = "w now";
     span.textContent = w.word;
     spoken.append(span, " ");
-    if (!still) popWord(span);
+    if (!lite) popWord(span);
     shown++;
   }
   const b = beatAt(beats, t);
@@ -124,7 +132,7 @@ function frame(): void {
     scene.dataset.tone = String(b);
     const next = beats[b];
     if (next) stamp(bigword, next.text, still);
-    if (!still) jolt(art);
+    if (!lite) jolt(art);
   }
   const over = mode === "sound" ? audio.ended : t >= cues.duration;
   if (over) {
@@ -153,7 +161,8 @@ function finish(completed: boolean): void {
   scene.classList.remove("is-talking");
   scene.classList.add("is-done");
   level = 0;
-  root.style.setProperty("--level", "0");
+  shownLevel = 0;
+  scene.style.setProperty("--level", "0");
   spoken.querySelector(".now")?.classList.remove("now");
   setState(heard ? "done" : "muted");
 }
@@ -164,6 +173,7 @@ function finish(completed: boolean): void {
 let analyser: AnalyserNode | null = null;
 let samples: Uint8Array<ArrayBuffer> | null = null;
 let level = 0;
+let shownLevel = 0;
 
 function listen(): void {
   if (analyser || still) return;
@@ -268,6 +278,7 @@ addEventListener("resize", () => {
 
 // ---------- start ----------
 
+if (lite) scene.classList.add("is-lite");
 track("view", still ? "still" : "motion");
 
 if (still) {

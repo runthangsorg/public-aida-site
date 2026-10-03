@@ -86,8 +86,8 @@ export function stamp(host: HTMLElement, text: string, still: boolean): void {
     void old
       .animate(
         [
-          { opacity: 1, transform: "none", filter: "blur(0px)" },
-          { opacity: 0, transform: "scale(1.12) translateY(-8%)", filter: "blur(8px)" },
+          { opacity: 1, transform: "none" },
+          { opacity: 0, transform: "scale(1.12) translateY(-8%)" },
         ],
         { duration: 150, easing: "ease-in", fill: "forwards" },
       )
