@@ -837,7 +837,6 @@ input[aria-invalid="true"]:hover {
     0 0 0 2px var(--ink),
     0 26px 50px -30px rgb(35 44 92 / 0.6);
   isolation: isolate;
-  transition: box-shadow 200ms ease;
 }
 
 /* Each drawn mouth on its own small layer: switching mouths is an opacity
