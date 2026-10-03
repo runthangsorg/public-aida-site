@@ -38,9 +38,11 @@ server half is not in this repository.
 - Pure, tested modules: `pcm.ts` (PCM16 and resampling), `protocol.ts` and `state.ts` (frames
   into what the room shows), `swot.ts` (the read-back, escaped), `details.ts`, `mouth.ts`.
 - Light on a weak laptop: nothing animates while the room is quiet; her mouth is read from the
-  playback analyser about 15 times a second, only while she speaks; the microphone worklet posts
-  every 64 ms, not every render quantum; the paper grain is a 2 KB tile. Four cores or fewer,
-  4 GB of memory or less, or reduced motion: a still face and a "speaking" ring instead.
+  playback analyser's waveform 12 times a second, only while she speaks; the microphone worklet
+  and the socket move 100 ms frames, not one message per render quantum; the paper grain is a
+  2 KB tile. Four cores or fewer, 4 GB of memory or less, or reduced motion: a still face and a
+  "speaking" ring instead. Measured at 6x CPU throttle against the mock: about 4% of the main
+  thread while listening, 12–16% while she speaks, under 4 MB of JS heap.
 
 Try it without the backend, against a local stand-in that speaks the same protocol:
 
