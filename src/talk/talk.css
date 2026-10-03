@@ -1,0 +1,1988 @@
+/* Talk to Aida: a twenty-minute conversation. The same riso print as the home
+   page (cream stock, navy ink, a pink second colour, Anton for the big words)
+   but quieter: she is on air in a window, her words run underneath like a
+   lower third, and her notes fill a notebook beside her. Phone first. */
+
+@font-face {
+  font-family: Anton;
+  src: url("/fonts/anton.woff2") format("woff2");
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+
+  --paper: #f1e8d4;
+  --paper-hi: #fbf5e8;
+  --ink: #232c5c;
+  --ink-2: #33407a;
+  --muted: #4f5683; /* 5.8:1 on paper */
+  --pink: #ec4f93; /* decoration only: 2.8:1 is not enough for text */
+  --pink-ink: #a51f57; /* pink you can read: 5.9:1 on paper */
+  --orange: #f26b2a;
+  --gold: #f2b632;
+  --rule: rgb(35 44 92 / 0.16);
+  --line: rgb(35 44 92 / 0.32);
+
+  --tint-s: #f6dc9a;
+  --tint-w: #f7cfe0;
+  --tint-o: #d9dcef;
+  --tint-t: #f9d3bd;
+
+  --display: Anton, Impact, "Arial Narrow", sans-serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+  --gutter: 16px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scrollbar-color: var(--line) transparent;
+}
+
+/* The stock: a 2 KB tile of paper grain, painted once. No SVG filter, no
+   blend mode, nothing over the page that has to be recomposited. */
+body {
+  margin: 0;
+  min-height: 100svh;
+  background: var(--paper) url("/talk/paper.webp") 0 0 / 128px 128px repeat;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 18px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  caret-color: var(--pink-ink);
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--gold);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration-line: underline;
+  text-decoration-color: var(--pink);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-color: var(--ink);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.ic {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.display {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(42px, 10.5vw, 84px);
+  line-height: 0.94;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.lede {
+  margin: 14px 0 0;
+  max-width: 44ch;
+  color: var(--ink-2);
+  font-size: 19px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.mark {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  left: var(--gutter);
+  padding: 4px 2px;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+[data-screen="room"] .mark {
+  display: none;
+}
+
+/* ---------- her face ---------- */
+
+.head {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.head img {
+  position: absolute;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+.fig {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* A second impression of her in pink, a little off register: the riso print. */
+.shadow {
+  position: absolute;
+  inset: 0;
+  background: var(--pink);
+  mask: url("/aida/aida-640.webp") center / 100% 100% no-repeat;
+  translate: 1.4% 0.9%;
+  opacity: 0.9;
+}
+
+.mouth {
+  left: 41.504%;
+  top: 43.457%;
+  width: 18.066%;
+  height: 15.137%;
+  opacity: 0;
+}
+
+.blink {
+  left: 32.227%;
+  top: 29.297%;
+  width: 36.133%;
+  height: 13.672%;
+  opacity: 0;
+}
+
+.head[data-mouth="small"] .m-small,
+.head[data-mouth="mid"] .m-mid,
+.head[data-mouth="wide"] .m-wide,
+.head[data-mouth="round"] .m-round,
+.head[data-mouth="pucker"] .m-pucker,
+.head.is-blinking .blink {
+  opacity: 1;
+}
+
+/* The print behind her: soft rays, and halftone dots that thicken towards the edge. */
+.rays {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(
+    from -3.75deg at 50% 44%,
+    rgb(236 79 147 / 0.2) 0deg 7.5deg,
+    transparent 7.5deg 15deg
+  );
+}
+
+.dots {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgb(35 44 92 / 0.22) 1.1px, transparent 1.7px) 0 0 / 7px 7px;
+  mask: radial-gradient(closest-side at 50% 44%, transparent 55%, #000 120%);
+  pointer-events: none;
+}
+
+/* A small round portrait: details, microphone and the end. */
+.avatar {
+  position: relative;
+  flex: none;
+  width: 84px;
+  height: 84px;
+  overflow: hidden;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgb(35 44 92 / 0.18) 1px, transparent 1.6px) 0 0 / 6px 6px,
+    var(--tint-w);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.avatar .head {
+  position: absolute;
+  width: 190%;
+  left: -45%;
+  top: -22%;
+}
+
+.avatar .shadow {
+  display: none;
+}
+
+.avatar-lg {
+  width: 108px;
+  height: 108px;
+}
+
+/* ---------- buttons and fields ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 12px 24px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 160ms var(--out),
+    box-shadow 160ms var(--out),
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.btn-go {
+  background: var(--ink);
+  color: var(--paper-hi);
+  box-shadow: 0 2px 0 rgb(35 44 92 / 0.25), 0 10px 22px -10px rgb(35 44 92 / 0.6);
+}
+
+.btn-go:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 0 rgb(35 44 92 / 0.25), 0 14px 26px -10px rgb(35 44 92 / 0.65);
+}
+
+.btn-go:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgb(35 44 92 / 0.25), 0 4px 10px -6px rgb(35 44 92 / 0.6);
+}
+
+.btn-go .ic {
+  color: var(--gold);
+}
+
+.btn-quiet {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.btn-quiet:hover {
+  border-color: var(--ink);
+  background: rgb(35 44 92 / 0.05);
+}
+
+.btn-stop {
+  background: var(--pink-ink);
+  color: #fff;
+}
+
+.btn-stop:hover {
+  background: #8d1a4a;
+}
+
+.btn:disabled {
+  opacity: 0.65;
+  cursor: progress;
+  transform: none;
+}
+
+.btn-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  min-width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="tel"] {
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 16px;
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper-hi);
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  transition: border-color 140ms ease;
+}
+
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="tel"]:hover {
+  border-color: rgb(35 44 92 / 0.55);
+}
+
+input[type="text"]:focus-visible,
+input[type="email"]:focus-visible,
+input[type="tel"]:focus-visible {
+  border-color: var(--ink);
+  outline-offset: 2px;
+}
+
+input[aria-invalid="true"],
+input[aria-invalid="true"]:hover {
+  border-color: var(--pink-ink);
+  background: #fdf1f5;
+}
+
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  color: var(--pink-ink);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+/* ---------- 1. what happens ---------- */
+
+.screen-intro {
+  display: grid;
+  gap: 28px;
+  padding: 60px var(--gutter) 40px;
+}
+
+.portrait {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  aspect-ratio: 1 / 0.86;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 28px;
+  background: var(--paper-hi);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 24px 48px -28px rgb(35 44 92 / 0.55);
+}
+
+.portrait .head {
+  position: absolute;
+  left: 50%;
+  top: 5%;
+  width: 104%;
+  translate: -50% 0;
+}
+
+.copy {
+  max-width: 600px;
+}
+
+.steps {
+  display: grid;
+  gap: 14px;
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 14px;
+  align-items: start;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.steps .ic {
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+  border-radius: 50%;
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 1.5px var(--line);
+  color: var(--pink-ink);
+}
+
+.steps strong {
+  font-weight: 700;
+}
+
+.consent {
+  margin-top: 30px;
+  padding-top: 26px;
+  border-top: 2px solid var(--rule);
+}
+
+.check {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 14px;
+  align-items: start;
+  font-size: 17px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.check input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.check .box {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  margin-top: -2px;
+  border: 2px solid var(--ink);
+  border-radius: 9px;
+  background: var(--paper-hi);
+  transition: background-color 140ms ease;
+}
+
+.check .box::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 3px;
+  width: 9px;
+  height: 16px;
+  border: solid var(--paper-hi);
+  border-width: 0 3px 3px 0;
+  rotate: 45deg;
+  scale: 0;
+  transition: scale 160ms var(--out);
+}
+
+.check input:checked + .box {
+  background: var(--ink);
+}
+
+.check input:checked + .box::after {
+  scale: 1;
+}
+
+.check input:focus-visible + .box {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.check input[aria-invalid="true"] + .box {
+  border-color: var(--pink-ink);
+  box-shadow: 0 0 0 4px rgb(165 31 87 / 0.18);
+}
+
+.consent .field-error {
+  margin-left: 44px;
+}
+
+.consent .btn-go {
+  margin-top: 24px;
+  width: 100%;
+}
+
+.aside {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+  text-align: center;
+}
+
+/* ---------- 2 and 3. about you, the microphone ---------- */
+
+.screen-details,
+.screen-mic {
+  padding: 64px var(--gutter) 48px;
+}
+
+.sheet {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.sheet-head {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.sheet-head .display,
+.sheet-narrow .display {
+  font-size: clamp(36px, 8.6vw, 60px);
+}
+
+.sheet-head .lede {
+  margin-top: 8px;
+  font-size: 18px;
+}
+
+.form .grid {
+  display: grid;
+  gap: 20px 20px;
+}
+
+.field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.field > label,
+.field > legend {
+  display: block;
+  margin: 0 0 6px;
+  padding: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.opt {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 8px 18px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-hi);
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.chip:hover {
+  border-color: var(--ink);
+}
+
+.chip input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.chip:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper-hi);
+}
+
+.chip:has(input:focus-visible) {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.chip:has(input[aria-invalid="true"]) {
+  border-color: var(--pink-ink);
+}
+
+.alert {
+  margin: 0 0 22px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: #fbe4ec;
+  box-shadow: inset 0 0 0 2px var(--pink-ink);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.actions .btn-go {
+  flex: 1 1 200px;
+  max-width: 320px;
+  margin-left: auto;
+}
+
+.sheet-narrow {
+  max-width: 560px;
+  padding-top: 24px;
+  text-align: center;
+}
+
+.sheet-narrow .avatar {
+  margin: 0 auto 22px;
+}
+
+.sheet-narrow .lede {
+  margin-inline: auto;
+}
+
+.sheet-narrow .actions {
+  justify-content: center;
+}
+
+.sheet-narrow .actions .btn-go {
+  margin-left: 0;
+}
+
+.wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin: 26px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--rule);
+  border-top-color: var(--pink-ink);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+/* ---------- 4. the conversation ---------- */
+
+.screen-room {
+  display: grid;
+  height: 100svh;
+  min-height: 560px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-areas:
+    "bar"
+    "stage"
+    "captions"
+    "typer"
+    "notes"
+    "controls";
+  overflow: hidden;
+}
+
+.bar {
+  grid-area: bar;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 12px var(--gutter) 12px;
+}
+
+.where {
+  flex: 1;
+  min-width: 0;
+}
+
+.stage-now {
+  margin: 0 0 8px;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stage-now .count {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.stages {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stages li {
+  flex: 1;
+  min-width: 0;
+}
+
+.stages li::before {
+  content: "";
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--rule);
+  transition: background-color 400ms ease;
+}
+
+.stages li[data-status="done"]::before {
+  background: var(--ink);
+}
+
+.stages li[data-status="current"]::before {
+  background: var(--pink);
+}
+
+.st-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.clock {
+  contain: layout paint;
+  display: grid;
+  justify-items: end;
+  margin: 0;
+  line-height: 1;
+}
+
+.clock .t {
+  font-family: var(--display);
+  font-size: 30px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock .of {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.stage {
+  grid-area: stage;
+  position: relative;
+  container-type: size;
+  contain: layout paint style;
+  margin: 0 var(--gutter);
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--paper-hi);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 26px 50px -30px rgb(35 44 92 / 0.6);
+  isolation: isolate;
+}
+
+/* Each drawn mouth on its own small layer: switching mouths is an opacity
+   change the compositor does alone, with nothing repainted behind it. */
+.stage .mouth,
+.stage .blink {
+  will-change: opacity;
+}
+
+.stage .halo {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 92cqmin;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(251 245 232 / 0.95) 0 36%, rgb(251 245 232 / 0) 70%);
+  translate: -50% -50%;
+}
+
+/* Sized so she always runs off the bottom of the window, like the home page. */
+.stage .head {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 3cqh;
+  width: max(min(122cqw, 128cqh), 108cqh);
+  translate: -50% 0;
+}
+
+/* The on-air tag in the corner of her window, printed in ink. */
+.status {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper-hi);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.status .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--paper-hi);
+}
+
+.status[data-state="speaking"] .dot {
+  background: var(--pink);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.status[data-state="listening"] .dot {
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 3px rgb(251 245 232 / 0.3);
+}
+
+.status[data-state="muted"] .dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--paper-hi);
+}
+
+.status[data-state="connecting"] .dot,
+.status[data-state="ending"] .dot {
+  background: var(--gold);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.status[data-state="reconnecting"] .dot {
+  background: var(--orange);
+  animation: pulse 0.7s ease-in-out infinite;
+}
+
+.status[data-state="resumed"] .dot {
+  background: #2f8f5b;
+}
+
+/* The lower third: what she is saying now, and what you just said. */
+/* Contained, so a new word re-lays-out and repaints this box and nothing else. */
+.captions {
+  grid-area: captions;
+  contain: strict;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 192px;
+  padding: 14px calc(var(--gutter) + 4px) 0;
+  overflow: hidden;
+}
+
+.line {
+  min-height: 0;
+}
+
+.who {
+  margin: 0 0 3px;
+  color: var(--pink-ink);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.line-you .who {
+  color: var(--muted);
+}
+
+.line {
+  position: relative;
+}
+
+.said {
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  transition: color 300ms ease;
+}
+
+.said::-webkit-scrollbar {
+  display: none;
+}
+
+/* When earlier words have scrolled away, they fade under a band of paper. */
+.line[data-clipped="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  height: 1.3em;
+  background: linear-gradient(var(--paper), rgb(241 232 212 / 0));
+  pointer-events: none;
+}
+
+.line-aida[data-clipped="true"]::after {
+  font-size: 21px;
+}
+
+.line-aida .said {
+  max-height: calc(1.36em * 4);
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.36;
+}
+
+.line-you .said {
+  max-height: calc(1.42em * 2);
+  color: var(--ink-2);
+  font-size: 17px;
+  line-height: 1.42;
+}
+
+.captions[data-last="you"] .line-aida .said {
+  color: var(--muted);
+}
+
+.captions[data-last="aida"] .line-you .said {
+  color: var(--muted);
+}
+
+.hint {
+  margin: auto 0;
+  color: var(--muted);
+  font-size: 17px;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.typer {
+  grid-area: typer;
+  display: flex;
+  gap: 8px;
+  padding: 8px var(--gutter) 0;
+}
+
+.typer input {
+  border-radius: 999px;
+  padding-inline: 20px;
+}
+
+.typer .btn-icon {
+  background: var(--ink);
+  color: var(--gold);
+}
+
+/* The notebook: a strip with her newest note on a phone, a page beside her on a desk. */
+.notebook {
+  grid-area: notes;
+  min-width: 0;
+}
+
+.nb-peek {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 2 * var(--gutter));
+  min-height: 54px;
+  margin: 10px var(--gutter) 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 1.5px var(--rule);
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nb-peek .ic:first-child {
+  color: var(--pink-ink);
+}
+
+.nb-peek {
+  position: relative;
+  isolation: isolate;
+}
+
+/* A new note lights the strip for a moment: an opacity fade on its own layer. */
+.nb-peek::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tint-s);
+  opacity: 0;
+}
+
+.nb-peek.pulse::after {
+  animation: noted 1.6s var(--out);
+}
+
+.nb-count {
+  flex: none;
+  font-weight: 750;
+}
+
+.nb-latest {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nb-latest::before {
+  content: "· ";
+  color: var(--muted);
+}
+
+.chev {
+  color: var(--muted);
+}
+
+.nb-body {
+  position: fixed;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(80svh, 680px);
+  padding: 0 22px calc(28px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 26px 26px 0 0;
+  background: var(--paper-hi);
+  box-shadow: 0 -18px 50px -10px rgb(35 44 92 / 0.35);
+  transform: translateY(102%);
+  visibility: hidden;
+  transition:
+    transform 380ms var(--out),
+    visibility 0s linear 380ms;
+}
+
+.notebook[data-open="true"] .nb-body {
+  transform: none;
+  visibility: visible;
+  transition:
+    transform 380ms var(--out),
+    visibility 0s;
+}
+
+.notebook[data-open="true"]::before {
+  content: "";
+  position: fixed;
+  z-index: 29;
+  inset: 0;
+  background: rgb(35 44 92 / 0.32);
+}
+
+.nb-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 0 8px;
+  background: var(--paper-hi);
+}
+
+.nb-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.nb-close {
+  margin-right: -12px;
+}
+
+.nb-empty {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.nb-group h3 {
+  margin: 22px 0 4px;
+  color: var(--ink-2);
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.nb-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nb-group li {
+  position: relative;
+  padding: 8px 0 8px 22px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 17px;
+  line-height: 1.45;
+  isolation: isolate;
+}
+
+.nb-group li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: calc(8px + 0.72em);
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--pink);
+}
+
+/* A new note gets a swipe of highlighter, which then dries. */
+.nb-group li.fresh::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 16px;
+  right: -4px;
+  top: 30%;
+  bottom: 14%;
+  border-radius: 3px;
+  background: rgb(242 182 50 / 0.5);
+  transform-origin: left center;
+  animation: marker 2.6s var(--out) both;
+}
+
+.controls,
+.confirm {
+  grid-area: controls;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: clamp(12px, 6vw, 36px);
+  padding: 10px var(--gutter) calc(12px + env(safe-area-inset-bottom));
+}
+
+.ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 76px;
+  padding: 4px;
+  border: 0;
+  border-radius: 16px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.ctl-ic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 2px var(--line);
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms var(--out);
+}
+
+.ctl .ic {
+  width: 26px;
+  height: 26px;
+}
+
+.ctl:hover .ctl-ic {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.ctl:active .ctl-ic {
+  transform: scale(0.95);
+}
+
+.ctl:focus-visible {
+  outline: none;
+}
+
+.ctl:focus-visible .ctl-ic {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.ctl .off,
+.ctl[aria-pressed="true"] .on {
+  display: none;
+}
+
+.ctl[aria-pressed="true"] .off {
+  display: block;
+}
+
+.ctl[aria-pressed="true"] .ctl-ic,
+.ctl[aria-expanded="true"] .ctl-ic {
+  background: var(--ink);
+  box-shadow: 0 0 0 2px var(--ink);
+  color: var(--paper-hi);
+}
+
+.ctl-end .ctl-ic {
+  background: var(--pink-ink);
+  box-shadow: 0 0 0 2px var(--pink-ink);
+  color: #fff;
+}
+
+.ctl-end:hover .ctl-ic {
+  background: #8d1a4a;
+  box-shadow: 0 0 0 2px #8d1a4a;
+}
+
+.ctl:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A ring that lights while she can hear you: on its own compositor layer, so
+   lighting it is an opacity change the compositor makes alone. */
+.meter {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 3px solid var(--pink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+  will-change: opacity;
+}
+
+.ctl[data-hearing="true"] .meter {
+  opacity: 1;
+}
+
+.ctl[aria-pressed="true"] .meter,
+.ctl:disabled .meter {
+  display: none;
+}
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 12px;
+  padding: 12px var(--gutter) calc(14px + env(safe-area-inset-bottom));
+}
+
+.confirm p {
+  width: 100%;
+  margin: 0 0 2px;
+  font-size: 18px;
+  font-weight: 750;
+  text-align: center;
+}
+
+/* Low power: a still face, and a plain light that says she is speaking. */
+.low-power .stage[data-speaking="true"] {
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 0 0 6px var(--pink),
+    0 26px 50px -30px rgb(35 44 92 / 0.6);
+}
+
+.low-power .meter {
+  display: none;
+}
+
+/* ---------- 5. what she heard ---------- */
+
+.screen-end {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 68px var(--gutter) 48px;
+}
+
+.end-head {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.end-head .display {
+  font-size: clamp(40px, 9.4vw, 84px);
+}
+
+.end-head .display:focus {
+  outline: none;
+}
+
+.end-head .lede {
+  margin-top: 10px;
+}
+
+.swot {
+  position: relative;
+  margin: 0;
+  padding: 26px 0 0 26px;
+}
+
+.axis {
+  position: absolute;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.axis-help,
+.axis-hurt {
+  top: 4px;
+  translate: -50% 0;
+}
+
+.axis-help {
+  left: calc(26px + (100% - 26px) * 0.25);
+}
+
+.axis-hurt {
+  left: calc(26px + (100% - 26px) * 0.75);
+}
+
+.axis-in,
+.axis-out {
+  left: 10px;
+  translate: -50% -50%;
+  rotate: -90deg;
+}
+
+.axis-in {
+  top: calc(26px + (100% - 26px) * 0.25);
+}
+
+.axis-out {
+  top: calc(26px + (100% - 26px) * 0.75);
+}
+
+.swot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  overflow: hidden;
+  border-radius: 22px;
+}
+
+.q {
+  position: relative;
+  min-height: 170px;
+  padding: 16px 14px 20px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.q::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: radial-gradient(circle, rgb(35 44 92 / 0.1) 1px, transparent 1.6px) 0 0 / 6px 6px;
+  mask: linear-gradient(160deg, transparent 40%, #000);
+}
+
+/* The quadrant's letter, big and faint in its corner, where there is room for it. */
+.q::after {
+  content: attr(data-l);
+  position: absolute;
+  z-index: -1;
+  right: 18px;
+  bottom: 10px;
+  display: none;
+  font-family: var(--display);
+  font-size: 128px;
+  line-height: 0.74;
+  color: rgb(35 44 92 / 0.09);
+}
+
+.q-s {
+  background: var(--tint-s);
+}
+
+.q-w {
+  background: var(--tint-w);
+}
+
+.q-o {
+  background: var(--tint-o);
+}
+
+.q-t {
+  background: var(--tint-t);
+}
+
+.q h3 {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: clamp(22px, 5.6vw, 38px);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.04;
+  text-transform: uppercase;
+}
+
+.q ul,
+.need ul,
+.want ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.q li,
+.need li,
+.want li {
+  position: relative;
+  margin: 0 0 8px;
+  padding-left: 16px;
+  font-size: 16px;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.q li::before,
+.need li::before,
+.want li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.none {
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  font-style: italic;
+}
+
+.crux {
+  margin-top: 18px;
+  padding: 22px 22px 26px;
+  border-radius: 22px;
+  background: var(--ink);
+  color: var(--paper-hi);
+}
+
+.crux h3,
+.need h3,
+.want h3,
+.approach h3,
+.readback-title {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.08;
+  text-transform: uppercase;
+}
+
+.crux h3 {
+  color: var(--gold);
+}
+
+.crux p {
+  margin: 0;
+  max-width: 52ch;
+  font-size: clamp(20px, 2.4vw, 27px);
+  font-weight: 600;
+  line-height: 1.38;
+  text-wrap: pretty;
+}
+
+.pair {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.need,
+.want,
+.approach,
+.nb-sheet {
+  padding: 20px 20px 18px;
+  border-radius: 22px;
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 1.5px var(--rule);
+}
+
+.need li::before {
+  background: var(--pink-ink);
+}
+
+.want li::before {
+  background: var(--gold);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.approach {
+  margin-top: 14px;
+}
+
+.approach dl {
+  display: grid;
+  gap: 4px 24px;
+  margin: 0;
+}
+
+.approach dt {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.approach dd {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.readback-title {
+  margin-bottom: 12px;
+  font-size: 28px;
+}
+
+.nb-sheet .nb-group:first-child h3 {
+  margin-top: 4px;
+}
+
+.end-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 34px;
+  padding-top: 22px;
+  border-top: 2px solid var(--rule);
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.end-foot p {
+  margin: 0;
+}
+
+/* ---------- bigger screens ---------- */
+
+@media (min-width: 720px) {
+  :root {
+    --gutter: 28px;
+  }
+
+  .form .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .field-wide {
+    grid-column: 1 / -1;
+  }
+
+  .pair {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .approach dl {
+    grid-template-columns: max-content 1fr;
+    align-items: baseline;
+  }
+
+  .approach dd {
+    margin: 0 0 8px;
+  }
+
+  .q {
+    min-height: 220px;
+    padding: 22px 24px 26px;
+  }
+
+  .q li {
+    max-width: 46ch;
+    font-size: 17px;
+  }
+
+  .q::after {
+    display: block;
+  }
+
+  .swot {
+    padding: 30px 0 0 32px;
+  }
+
+  .axis-help {
+    left: calc(32px + (100% - 32px) * 0.25);
+  }
+
+  .axis-hurt {
+    left: calc(32px + (100% - 32px) * 0.75);
+  }
+
+  .axis-in {
+    top: calc(30px + (100% - 30px) * 0.25);
+  }
+
+  .axis-out {
+    top: calc(30px + (100% - 30px) * 0.75);
+  }
+
+  .axis-in,
+  .axis-out {
+    left: 12px;
+  }
+
+  .crux {
+    padding: 28px 32px 32px;
+  }
+}
+
+@media (min-width: 1000px) {
+  .mark {
+    top: 22px;
+    font-size: 28px;
+  }
+
+  .screen-intro {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(32px, 5vw, 80px);
+    min-height: 100svh;
+    padding: 80px clamp(32px, 5vw, 80px) 48px;
+  }
+
+  .portrait {
+    max-width: 640px;
+    aspect-ratio: 1 / 1.02;
+  }
+
+  .portrait .head {
+    top: 7%;
+    width: 112%;
+  }
+
+  .screen-intro .display {
+    font-size: clamp(56px, 5.4vw, 88px);
+  }
+
+  .consent .btn-go {
+    width: auto;
+    min-width: 220px;
+  }
+
+  .aside {
+    text-align: left;
+  }
+
+  .screen-room {
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 30vw);
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas:
+      "bar bar"
+      "stage notes"
+      "captions notes"
+      "typer notes"
+      "controls notes";
+    column-gap: 32px;
+    padding: 0 32px 0 40px;
+  }
+
+  .bar {
+    gap: 40px;
+    padding: 22px 0 18px 128px;
+  }
+
+  [data-screen="room"] .mark {
+    display: block;
+    top: 26px;
+    left: 40px;
+  }
+
+  .stage-now {
+    display: none;
+  }
+
+  .stages {
+    gap: 6px;
+  }
+
+  .stages li {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .st-label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: hidden;
+    clip-path: none;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+  }
+
+  .stages li[data-status="current"] .st-label {
+    color: var(--ink);
+    font-weight: 800;
+  }
+
+  .stages li[data-status="done"] .st-label {
+    color: var(--ink-2);
+  }
+
+  .clock .t {
+    font-size: 34px;
+  }
+
+  .stage {
+    justify-self: center;
+    width: min(100%, 720px);
+    margin: 0;
+  }
+
+  .captions {
+    justify-self: center;
+    width: min(100%, 720px);
+    height: 210px;
+    padding: 20px 4px 0;
+  }
+
+  .line-aida .said {
+    font-size: 24px;
+  }
+
+  .line-you .said {
+    font-size: 18px;
+  }
+
+  .typer {
+    justify-self: center;
+    width: min(100%, 720px);
+    padding: 6px 0 0;
+  }
+
+  .notebook {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0 0 24px;
+    overflow: hidden;
+    border-radius: 24px;
+    background:
+      linear-gradient(90deg, transparent 30px, rgb(236 79 147 / 0.4) 30px 31.5px, transparent 31.5px),
+      var(--paper-hi);
+    box-shadow:
+      0 0 0 1.5px var(--rule),
+      0 24px 48px -32px rgb(35 44 92 / 0.5);
+  }
+
+  .nb-peek,
+  .nb-close {
+    display: none;
+  }
+
+  .nb-body,
+  .notebook[data-open="true"] .nb-body {
+    position: static;
+    flex: 1;
+    height: auto;
+    padding: 0 28px 28px 52px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    visibility: visible;
+    transition: none;
+  }
+
+  .notebook[data-open="true"]::before {
+    display: none;
+  }
+
+  .nb-head {
+    padding: 26px 0 6px;
+    background: linear-gradient(var(--paper-hi) 80%, rgb(251 245 232 / 0));
+  }
+
+  .nb-head h2 {
+    font-size: 32px;
+  }
+
+  .controls {
+    padding: 14px 0 26px;
+  }
+
+  .confirm {
+    padding: 14px 0 26px;
+  }
+
+  .screen-end {
+    padding-top: 96px;
+  }
+}
+
+/* ---------- motion ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .screen-intro .portrait .head {
+    animation: rise 1s var(--out) both 120ms;
+  }
+
+  .low-power .screen-intro .portrait .head {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(9%) rotate(-3deg);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes noted {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes marker {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  22% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}

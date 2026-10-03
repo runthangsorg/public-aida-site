@@ -95,9 +95,14 @@ describe("the page", () => {
   const shipped = tracked.filter(
     (path) =>
       path === "index.html" ||
+      /^[a-z0-9-]+\/index\.html$/.test(path) || // every other page, such as talk/index.html
       path.startsWith("src/") ||
       (path.startsWith("public/") && /\.(svg|webmanifest|txt|json)$/.test(path)),
   );
+
+  it("includes every page, not only the home page", () => {
+    expect(shipped).toContain("talk/index.html");
+  });
 
   it("makes no third-party network requests", () => {
     // Only the XML namespace host may appear in shipped files.
