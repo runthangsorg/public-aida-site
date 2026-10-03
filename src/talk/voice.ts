@@ -10,13 +10,13 @@
 // would answer it as though it were the first thing said. On `interrupted`
 // the queue is flushed at once, so she stops when the person talks over her.
 
-import { FFT_SIZE, shapeFromSpectrum, type MouthShape } from "./mouth";
-import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, decodePcm16, encodePcm16, rateOf, rms } from "./pcm";
+import { FFT_SIZE, shapeFromWaveform, type MouthShape } from "./mouth";
+import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, base64ToBytes, encodePcm16, pcm16BytesToFloat, rateOf } from "./pcm";
 import { audioMessage, endMessage, parseFrame, socketUrl, textMessage, type ServerFrame } from "./protocol";
 
 // A Blob-URL module keeps the capture graph in this one file: no second
 // asset to cache, and no deprecated ScriptProcessor on the main thread. It
-// collects about 64 ms before posting, so the page hears from it 16 times a
+// collects 100 ms before posting, so the page hears from it 10 times a
 // second instead of once per 128-sample render quantum (375 times at 48 kHz):
 // on a weak laptop the main thread has better things to do.
 const CAPTURE = `
@@ -24,7 +24,7 @@ class Capture extends AudioWorkletProcessor {
   constructor() {
     super();
     // The size is kept apart from the buffer: once a buffer is posted (transferred) its length reads 0.
-    this.size = Math.round(sampleRate * 0.064);
+    this.size = Math.round(sampleRate * 0.1);
     this.buf = new Float32Array(this.size);
     this.n = 0;
   }
@@ -38,7 +38,10 @@ class Capture extends AudioWorkletProcessor {
       this.n += take;
       i += take;
       if (this.n === this.size) {
-        this.port.postMessage(this.buf, [this.buf.buffer]);
+        // Loudness is measured here, on the audio thread, not on the page's.
+        let sum = 0;
+        for (let k = 0; k < this.size; k++) sum += this.buf[k] * this.buf[k];
+        this.port.postMessage({ samples: this.buf, level: Math.sqrt(sum / this.size) }, [this.buf.buffer]);
         this.buf = new Float32Array(this.size);
         this.n = 0;
       }
@@ -72,10 +75,13 @@ function newContext(rate: number): AudioContext {
 }
 
 export class Voice {
+  /** Low power: no analyser (no moving mouth to feed), her voice goes straight to the speakers. */
+  constructor(private readonly lite = false) {}
+
   private input: AudioContext | null = null;
   private output: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
-  private spectrum: Uint8Array<ArrayBuffer> | null = null;
+  private wave: Float32Array<ArrayBuffer> | null = null;
   private stream: MediaStream | null = null;
   private node: AudioWorkletNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
@@ -85,13 +91,14 @@ export class Voice {
   private socket: WebSocket | null = null;
   private handlers: VoiceHandlers | null = null;
   private streaming = false;
-  private readonly playing = new Set<AudioBufferSourceNode>();
+  /** Her queued chunks and when each ends; no `ended` event per chunk, so no message per chunk either. */
+  private playing: { node: AudioBufferSourceNode; end: number }[] = [];
   private nextAt = 0;
   private speaking = false;
   private quietTimer = 0;
   /** Smoothed microphone loudness, 0..1, for the level meter. */
   micLevel = 0;
-  /** Told the new level about 16 times a second while the microphone is open. */
+  /** Told the new level 10 times a second while the microphone is open. */
   onMicLevel: ((level: number) => void) | null = null;
 
   /**
@@ -100,14 +107,13 @@ export class Voice {
    * or resumed during a user gesture. Safe to call again on any later tap.
    */
   wake(): void {
-    if (!this.output) {
-      this.output = newContext(OUTPUT_RATE);
+    this.output ??= newContext(OUTPUT_RATE);
+    if (!this.lite && !this.analyser) {
       const analyser = this.output.createAnalyser();
       analyser.fftSize = FFT_SIZE;
-      analyser.smoothingTimeConstant = 0.75; // without it the mouth jitters on every consonant
       analyser.connect(this.output.destination);
       this.analyser = analyser;
-      this.spectrum = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+      this.wave = new Float32Array(new ArrayBuffer(analyser.fftSize * 4));
     }
     this.input ??= newContext(INPUT_RATE);
     for (const ctx of [this.output, this.input]) {
@@ -171,8 +177,8 @@ export class Voice {
     if (ctx.state !== "running") await ctx.resume().catch(() => undefined);
     await ctx.audioWorklet.addModule(this.workletUrl);
     const node = new AudioWorkletNode(ctx, "aida-capture");
-    node.port.onmessage = (event: MessageEvent<Float32Array>) => {
-      this.capture(event.data);
+    node.port.onmessage = (event: MessageEvent<{ samples: Float32Array; level: number }>) => {
+      this.capture(event.data.samples, event.data.level);
     };
     source.connect(node); // never to the speakers: that is a feedback loop
     this.source = source;
@@ -180,8 +186,8 @@ export class Voice {
     this.resampler = new Resampler(ctx.sampleRate, INPUT_RATE);
   }
 
-  private capture(raw: Float32Array): void {
-    this.micLevel += (Math.min(1, rms(raw) * 5) - this.micLevel) * 0.5;
+  private capture(raw: Float32Array, loudness: number): void {
+    this.micLevel += (Math.min(1, loudness * 5) - this.micLevel) * 0.5;
     this.onMicLevel?.(this.micLevel);
     if (!this.streaming || !this.resampler) return;
     for (const frame of this.chunker.push(this.resampler.push(raw))) this.send(audioMessage(encodePcm16(frame)));
@@ -261,48 +267,52 @@ export class Voice {
   private enqueue(base64: string, rate: number): void {
     const ctx = this.output;
     if (!ctx) return;
-    const pcm = decodePcm16(base64);
-    if (pcm.length === 0) return;
+    const bytes = base64ToBytes(base64);
+    if (bytes.length < 2) return;
     // Each chunk declares its own rate; the browser resamples to the context's.
-    const buffer = ctx.createBuffer(1, pcm.length, rate);
-    const channel = buffer.getChannelData(0);
-    for (let i = 0; i < pcm.length; i++) channel[i] = (pcm[i] ?? 0) / 0x8000;
+    const buffer = ctx.createBuffer(1, bytes.length >> 1, rate);
+    pcm16BytesToFloat(bytes, buffer.getChannelData(0));
     const node = ctx.createBufferSource();
     node.buffer = buffer;
     node.connect(this.analyser ?? ctx.destination);
+    const now = ctx.currentTime;
+    this.playing = this.playing.filter((p) => p.end > now);
     // A new burst starts 100 ms ahead, so chunks that arrive a little late
     // still join the queue without a gap (a gap is a click, and a stutter).
-    const at = this.playing.size ? Math.max(this.nextAt, ctx.currentTime) : ctx.currentTime + 0.1;
+    const at = this.playing.length ? Math.max(this.nextAt, now) : now + 0.1;
     this.nextAt = at + buffer.duration;
-    this.playing.add(node);
-    node.onended = () => {
-      this.playing.delete(node);
-      if (this.playing.size === 0) this.quietSoon();
-    };
+    this.playing.push({ node, end: this.nextAt });
     node.start(at);
-    window.clearTimeout(this.quietTimer);
     this.setSpeaking(true);
+    this.quietAfter(this.nextAt - now);
   }
 
-  /** She has stopped only if nothing more arrives for a moment: no flicker between words. */
-  private quietSoon(): void {
+  /** She has stopped once the queue has played out and nothing more arrived for a moment. */
+  private quietAfter(seconds: number): void {
     window.clearTimeout(this.quietTimer);
-    this.quietTimer = window.setTimeout(() => {
-      if (this.playing.size === 0) this.setSpeaking(false);
-    }, 300);
+    this.quietTimer = window.setTimeout(
+      () => {
+        const left = this.queued;
+        if (left > 0.01) this.quietAfter(left);
+        else {
+          this.playing = [];
+          this.setSpeaking(false);
+        }
+      },
+      seconds * 1000 + 300,
+    );
   }
 
   /** Silence everything queued: she was interrupted. */
   flush(): void {
-    for (const node of this.playing) {
-      node.onended = null;
+    for (const { node } of this.playing) {
       try {
         node.stop();
       } catch {
         // already finished
       }
     }
-    this.playing.clear();
+    this.playing = [];
     if (this.output) this.nextAt = this.output.currentTime;
     window.clearTimeout(this.quietTimer);
     this.setSpeaking(false);
@@ -314,18 +324,18 @@ export class Voice {
 
   /** Seconds of her voice still queued. */
   get queued(): number {
-    return this.output && this.playing.size ? Math.max(0, this.nextAt - this.output.currentTime) : 0;
+    return this.output ? Math.max(0, this.nextAt - this.output.currentTime) : 0;
   }
 
   /** Her mouth right now, written into `out`. Closed when she is silent. */
   readMouth(out: MouthShape): MouthShape {
-    if (!this.analyser || !this.spectrum || !this.output || this.playing.size === 0) {
+    if (!this.analyser || !this.wave || this.queued <= 0) {
       out.open = 0;
       out.spread = 0.5;
       return out;
     }
-    this.analyser.getByteFrequencyData(this.spectrum);
-    return shapeFromSpectrum(this.spectrum, this.output.sampleRate, out);
+    this.analyser.getFloatTimeDomainData(this.wave);
+    return shapeFromWaveform(this.wave, out);
   }
 
   /** Close everything: socket, microphone, both contexts. */

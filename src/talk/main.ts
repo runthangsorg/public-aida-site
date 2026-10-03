@@ -65,6 +65,8 @@ const heads: HTMLElement[] = [];
 for (const host of document.querySelectorAll<HTMLElement>("[data-face]")) {
   const face = template.content.firstElementChild?.cloneNode(true);
   if (!(face instanceof HTMLElement)) continue;
+  // Only the room's face speaks; the others keep just her portrait and the blink.
+  if (host.id !== "stage") for (const m of face.querySelectorAll(".mouth")) m.remove();
   host.append(face);
   heads.push(face);
 }
@@ -189,7 +191,7 @@ interface Session {
 }
 
 let session: Session | null = null;
-const voice = new Voice();
+const voice = new Voice(lowPower);
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -345,7 +347,8 @@ let stagesKey = "";
 let lastLink = "";
 
 // Frames can arrive dozens of times a second (captions come a word at a
-// time); the page is drawn at most once every 60 ms from the latest state.
+// time); the page is drawn at most about seven times a second from the
+// latest state, and only the parts whose state changed are touched.
 let drawn: TalkState | null = null;
 let finishedSince: TalkState["finished"] = [];
 let drawTimer = 0;
@@ -355,7 +358,7 @@ function dispatch(event: TalkEvent): void {
   state = reduce(state, event);
   if (state === prev) return;
   if (state.finished.length) finishedSince = [...finishedSince, ...state.finished];
-  drawTimer ||= window.setTimeout(draw, 60);
+  drawTimer ||= window.setTimeout(draw, 150);
 }
 
 function draw(): void {
@@ -559,8 +562,9 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
 }
 
 function render(prev: TalkState | null, s: TalkState): void {
-  renderStages(s);
-  if (s.targetMinutes !== prev?.targetMinutes) clockOf.textContent = `of about ${s.targetMinutes} min`;
+  const changed = (...keys: (keyof TalkState)[]): boolean => !prev || keys.some((k) => prev[k] !== s[k]);
+  if (changed("stages", "stage", "phase")) renderStages(s);
+  if (changed("targetMinutes")) clockOf.textContent = `of about ${s.targetMinutes} min`;
   if (s.phase !== "connecting" && !startedAt) {
     startedAt = performance.now();
     clockTimer = window.setInterval(tick, 1000);
@@ -569,10 +573,11 @@ function render(prev: TalkState | null, s: TalkState): void {
     resumedAt = performance.now();
     setTimeout(renderStatus, 4100);
   }
-  renderStatus();
-  renderCaptions(s);
-  renderNotesLive(prev, s);
+  if (changed("link", "phase")) renderStatus();
+  if (changed("turns", "error")) renderCaptions(s);
+  if (changed("notes")) renderNotesLive(prev, s);
   if (s.finished.length) announce.textContent = s.finished.map((t) => `${t.who === "aida" ? "Aida" : "You"}: ${turnText(t)}`).join(" ");
+  if (!changed("phase")) return;
   const ending = s.phase === "ending" || s.phase === "ended";
   endBtn.disabled = ending;
   typeBtn.disabled = ending;
@@ -584,18 +589,35 @@ function render(prev: TalkState | null, s: TalkState): void {
   if (s.phase === "ended" && prev?.phase !== "ended") leave();
 }
 
-// Her mouth follows her voice: about 15 times a second, read from the
-// playback analyser, and only while she is actually speaking. When she stops,
-// the timer stops; nothing runs while the room is quiet. A low-power machine
-// keeps a still face and the status light says she is speaking.
+// Her mouth follows her voice: 12 times a second (drawn animation's "on
+// twos"), read from the playback analyser, and only while she is actually
+// speaking. When she stops, the timer stops; nothing runs while the room is
+// quiet. A change touches the opacity of two small images, each on its own
+// compositor layer, and nothing else. A low-power machine keeps a still face
+// and a ring says she is speaking.
 const shape: MouthShape = { open: 0, spread: 0.5 };
 let mouth: Mouth = "closed";
 let mouthTimer = 0;
+const mouthImages = new Map<Mouth, HTMLElement>();
+for (const m of ["small", "mid", "wide", "round", "pucker"] as const) {
+  const img = roomHead?.querySelector<HTMLElement>(`.m-${m}`);
+  if (img) mouthImages.set(m, img);
+}
 
-function setMouth(next: Mouth): void {
+let mouthSince = 0;
+
+function setMouth(next: Mouth, force = false): void {
   if (next === mouth) return;
+  // Each drawing is held for 200 ms at least, so a syllable reads as a shape
+  // and the page redraws five times a second at most; closing is immediate.
+  const now = performance.now();
+  if (!force && next !== "closed" && now - mouthSince < 200) return;
+  mouthSince = now;
+  const before = mouthImages.get(mouth);
+  if (before) before.style.opacity = "0";
+  const after = mouthImages.get(next);
+  if (after) after.style.opacity = "1";
   mouth = next;
-  if (roomHead) roomHead.dataset.mouth = next;
 }
 
 function stepMouth(): void {
@@ -606,22 +628,27 @@ function stepMouth(): void {
 function drive(speaking: boolean): void {
   if (lowPower) return;
   if (speaking && !mouthTimer) {
-    mouthTimer = window.setInterval(stepMouth, 66);
+    mouthTimer = window.setInterval(stepMouth, 83);
   } else if (!speaking && mouthTimer) {
     window.clearInterval(mouthTimer);
     mouthTimer = 0;
-    setMouth("closed");
+    setMouth("closed", true);
   }
 }
 
-// The ring on the microphone button swells with your voice: updated from the
-// capture messages (16 a second at most), and only when it visibly changes.
-let mic = 0;
+// The ring on the microphone button lights while she can hear you. It is a
+// state, not a meter: it lights when your voice rises above one level and
+// goes out only after 700 ms below a lower one, so a sentence costs two
+// style changes, not ten a second.
+let hearing = false;
+let lastLoud = 0;
 function showMicLevel(level: number): void {
-  const next = muted ? 0 : Math.round(level * 20) / 20;
-  if (next === mic) return;
-  mic = next;
-  muteBtn.style.setProperty("--mic", String(next));
+  const now = performance.now();
+  if (level > 0.05) lastLoud = now;
+  const next = muted ? false : hearing ? now - lastLoud < 700 : level > 0.1;
+  if (next === hearing) return;
+  hearing = next;
+  muteBtn.dataset.hearing = String(next);
 }
 
 muteBtn.addEventListener("click", () => {

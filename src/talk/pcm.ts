@@ -10,8 +10,13 @@
 export const INPUT_RATE = 16_000;
 export const OUTPUT_RATE = 24_000;
 
-/** 1024 samples at 16 kHz is 64 ms: inside the 20–100 ms the server wants, 2 KB of PCM per frame. */
-export const FRAME_SAMPLES = 1024;
+/**
+ * 1600 samples at 16 kHz is 100 ms, the top of the 20–100 ms the server
+ * wants (3.2 KB of PCM per frame). Larger frames mean fewer messages: on a
+ * weak laptop each message costs the page more than its bytes do, at the
+ * price of up to 36 ms more before the model hears the end of a sentence.
+ */
+export const FRAME_SAMPLES = 1600;
 
 /** Float samples (-1..1) to 16-bit integers, clamped so a hot microphone clips instead of wrapping. */
 export function floatToPcm16(samples: Float32Array): Int16Array {
@@ -30,26 +35,64 @@ export function pcm16ToFloat(pcm: Int16Array): Float32Array {
   return out;
 }
 
-/** Base64 of raw bytes, in chunks so a long buffer cannot overflow the argument limit. */
-export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+// Base64 runs 16 times a second for the microphone and as often again for
+// her voice, so it is done the cheap way: the platform's own Uint8Array
+// base64 where it exists, otherwise a lookup table written straight into
+// bytes (no string built a character at a time, no spread of 2,048 arguments).
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const ENCODE = Uint8Array.from(ALPHABET, (c) => c.charCodeAt(0));
+const PAD = 61; // "="
+const ascii = new TextDecoder("latin1");
+
+type WithBase64 = Uint8Array & { toBase64?: () => string };
+type FromBase64 = typeof Uint8Array & { fromBase64?: (text: string) => Uint8Array };
+
+/** Base64 by table, for platforms without `Uint8Array.prototype.toBase64`. */
+export function base64ByTable(bytes: Uint8Array): string {
+  const n = bytes.length;
+  const out = new Uint8Array(Math.ceil(n / 3) * 4);
+  let o = 0;
+  let i = 0;
+  const at = (k: number): number => bytes[k] ?? 0;
+  const put = (v: number): void => {
+    out[o++] = ENCODE[v & 63] ?? PAD;
+  };
+  for (; i + 2 < n; i += 3) {
+    const v = (at(i) << 16) | (at(i + 1) << 8) | at(i + 2);
+    put(v >> 18);
+    put(v >> 12);
+    put(v >> 6);
+    put(v);
   }
-  return btoa(binary);
+  if (i < n) {
+    const two = i + 1 < n;
+    const v = (at(i) << 16) | (two ? at(i + 1) << 8 : 0);
+    put(v >> 18);
+    put(v >> 12);
+    if (two) put(v >> 6);
+    else out[o++] = PAD;
+    out[o++] = PAD;
+  }
+  return ascii.decode(out);
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  const native = (bytes as WithBase64).toBase64;
+  return typeof native === "function" ? native.call(bytes) : base64ByTable(bytes);
 }
 
 export function base64ToBytes(base64: string): Uint8Array {
-  let binary: string;
   try {
-    binary = atob(base64);
+    const native = (Uint8Array as FromBase64).fromBase64;
+    if (typeof native === "function") return native(base64);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
   } catch {
     return new Uint8Array(0); // a malformed frame plays as nothing, not as an exception in the audio path
   }
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 /** PCM16 as base64, little-endian whatever the machine's own byte order. */
@@ -68,6 +111,18 @@ export function decodePcm16(base64: string): Int16Array {
   const out = new Int16Array(count);
   for (let i = 0; i < count; i++) out[i] = view.getInt16(i * 2, true);
   return out;
+}
+
+/**
+ * Little-endian PCM16 bytes straight into floats, in one pass and without an
+ * intermediate array: this runs for every chunk of her voice. Returns the
+ * number of samples written (a stray odd byte is ignored).
+ */
+export function pcm16BytesToFloat(bytes: Uint8Array, out: Float32Array): number {
+  const n = Math.min(bytes.length >> 1, out.length);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, n * 2);
+  for (let i = 0; i < n; i++) out[i] = view.getInt16(i * 2, true) / 0x8000;
+  return n;
 }
 
 /** The sample rate a `audio/pcm;rate=N` MIME type declares, or the output rate when it says nothing. */
