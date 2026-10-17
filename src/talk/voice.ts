@@ -12,6 +12,7 @@
 
 import { FFT_SIZE, SMOOTHING, shapeFromSpectrum, type MouthShape } from "./mouth";
 import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, base64ToBytes, encodePcm16, pcm16BytesToFloat, rateOf } from "./pcm";
+import { mediaFromMessage, textFromBinary } from "./avatar";
 import { audioMessage, endMessage, hereMessage, parseFrame, pauseMessage, socketUrl, textMessage, type ServerFrame } from "./protocol";
 
 // A Blob-URL module keeps the capture graph in this one file: no second
@@ -37,6 +38,8 @@ export interface VoiceHandlers {
   onFrame: (frame: ServerFrame) => void;
   onClose: (code: number) => void;
   onSpeaking?: (speaking: boolean) => void;
+  /** One fragment of her video (avatar calls only). */
+  onMedia?: (bytes: Uint8Array) => void;
 }
 
 function newContext(rate: number): AudioContext {
@@ -191,12 +194,20 @@ export class Voice {
 
   // ---------- the socket ----------
 
-  connect(id: string, handlers: VoiceHandlers): void {
+  connect(id: string, handlers: VoiceHandlers, avatar?: "1" | "lite"): void {
     this.handlers = handlers;
-    const socket = new WebSocket(socketUrl(id, location));
+    const socket = new WebSocket(socketUrl(id, location, avatar));
+    // Her video arrives as binary messages; everything else is text.
+    socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.onmessage = (event: MessageEvent<unknown>) => {
-      const frame = parseFrame(event.data);
+      // A fragment of her video, binary or (in an odd layout) text: to the player, not the room's state.
+      const media = avatar ? mediaFromMessage(event.data) : null;
+      if (media) {
+        handlers.onMedia?.(media);
+        return;
+      }
+      const frame = parseFrame(typeof event.data === "string" ? event.data : textFromBinary(event.data));
       if (!frame) return;
       if (frame.kind === "aida" && frame.frame.type === "ready") {
         // Only now does anything the microphone hears get sent.

@@ -61,6 +61,10 @@ export interface TalkState {
   turns: Turn[];
   summary: Summary | null;
   ended: Ended | null;
+  /** The server says her video is on this call (ready.avatar); false means voice and the drawn portrait. */
+  avatar: boolean;
+  /** Video gave out (or the person switched it off): the call was paused so it can go on by voice. */
+  videoStopped: { switching: boolean } | null;
   /** The server warned the line has gone quiet and will pause; null when nothing is pending. */
   idleWarning: { secondsLeft: number } | null;
   /** The person asked to continue later; the server's `ended` (paused) is awaited. */
@@ -90,6 +94,7 @@ export type TalkEvent =
   | { kind: "end-pressed" }
   | { kind: "pause-pressed" }
   | { kind: "here-pressed" }
+  | { kind: "video-stopped"; switching: boolean }
   | { kind: "closed"; minutes: number };
 
 const MAX_TURNS = 60;
@@ -122,6 +127,8 @@ export function initialState(stages: Stage[] = [], targetMinutes = 20, resumed?:
     ended: null,
     pausing: false,
     idleWarning: null,
+    avatar: false,
+    videoStopped: null,
     resumed: null,
     error: null,
     finished: [],
@@ -238,6 +245,13 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       s.phase = "ending";
       s.idleWarning = null;
       return s;
+    case "video-stopped":
+      if (s.phase === "ended" || s.phase === "ending") return state;
+      s.phase = "ending";
+      s.pausing = true;
+      s.idleWarning = null;
+      s.videoStopped = { switching: event.switching };
+      return s;
     case "here-pressed":
       if (!s.idleWarning) return state;
       s.idleWarning = null;
@@ -274,6 +288,7 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       if (f.resumed && s.phase === "connecting") restore(s, f.resumed);
       if (s.phase === "connecting") s.phase = "live";
       s.link = "live";
+      s.avatar = f.avatar === true;
       s.stage ??= s.stages[0]?.id ?? null;
       return s;
     case "budget":
@@ -377,11 +392,13 @@ export function latestTurns(s: TalkState): { aida?: Turn; you?: Turn; last?: Spe
  */
 export type EndView =
   | { kind: "paused" | "saved"; emailed: boolean | undefined }
+  | { kind: "video"; switching: boolean }
   | { kind: "idle" | "declined" | "budget" | "done" };
 
 export function endView(s: TalkState): EndView {
   const e = s.ended;
   if (!e) return { kind: "done" };
+  if (e.reason === "paused" && s.videoStopped) return { kind: "video", switching: s.videoStopped.switching };
   if (e.reason === "paused") return { kind: "paused", emailed: e.emailed };
   if (e.reason === "idle") return { kind: "idle" };
   if (e.reason === "declined") return { kind: "declined" };

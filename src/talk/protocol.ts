@@ -46,7 +46,7 @@ export interface Resumed {
 }
 
 export type AidaFrame =
-  | { type: "ready"; targetMinutes: number; sections: Stage[]; resumed?: Resumed }
+  | { type: "ready"; targetMinutes: number; sections: Stage[]; resumed?: Resumed; avatar?: boolean }
   | { type: "budget"; minutes: number }
   | { type: "idle_warning"; secondsLeft: number }
   | { type: "section"; id: string }
@@ -190,6 +190,8 @@ function readAida(a: Bag): AidaFrame | null {
       };
       const resumed = readResumed(a.resumed);
       if (resumed) frame.resumed = resumed;
+      // The server's word on whether her video is coming; absent means a voice-only call.
+      frame.avatar = a.avatar === true;
       return frame;
     }
     case "budget": {
@@ -303,8 +305,8 @@ export function pauseMessage(): string {
   return JSON.stringify({ aida: { type: "pause" } });
 }
 
-/** The live socket's address, on this same site. */
-export function socketUrl(id: string, location: { protocol: string; host: string }): string {
+/** The live socket's address, on this same site. `avatar`: `1` asks for full-quality video, `lite` for the thin stream. */
+export function socketUrl(id: string, location: { protocol: string; host: string }, avatar?: "1" | "lite"): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/talk?id=${encodeURIComponent(id)}`;
+  return `${scheme}//${location.host}/api/talk?id=${encodeURIComponent(id)}${avatar ? `&avatar=${avatar}` : ""}`;
 }
