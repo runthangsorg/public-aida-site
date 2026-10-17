@@ -354,7 +354,7 @@ async function runFailure(label, viewport, switching = false) {
       send(m) {
         if (typeof m !== 'string') return;
         window.__sent.push(m);
-        if (m.includes('"pause"')) setTimeout(() => this.push({ aida: { type: 'ended', reason: 'paused', minutes: 1, resumable: true, emailed: true } }), 150);
+        if (m.includes('"switch"')) setTimeout(() => this.push({ aida: { type: 'ended', reason: 'switch', minutes: 1, resumable: true, emailed: false } }), 150);
       }
       close() {
         this.readyState = 3;
@@ -419,7 +419,7 @@ async function runFailure(label, viewport, switching = false) {
     urls: window.__liveUrls(),
   }));
   check(`[${label}] a stream Chrome cannot play makes video give up (after ${gaveUpAfter.toFixed(1)} s), never a dead screen`, gaveUpAfter < 14, gaveUpAfter.toFixed(1));
-  check(`[${label}] it pauses the call to save the place`, info.sent.some((m) => m.includes('"pause"')), info.sent.join(' '));
+  check(`[${label}] it asks the server to save the place (switch, no email)`, info.sent.some((m) => m.includes('"switch"')), info.sent.join(' '));
   check(`[${label}] and offers Continue without video`, info.title === 'The video stopped' && info.label === 'Continue without video' && info.button, `${info.title} / ${info.label}`);
   check(`[${label}] the object URL is revoked`, info.urls === 0, info.urls);
   await page.click('#end-continue');

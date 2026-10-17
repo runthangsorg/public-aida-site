@@ -329,6 +329,27 @@ export function capabilityOf(win: MseWindow): Capability {
   };
 }
 
+// ---------- which face she wears ----------
+
+/** `vera`: her still, wherever video is expected. `drawn`: the drawn Aida, for the voice-only path only. */
+export type Face = 'vera' | 'drawn';
+
+/** The face, decided once at load from the same decision as the avatar choice. */
+export const faceFor = (ask: AvatarAsk): Face => (ask === 'off' ? 'drawn' : 'vera');
+
+export type FaceEvent =
+  | { t: 'ready'; asked: boolean; avatar: boolean }
+  | { t: 'video-stopped' };
+
+/**
+ * It changes only when the call turns out to be voice only: the server answered `avatar: false` to a
+ * request for video, or video gave out or was switched off. It never goes back within a page.
+ */
+export function nextFace(face: Face, e: FaceEvent): Face {
+  if (e.t === 'video-stopped') return 'drawn';
+  return !e.asked || !e.avatar ? 'drawn' : face;
+}
+
 // ---------- the append queue ----------
 
 export function concat(parts: Uint8Array[]): Uint8Array {

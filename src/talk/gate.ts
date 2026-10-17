@@ -207,6 +207,8 @@ export type LimitReason = "daily_limit" | "busy";
 
 export interface Me {
   known: true;
+  /** A confirmed interview that was never started is waiting: the card says Start and uses it. */
+  startReady?: boolean;
   name: string;
   canContinue: boolean;
   minutesSoFar?: number;
@@ -233,17 +235,21 @@ export function readMe(data: unknown): Me | null {
     me.minutesSoFar = minutes;
   }
   if (data.reasonIfNot === "daily_limit" || data.reasonIfNot === "busy") me.reasonIfNot = data.reasonIfNot;
+  if (data.startReady === true) me.startReady = true;
   return me;
 }
 
 /** The welcome-back card's wording for a returning visitor. */
-export function knownCopy(me: Me): { title: string; detail: string; notYou: string; limit: string } {
+export function knownCopy(me: Me): { title: string; detail: string; notYou: string; limit: string; startLabel: string } {
   const who = me.name;
   const mins = me.minutesSoFar === undefined ? 0 : Math.round(me.minutesSoFar);
   return {
     title: who ? `Welcome back, ${who}` : "Welcome back",
+    startLabel: me.startReady && !me.canContinue ? "Start" : "Start a new conversation",
     detail:
-      me.canContinue && mins >= 1
+      me.startReady && !me.canContinue
+        ? "Your email is confirmed. Start whenever you are ready."
+        : me.canContinue && mins >= 1
         ? `You have talked for ${mins} min so far. Pick it up where you stopped, or start afresh.`
         : me.canContinue
           ? "Pick it up where you stopped, or start afresh."
@@ -275,6 +281,22 @@ export function entryRefusal(status: number, data: unknown): EntryRefusal {
   if (status === 409 || c === "busy") return { message: BUSY_OTHER_WINDOW, outcome: "stop" };
   if (status === 429) return { message: WAIT_FEW_MINUTES, outcome: "retry" };
   return { message: "We could not open it just now. Please try again in a moment.", outcome: "retry" };
+}
+
+// ---------- the microphone and the connection: never a dead end ----------
+
+/** After a few seconds with no answer from the browser's microphone question. */
+export const MIC_STILL_WAITING =
+  "Still waiting for your browser. If you do not see a question about the microphone, look beside the address bar, or type your answers instead.";
+export const MIC_PROMPT_HELP_MS = 8000;
+
+export const COULD_NOT_CONNECT = "We couldn’t connect you to Aida just now. Please try again, or type your answers instead.";
+export const COULD_NOT_CONNECT_AGAIN =
+  "Still no connection. Please try once more. If it keeps failing, close this page and open the link in your email again.";
+
+/** What to say after the line failed to open, by how many times it has. */
+export function connectFailedText(fails: number): string {
+  return fails > 1 ? COULD_NOT_CONNECT_AGAIN : COULD_NOT_CONNECT;
 }
 
 // ---------- the idle warning ----------
