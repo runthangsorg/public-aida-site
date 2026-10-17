@@ -193,7 +193,7 @@ describe("what to ask for before connecting", () => {
   });
 
   it("says what video costs in data, once, and nothing when there is no video", () => {
-    expect(dataNote("full")).toMatch(/60 MB a minute/);
+    expect(dataNote("full")).toMatch(/30 MB a minute/);
     expect(dataNote("lite")).toMatch(/15 MB a minute/);
     expect(dataNote("full")).toMatch(/switch to voice only/i);
     expect(dataNote("off")).toBe("");

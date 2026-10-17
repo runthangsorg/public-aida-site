@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { refusal } from "../src/talk/details";
 import {
   BUDGET_LEDE,
+  BUSY_CARD,
+  BUSY_CLEARS,
   DAILY_LIMIT,
   DECLINED_CLOSING,
   EXPIRED_GO,
@@ -244,10 +246,27 @@ describe("a returning visitor", () => {
     expect(copy.notYou).toBe("Not Sam? Use a different email");
     expect(copy.limit).toBe("");
     expect(knownCopy({ ...me, canStartNew: false, reasonIfNot: "daily_limit" }).limit).toBe(DAILY_LIMIT);
-    expect(knownCopy({ ...me, canStartNew: false, reasonIfNot: "busy" }).limit).toBe(
-      "A conversation is already open in another window.",
-    );
     expect(limitMessage("busy")).toMatch(/another window/);
+  });
+
+  it("today's limit hides Start, and the wording no longer offers to start afresh", () => {
+    const me = readMe({ known: true, name: "Sam", canContinue: true, minutesSoFar: 3, canStartNew: false, reasonIfNot: "daily_limit" });
+    if (!me) throw new Error("expected a known visitor");
+    const copy = knownCopy(me);
+    expect(copy.detail).toBe("You have talked for 3 min so far. Pick it up where you stopped.");
+    expect(copy.limit).toBe(DAILY_LIMIT);
+    expect(copy.busy).toBe(false);
+  });
+
+  it("busy: the card says so, with how it clears, never beside an active button", () => {
+    const me = readMe({ known: true, name: "Sam", canContinue: true, minutesSoFar: 3, canStartNew: false, reasonIfNot: "busy" });
+    if (!me) throw new Error("expected a known visitor");
+    const copy = knownCopy(me);
+    expect(copy.busy).toBe(true);
+    expect(copy.detail).toBe(`${BUSY_CARD} ${BUSY_CLEARS}`);
+    expect(copy.detail).toBe("A conversation is already open in another window. If you closed it, this clears within a minute.");
+    expect(copy.detail).not.toMatch(/Pick it up/);
+    expect(copy.limit).toBe(""); // said once, in the detail
   });
 
   it("continue must carry what was kept; new need not", () => {

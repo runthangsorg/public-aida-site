@@ -239,23 +239,44 @@ export function readMe(data: unknown): Me | null {
   return me;
 }
 
+export const BUSY_CARD = "A conversation is already open in another window.";
+export const BUSY_CLEARS = "If you closed it, this clears within a minute.";
+
+export interface KnownCopy {
+  title: string;
+  detail: string;
+  notYou: string;
+  /** A limit to say under the buttons (today's limit); empty when there is none. */
+  limit: string;
+  startLabel: string;
+  /**
+   * The server says a call is open elsewhere: the card says so, every button is disabled (never an active
+   * Continue beside "already open"), and a quiet Check again re-reads /api/talk/me.
+   */
+  busy: boolean;
+}
+
 /** The welcome-back card's wording for a returning visitor. */
-export function knownCopy(me: Me): { title: string; detail: string; notYou: string; limit: string; startLabel: string } {
+export function knownCopy(me: Me): KnownCopy {
   const who = me.name;
   const mins = me.minutesSoFar === undefined ? 0 : Math.round(me.minutesSoFar);
+  const busy = me.reasonIfNot === "busy";
+  const startOnly = me.startReady === true && !me.canContinue;
+  const sofar = mins >= 1 ? `You have talked for ${mins} min so far. ` : "";
+  let detail: string;
+  if (busy) detail = `${BUSY_CARD} ${BUSY_CLEARS}`;
+  else if (startOnly) detail = "Your email is confirmed. Start whenever you are ready.";
+  else if (me.canContinue && me.canStartNew) detail = `${sofar}Pick it up where you stopped, or start afresh.`;
+  else if (me.canContinue) detail = `${sofar}Pick it up where you stopped.`;
+  else if (me.canStartNew) detail = "Start a new conversation whenever you are ready.";
+  else detail = "";
   return {
     title: who ? `Welcome back, ${who}` : "Welcome back",
-    startLabel: me.startReady && !me.canContinue ? "Start" : "Start a new conversation",
-    detail:
-      me.startReady && !me.canContinue
-        ? "Your email is confirmed. Start whenever you are ready."
-        : me.canContinue && mins >= 1
-        ? `You have talked for ${mins} min so far. Pick it up where you stopped, or start afresh.`
-        : me.canContinue
-          ? "Pick it up where you stopped, or start afresh."
-          : "Start a new conversation whenever you are ready.",
+    startLabel: startOnly ? "Start" : "Start a new conversation",
+    detail,
     notYou: who ? `Not ${who}? Use a different email` : "Not you? Use a different email",
-    limit: !me.canStartNew && me.reasonIfNot ? limitMessage(me.reasonIfNot) : "",
+    limit: !busy && !me.canStartNew && me.reasonIfNot ? limitMessage(me.reasonIfNot) : "",
+    busy,
   };
 }
 
@@ -313,6 +334,9 @@ export interface Closing {
   lede: string;
 }
 
+/** Under the heading "The line dropped": the heading already says what happened. */
+export const DROPPED_LEDE = "Your place is saved, so you can carry on where you stopped.";
+export const DROPPED_STILL_CLOSING = "Your last call is still closing. Please try again in a minute.";
 export const IDLE_CLOSING: Closing = { title: "Paused", lede: "It went quiet. Your place is saved." };
 export const VIDEO_STOPPED_CLOSING: Closing = {
   title: "The video stopped",

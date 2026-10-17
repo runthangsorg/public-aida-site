@@ -396,7 +396,7 @@ describe("the room's state", () => {
     const pressed = feed(reduce(live, { kind: "end-pressed" }), aida({ type: "ended", reason: "user", minutes: 6, resumable: true, emailed: true }));
     expect(endView(pressed)).toEqual({ kind: "done" });
     expect(endView(feed(live, aida({ type: "ended", reason: "complete", minutes: 20 })))).toEqual({ kind: "done" });
-    expect(endView(reduce(live, { kind: "closed", minutes: 1 }))).toEqual({ kind: "done" });
+    expect(endView(reduce(live, { kind: "closed", minutes: 1 }))).toEqual({ kind: "dropped" });
   });
 
   it("keeps a server error to show, without ending", () => {

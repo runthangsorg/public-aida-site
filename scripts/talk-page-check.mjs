@@ -77,6 +77,11 @@ async function open(browser, { size, perms = [], init = '', ws = 'ok', me = { kn
         push(o) {
           this.onmessage?.({ data: JSON.stringify(o) });
         }
+        /** The line dies under the call: a close with no `ended` (what the worker's death looked like). */
+        drop() {
+          this.readyState = 3;
+          this.onclose?.({ code: 1006 });
+        }
       }
       FakeWS.OPEN = 1;
       FakeWS.CONNECTING = 0;
@@ -278,6 +283,133 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
     await page.click('#known-new');
     await page.waitForFunction(() => window.__ws, null, { timeout: 8000 });
     check(`[${tag}] pressing it uses the server's /new (which reuses the waiting interview) and opens the socket`, posted.length === 1);
+    await ctx.close();
+  }
+  await browser.close();
+}
+
+// ---------- 3. a dropped line reconnects on its own ----------
+{
+  const browser = await chrome(FAKE_MIC);
+  const resumedBody = { id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [{ section: 'org', text: 'Forty staff on two sites', at: 40 }] } };
+  let roomAt = 0;
+  /** Opens a live call, drops its line, answers /continue with `replies` in turn (the last repeats). */
+  async function dropped(tag, size, replies, { clock = false } = {}) {
+    const asked = [];
+    const { ctx, page, errors } = await open(browser, {
+      size,
+      perms: ['microphone'],
+      goto: `/talk/?go=${GO}`,
+      routes: {
+        '**/api/talk/continue': async (r) => {
+          const status = replies[Math.min(asked.length, replies.length - 1)];
+          asked.push(status);
+          await r.fulfill(status === 200 ? json(resumedBody) : json({ error: status === 409 ? 'busy' : 'nothing_to_continue' }, status));
+        },
+      },
+    });
+    if (clock) await page.clock.install();
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: true } }), sections);
+    roomAt = await page.evaluate(() => Date.now());
+    await page.evaluate(() => window.__ws.push({ aida: { type: 'note', section: 'org', text: 'Forty staff on two sites' } }));
+    await page.waitForTimeout(600);
+    await page.evaluate(() => window.__ws.drop());
+    return { ctx, page, asked, errors };
+  }
+  for (const [w, h, tag] of [[390, 844, 'phone'], [1280, 800, 'desktop']]) {
+    const size = { width: w, height: h };
+    {
+      const { ctx, page, asked, errors } = await dropped(tag, size, [409, 409, 200]);
+      await page.waitForTimeout(400);
+      const down = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, status: document.querySelector('#status-text').textContent, face: document.querySelector('#stage').dataset.faceKind, mute: document.querySelector('#mute').disabled, later: document.querySelector('#later').disabled, end: document.querySelector('#end').disabled }));
+      check(`[${tag}] the line drops: the room stays, says so, her still visible, only End works`, down.screen === 'room' && down.status === 'Reconnecting…' && down.face === 'vera' && down.mute && down.later && !down.end, JSON.stringify(down));
+      await page.screenshot({ path: `${shots}/review-room-reconnecting-${tag}.png` });
+      await page.waitForFunction(() => (window.__sockets ?? 0) >= 2, null, { timeout: 20000 });
+      await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: true, resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [{ section: 'org', text: 'Forty staff on two sites', at: 40 }] } } }), sections);
+      await page.waitForTimeout(500);
+      const back = await page.evaluate((t0) => { const c = document.querySelector('#clock').textContent; const [m, sec] = c.split(':').map(Number); return { screen: document.querySelector('#app').dataset.screen, notes: document.querySelectorAll('#nb-groups li').length, stage: document.querySelector('#stage-label').textContent, clock: c, clockS: m * 60 + sec, wallS: Math.floor((Date.now() - t0) / 1000), status: document.querySelector('#status-text').textContent }; }, roomAt);
+      check(`[${tag}] 200 after two 409s: back in the room by itself, notes and stage carried on, the clock still running from before the drop, 'Back on the line' (asked ${asked.join(', ')})`, asked.join() === '409,409,200' && back.screen === 'room' && back.notes === 1 && back.stage === 'tools' && back.clockS >= back.wallS - 2 && back.status === 'Back on the line', JSON.stringify(back));
+      check(`[${tag}] no page errors while reconnecting`, errors.length === 0, errors.join('; '));
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      const { ctx, page, asked } = await dropped(tag, size, [404]);
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(500);
+      const end = await page.evaluate(() => ({ title: document.querySelector('#end-title').textContent, lede: document.querySelector('#end-lede').textContent, choices: document.querySelector('#choices').hidden, cont: !document.querySelector('#end-actions').hidden, label: document.querySelector('#end-continue .label').textContent }));
+      check(`[${tag}] 404: the line-dropped end screen, with Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && /place is saved/.test(end.lede) && end.cont && end.label === 'Continue' && end.choices, JSON.stringify(end));
+      await page.screenshot({ path: `${shots}/review-end-dropped-${tag}.png`, fullPage: true });
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      const { ctx, page, asked } = await dropped(tag, size, [409], { clock: true });
+      // Let each reply land before the next 5 s pass (the request itself is real, the clock is not).
+      for (let i = 0; i < 20; i++) {
+        await page.waitForTimeout(150);
+        await page.clock.runFor(5000);
+      }
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      check(`[${tag}] 409 for ever: gives up after 75 s (asked ${asked.length} times) and shows the end screen`, asked.length >= 14 && asked.length <= 17);
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      // No reconnect after the call ended, or after Pause
+      for (const how of ['ended', 'pause']) {
+        const asked = [];
+        const { ctx, page } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes: { '**/api/talk/continue': async (r) => { asked.push(1); await r.fulfill(json({ error: 'x' }, 404)); } } });
+        await page.click('#go-go');
+        await page.waitForFunction(() => window.__ws);
+        await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: false } }), sections);
+        await page.waitForTimeout(400);
+        if (how === 'ended') await page.evaluate(() => window.__ws.push({ aida: { type: 'ended', reason: 'complete', minutes: 1 } }));
+        else {
+          await page.click('#later');
+          await page.click('#later-yes');
+        }
+        await page.waitForTimeout(200);
+        await page.evaluate(() => window.__ws.drop());
+        await page.waitForTimeout(1500);
+        check(`[${tag}] no reconnect after ${how === 'ended' ? 'the call ended' : 'Pause'}`, asked.length === 0 && (await page.evaluate(() => window.__sockets)) === 1);
+        await ctx.close();
+      }
+    }
+  }
+  await browser.close();
+}
+
+// ---------- 4. the busy card: never "already open" beside an active button ----------
+{
+  const browser = await chrome();
+  for (const [w, h, tag] of [[390, 844, 'phone'], [1280, 800, 'desktop']]) {
+    let calls = 0;
+    const { ctx, page } = await open(browser, {
+      size: { width: w, height: h },
+      routes: {
+        '**/api/talk/me': async (r) => {
+          calls++;
+          await r.fulfill(json(calls === 1 ? { known: true, name: 'Sam', canContinue: true, minutesSoFar: 2, canStartNew: false, reasonIfNot: 'busy' } : { known: true, name: 'Sam', canContinue: true, minutesSoFar: 2, canStartNew: true }));
+        },
+      },
+    });
+    await page.waitForSelector('#known-card:not([hidden])');
+    await page.waitForTimeout(700);
+    const busy = await page.evaluate(() => ({ detail: document.querySelector('#known-detail').textContent, cont: document.querySelector('#known-continue').disabled, check: !document.querySelector('#known-check').hidden, again: document.querySelector('#again').hidden }));
+    check(`[${tag}] busy: says so and how it clears, Continue disabled, Check again offered, no bottom Continue link`, /already open in another window/.test(busy.detail) && /clears within a minute/.test(busy.detail) && busy.cont && busy.check && busy.again, JSON.stringify(busy));
+    await page.screenshot({ path: `${shots}/review-welcome-busy-${tag}.png` });
+    await page.click('#known-check');
+    await page.waitForTimeout(600);
+    const after = await page.evaluate(() => ({ cont: document.querySelector('#known-continue').disabled, check: !document.querySelector('#known-check').hidden, detail: document.querySelector('#known-detail').textContent }));
+    check(`[${tag}] Check again re-reads /me: once it clears, Continue is live and the note goes`, !after.cont && !after.check && !/already open/.test(after.detail), JSON.stringify(after));
+    await ctx.close();
+  }
+  // a stranger sees the bottom link; a known visitor does not
+  for (const [me, want] of [[{ known: false }, false], [{ known: true, name: 'Sam', canContinue: true, canStartNew: true }, true]]) {
+    const { ctx, page } = await open(browser, { size: { width: 390, height: 844 }, me });
+    await page.waitForTimeout(700);
+    const hidden = await page.evaluate(() => document.querySelector('#again').hidden);
+    check(`"Already started? Continue where you left off" is ${want ? 'hidden for a known visitor' : 'shown to a stranger'}`, hidden === want);
     await ctx.close();
   }
   await browser.close();
