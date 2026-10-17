@@ -28,7 +28,7 @@ export interface Summary {
  * Why a call ended. `idle`: it went quiet for too long (resumable). `declined`: it was kept to the
  * interview and ended after repeated off-topic requests. `budget`: one call's cost limit was reached.
  */
-export type EndReason = "complete" | "ceiling" | "user" | "error" | "paused" | "idle" | "declined" | "budget";
+export type EndReason = "complete" | "ceiling" | "user" | "error" | "paused" | "idle" | "declined" | "budget" | "switch";
 
 /** A note the server kept from an earlier part of the same conversation. */
 export interface SavedNote {
@@ -147,7 +147,7 @@ export function readSummary(a: Bag): Summary {
   };
 }
 
-const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error", "paused", "idle", "declined", "budget"]);
+const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error", "paused", "idle", "declined", "budget", "switch"]);
 
 /** The time the person has agreed to, in minutes: 5 to 20 from the server; anything sane is believed. */
 export function readMinutes(v: unknown, fallback = 20): number {
@@ -303,6 +303,11 @@ export function hereMessage(): string {
 /** Save, email the person a link, and end the call. The server answers with `ended`, reason `paused`. */
 export function pauseMessage(): string {
   return JSON.stringify({ aida: { type: "pause" } });
+}
+
+/** Save the place and end this call with no email: the page is about to reconnect without video. */
+export function switchMessage(): string {
+  return JSON.stringify({ aida: { type: "switch" } });
 }
 
 /** The live socket's address, on this same site. `avatar`: `1` asks for full-quality video, `lite` for the thin stream. */

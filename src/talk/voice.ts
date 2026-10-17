@@ -13,7 +13,7 @@
 import { FFT_SIZE, SMOOTHING, shapeFromSpectrum, type MouthShape } from "./mouth";
 import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, base64ToBytes, encodePcm16, pcm16BytesToFloat, rateOf } from "./pcm";
 import { mediaFromMessage, textFromBinary } from "./avatar";
-import { audioMessage, endMessage, hereMessage, parseFrame, pauseMessage, socketUrl, textMessage, type ServerFrame } from "./protocol";
+import { audioMessage, endMessage, hereMessage, parseFrame, pauseMessage, socketUrl, switchMessage, textMessage, type ServerFrame } from "./protocol";
 
 // A Blob-URL module keeps the capture graph in this one file: no second
 // asset to cache, and no deprecated ScriptProcessor on the main thread. It
@@ -249,6 +249,12 @@ export class Voice {
   /** The person chose to continue later: tell the server to save and email a link, and stop listening. */
   pause(): void {
     this.send(pauseMessage());
+    this.stopMic();
+  }
+
+  /** The video stopped or the person chose voice only: save the place, no email, stop listening. */
+  switchAway(): void {
+    this.send(switchMessage());
     this.stopMic();
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { audioMessage, endMessage, parseFrame, pauseMessage, socketUrl, textMessage } from "../src/talk/protocol";
+import { audioMessage, endMessage, parseFrame, pauseMessage, socketUrl, switchMessage, textMessage } from "../src/talk/protocol";
 import {
   formatClock,
   endView,
@@ -79,6 +79,7 @@ describe("reading frames", () => {
     });
     expect(JSON.parse(endMessage())).toEqual({ aida: { type: "end" } });
     expect(JSON.parse(pauseMessage())).toEqual({ aida: { type: "pause" } });
+    expect(JSON.parse(switchMessage())).toEqual({ aida: { type: "switch" } });
   });
 
   it("reads the budget frame, and ignores a nonsense one", () => {

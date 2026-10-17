@@ -398,7 +398,7 @@ export type EndView =
 export function endView(s: TalkState): EndView {
   const e = s.ended;
   if (!e) return { kind: "done" };
-  if (e.reason === "paused" && s.videoStopped) return { kind: "video", switching: s.videoStopped.switching };
+  if ((e.reason === "paused" || e.reason === "switch") && s.videoStopped) return { kind: "video", switching: s.videoStopped.switching };
   if (e.reason === "paused") return { kind: "paused", emailed: e.emailed };
   if (e.reason === "idle") return { kind: "idle" };
   if (e.reason === "declined") return { kind: "declined" };

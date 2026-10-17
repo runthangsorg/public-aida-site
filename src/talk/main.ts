@@ -554,8 +554,8 @@ let avatarParamAsked = false;
 
 function videoGaveOut(_reason: FailReason, switching = false): void {
   if (state.phase !== "live") return;
-  // Save the place (the server also emails a link), stop listening, and end this call on purpose.
-  voice.pause();
+  // Save the place (no email: the page reconnects at once), stop listening, and end this call on purpose.
+  voice.switchAway();
   stopAvatar();
   dispatch({ kind: "video-stopped", switching });
   awaitEnd();
