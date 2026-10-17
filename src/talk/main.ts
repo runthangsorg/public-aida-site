@@ -48,6 +48,14 @@ import {
   type TalkState,
 } from "./state";
 import { renderNotes, renderSummary } from "./swot";
+import {
+  GATE_FAILED,
+  HumanCheck,
+  TOKEN_HEADER,
+  loadTurnstile,
+  withToken,
+  type TurnstileApi,
+} from "./turnstile";
 import { MicError, Voice, type MicProblem } from "./voice";
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -82,6 +90,8 @@ type Screen = keyof typeof screens;
 function show(name: Screen, focus = true): void {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
   app.dataset.screen = name;
+  // The person check's script is loaded the first time the details form is shown, never before.
+  if (name === "details") void check.prepare().catch(() => undefined);
   window.scrollTo(0, 0);
   if (!focus) return;
   const heading = screens[name].querySelector<HTMLElement>("h1");
@@ -228,6 +238,30 @@ interface Session {
 let session: Session | null = null;
 const voice = new Voice(lowPower);
 
+// The invisible person check. Its script is not requested until the details form is first shown.
+const check = new HumanCheck({
+  load: () =>
+    loadTurnstile({
+      find: () => (window as Window & { turnstile?: TurnstileApi }).turnstile,
+      add: (src, onload, onerror) => {
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        script.onload = onload;
+        script.onerror = onerror;
+        document.head.append(script);
+        return () => {
+          script.remove();
+        };
+      },
+    }),
+  container: byId("person-check", HTMLDivElement),
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: (id) => {
+    window.clearTimeout(id);
+  },
+});
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   alertBox.hidden = true;
@@ -243,25 +277,53 @@ form.addEventListener("submit", (event) => {
   void start(checked.details.name, startBody(checked.details));
 });
 
+const gateFail = byId("gate-fail", HTMLDivElement);
+
+/** The person check could not pass: say so plainly, and offer to try again (nothing was sent). */
+function showGateFailure(): void {
+  alertBox.hidden = true;
+  byId("gate-fail-text", HTMLParagraphElement).textContent = GATE_FAILED;
+  gateFail.hidden = false;
+  byId("gate-retry", HTMLButtonElement).focus();
+}
+
+byId("gate-retry", HTMLButtonElement).addEventListener("click", () => {
+  gateFail.hidden = true;
+  form.requestSubmit();
+});
+
 async function start(name: string, body: Record<string, string | boolean>): Promise<void> {
-  let res: Response;
-  let data: unknown;
-  try {
-    res = await fetch("/api/talk/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    data = await res.json().catch(() => null);
-  } catch {
-    busy(false);
+  gateFail.hidden = true;
+  const attempt = await withToken(check, async (token) => {
+    try {
+      const res = await fetch("/api/talk/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", [TOKEN_HEADER]: token },
+        body: JSON.stringify(body),
+      });
+      return { res, data: (await res.json().catch(() => null)) as unknown };
+    } catch {
+      return null;
+    }
+  });
+  busy(false);
+  if (!attempt.ok) {
+    // The check did not pass: nothing was submitted.
+    showGateFailure();
+    return;
+  }
+  if (!attempt.value) {
     showAlert("We couldn’t reach Aida. Check your connection and try again.");
     return;
   }
-  busy(false);
+  const { res, data } = attempt.value;
   const reply = readStartReply(res.status, data);
   if (reply.kind === "refused") {
     const r = reply.refusal;
+    if (r.gate) {
+      showGateFailure();
+      return;
+    }
     showAlert(r.message);
     if (r.field === "consent") {
       show("intro");

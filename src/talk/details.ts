@@ -2,6 +2,8 @@
 // same limits the server applies, and the server's own refusals turned into
 // words a person can act on. Pure.
 
+import { GATE_FAILED } from "./turnstile";
+
 export const FIELDS = ["name", "role", "company", "email", "phone", "teamSize", "industry"] as const;
 export type Field = (typeof FIELDS)[number];
 
@@ -69,6 +71,8 @@ export function startBody(d: Details): Record<string, string | boolean> {
 export interface StartRefusal {
   message: string;
   field?: Field | "consent";
+  /** The person-check was refused (or could not run): show the failure with a Try again button. */
+  gate?: true;
 }
 
 const FIELD_NAMES = new Set<string>([...FIELDS, "consent"]);
@@ -96,7 +100,7 @@ export function refusal(status: number, body: unknown): StartRefusal {
         else message = GENERIC_FORM;
         break;
       case 403:
-        message = "This browser was refused. Try again from another network or device.";
+        message = GATE_FAILED;
         break;
       case 404:
         message = "Interviews are switched off at the moment. Please come back later.";
@@ -111,5 +115,7 @@ export function refusal(status: number, body: unknown): StartRefusal {
         message = !code && said ? said : "Something went wrong starting the interview. Please try again.";
     }
   }
-  return blame ? { message, field: blame } : { message };
+  const out: StartRefusal = blame ? { message, field: blame } : { message };
+  if (status === 403) out.gate = true;
+  return out;
 }

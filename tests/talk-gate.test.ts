@@ -23,6 +23,7 @@ import {
   takeLanding,
 } from "../src/talk/gate";
 import { hereMessage, parseFrame } from "../src/talk/protocol";
+import { GATE_FAILED } from "../src/talk/turnstile";
 import { endView, initialState, reduce, type TalkState } from "../src/talk/state";
 
 // Address-shaped text is forbidden in tracked files; the server's masked hint is built from parts.
@@ -136,7 +137,7 @@ describe("the start reply", () => {
       field: "email",
     });
     expect(msg(400, { error: "invalid" })?.message).toBe("Something in the form needs another look.");
-    expect(msg(403, { error: "forbidden" })?.message).toMatch(/refused/);
+    expect(msg(403, { error: "forbidden" })).toEqual({ message: GATE_FAILED, gate: true });
     expect(msg(422, { error: "email_not_accepted" })).toEqual({ message: "Please use your work email.", field: "email" });
     expect(msg(429, { error: "too_many" })?.message).toBe("Too many tries; please wait a few minutes.");
     for (const error of ["email_failed", "busy", "unavailable"]) {

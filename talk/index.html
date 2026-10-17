@@ -152,6 +152,12 @@
           </header>
           <form id="details-form" class="form" novalidate>
             <div class="alert" id="form-alert" role="alert" hidden></div>
+            <div class="alert gate-fail" id="gate-fail" role="alert" hidden>
+              <p id="gate-fail-text"></p>
+              <button class="btn btn-quiet" type="button" id="gate-retry">Try again</button>
+            </div>
+            <!-- The person check draws nothing here unless a person has to act; out of the layout either way. -->
+            <div class="ts-host" id="person-check" aria-hidden="true"></div>
             <div class="grid">
               <div class="field">
                 <label for="f-name">Your name</label>

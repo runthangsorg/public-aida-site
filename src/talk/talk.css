@@ -2411,3 +2411,22 @@ input[aria-invalid="true"]:hover {
     bottom: 150px;
   }
 }
+
+/* The person check: nothing is drawn, and nothing moves. */
+.ts-host {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gate-fail {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.gate-fail p {
+  margin: 0;
+}
