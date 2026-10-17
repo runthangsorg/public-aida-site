@@ -95,7 +95,7 @@ describe("the script is not loaded until the details form is shown", () => {
     const html = readFileSync(resolve(import.meta.dirname, "../talk/index.html"), "utf8");
     expect(html).not.toMatch(/cloudflare/i);
     expect(html).not.toMatch(/turnstile/i);
-    expect([...html.matchAll(/<script\b[^>]*>/g)].map((m) => m[0])).toEqual(['<script type="module" src="/src/talk/main.ts">']);
+    expect([...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0])).toEqual(['<script type="module" src="/src/talk/main.ts">']);
   });
 
   it("the only caller of prepare on a screen change is the details form", () => {
