@@ -28,7 +28,7 @@ export interface Summary {
  * Why a call ended. `idle`: it went quiet for too long (resumable). `declined`: it was kept to the
  * interview and ended after repeated off-topic requests. `budget`: one call's cost limit was reached.
  */
-export type EndReason = "complete" | "ceiling" | "user" | "error" | "paused" | "idle" | "declined" | "budget";
+export type EndReason = "complete" | "ceiling" | "user" | "error" | "paused" | "idle" | "declined" | "budget" | "switch";
 
 /** A note the server kept from an earlier part of the same conversation. */
 export interface SavedNote {
@@ -46,7 +46,7 @@ export interface Resumed {
 }
 
 export type AidaFrame =
-  | { type: "ready"; targetMinutes: number; sections: Stage[]; resumed?: Resumed }
+  | { type: "ready"; targetMinutes: number; sections: Stage[]; resumed?: Resumed; avatar?: boolean }
   | { type: "budget"; minutes: number }
   | { type: "idle_warning"; secondsLeft: number }
   | { type: "section"; id: string }
@@ -147,7 +147,7 @@ export function readSummary(a: Bag): Summary {
   };
 }
 
-const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error", "paused", "idle", "declined", "budget"]);
+const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error", "paused", "idle", "declined", "budget", "switch"]);
 
 /** The time the person has agreed to, in minutes: 5 to 20 from the server; anything sane is believed. */
 export function readMinutes(v: unknown, fallback = 20): number {
@@ -190,6 +190,8 @@ function readAida(a: Bag): AidaFrame | null {
       };
       const resumed = readResumed(a.resumed);
       if (resumed) frame.resumed = resumed;
+      // The server's word on whether her video is coming; absent means a voice-only call.
+      frame.avatar = a.avatar === true;
       return frame;
     }
     case "budget": {
@@ -303,8 +305,13 @@ export function pauseMessage(): string {
   return JSON.stringify({ aida: { type: "pause" } });
 }
 
-/** The live socket's address, on this same site. */
-export function socketUrl(id: string, location: { protocol: string; host: string }): string {
+/** Save the place and end this call with no email: the page is about to reconnect without video. */
+export function switchMessage(): string {
+  return JSON.stringify({ aida: { type: "switch" } });
+}
+
+/** The live socket's address, on this same site. `avatar`: `1` asks for full-quality video, `lite` for the thin stream. */
+export function socketUrl(id: string, location: { protocol: string; host: string }, avatar?: "1" | "lite"): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/talk?id=${encodeURIComponent(id)}`;
+  return `${scheme}//${location.host}/api/talk?id=${encodeURIComponent(id)}${avatar ? `&avatar=${avatar}` : ""}`;
 }

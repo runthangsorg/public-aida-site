@@ -61,6 +61,7 @@
               <span class="label">Start the conversation</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
             </button>
             <p class="welcome-status" id="go-status" role="status"></p>
+            <p class="data-note" data-note hidden></p>
           </div>
           <div class="welcome-back" id="known-card" hidden>
             <h2 id="known-title">Welcome back</h2>
@@ -72,6 +73,7 @@
               <button class="btn btn-quiet" type="button" id="known-new">Start a new conversation</button>
             </div>
             <p class="welcome-status" id="known-status" role="status"></p>
+            <p class="data-note" data-note hidden></p>
             <button class="link-btn" type="button" id="known-forget">Not you? Use a different email</button>
           </div>
           <div class="welcome-back" id="welcome-back" hidden>
@@ -81,6 +83,7 @@
               <span class="label">Continue the conversation</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
             </button>
             <p class="welcome-status" id="welcome-status" role="status"></p>
+            <p class="data-note" data-note hidden></p>
           </div>
           <p class="lede">
             A spoken conversation of up to twenty minutes with Aida, an AI assistant. She asks how your week really runs,
@@ -222,6 +225,7 @@
             </button>
           </div>
           <p class="check-status" id="check-status" role="status"></p>
+          <p class="data-note" data-note hidden></p>
         </div>
       </section>
 
@@ -263,9 +267,12 @@
           <div class="rays" aria-hidden="true"></div>
           <div class="dots" aria-hidden="true"></div>
           <div class="halo" aria-hidden="true"></div>
+          <video class="avatar-video" id="avatar-video" playsinline disablepictureinpicture disableremoteplayback tabindex="-1" aria-hidden="true" hidden></video>
           <p class="status" id="status" data-state="connecting">
             <i class="dot" aria-hidden="true"></i><span id="status-text">Connecting</span>
           </p>
+          <button class="stage-pill" type="button" id="avatar-sound" hidden>Tap for sound</button>
+          <button class="stage-pill" type="button" id="voice-only" hidden>Switch to voice only</button>
         </div>
 
         <div class="captions" id="captions">

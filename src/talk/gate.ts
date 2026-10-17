@@ -292,6 +292,11 @@ export interface Closing {
 }
 
 export const IDLE_CLOSING: Closing = { title: "Paused", lede: "It went quiet. Your place is saved." };
+export const VIDEO_STOPPED_CLOSING: Closing = {
+  title: "The video stopped",
+  lede: "We have saved your place. You can carry on by voice.",
+};
+export const SWITCHING_CLOSING: Closing = { title: "Switching to voice only", lede: "Saving your place, one moment." };
 export const DECLINED_CLOSING: Closing = {
   title: "Thank you",
   lede: "This conversation is only for the interview, so we have stopped here. Thank you.",

@@ -17,6 +17,8 @@ import {
   DECLINED_CLOSING,
   EXPIRED_GO,
   IDLE_CLOSING,
+  SWITCHING_CLOSING,
+  VIDEO_STOPPED_CLOSING,
   NETWORK_TRY_AGAIN,
   confirmRefusal,
   entryFor,
@@ -56,6 +58,17 @@ import {
   withToken,
   type TurnstileApi,
 } from "./turnstile";
+import {
+  AvatarPlayer,
+  avatarParam,
+  capabilityOf,
+  dataNote,
+  decideAvatar,
+  rememberVoiceOnly,
+  type AvatarAsk,
+  type FailReason,
+  type MseWindow,
+} from "./avatar";
 import { MicError, Voice, type MicProblem } from "./voice";
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -466,6 +479,110 @@ byId("mic-type", HTMLButtonElement).addEventListener("click", () => {
 // ---------- 4. the room ----------
 
 const stageEl = byId("stage", HTMLDivElement);
+
+// ---------- her video ----------
+// Decided before connecting (what this browser and link can carry), confirmed by `ready.avatar`, and
+// given up gracefully: if video fails the call is paused (the place is saved) and the person can go on
+// by voice with one button. The drawn portrait sits under the video the whole time.
+
+const videoEl = byId("avatar-video", HTMLVideoElement);
+const voiceOnlyBtn = byId("voice-only", HTMLButtonElement);
+const soundBtn = byId("avatar-sound", HTMLButtonElement);
+let player: AvatarPlayer | null = null;
+
+function avatarAsk(): AvatarAsk {
+  return decideAvatar(capabilityOf(window as unknown as MseWindow));
+}
+
+// Said once, where a person is about to start: what video costs in data.
+for (const note of document.querySelectorAll<HTMLElement>("[data-note]")) {
+  const text = dataNote(avatarAsk());
+  note.textContent = text;
+  note.hidden = !text;
+}
+
+function startAvatar(): void {
+  stopAvatar();
+  player = new AvatarPlayer(videoEl, {
+    onVisible: (visible) => {
+      stageEl.dataset.video = visible ? "on" : "off";
+    },
+    onFail: (reason) => {
+      videoGaveOut(reason);
+    },
+    onMuted: () => {
+      soundBtn.hidden = false;
+    },
+  });
+  if (!player.start()) {
+    player = null;
+    videoGaveOut("error");
+    return;
+  }
+  videoEl.hidden = false;
+  voiceOnlyBtn.hidden = false;
+  stageEl.dataset.avatar = "on";
+}
+
+/** Tear it all down: stream, object URL, element. Safe when there is no video. */
+function stopAvatar(): void {
+  player?.stop();
+  player = null;
+  videoEl.hidden = true;
+  voiceOnlyBtn.hidden = true;
+  soundBtn.hidden = true;
+  delete stageEl.dataset.avatar;
+  delete stageEl.dataset.video;
+}
+
+function onAvatarFrame(frame: Parameters<typeof reduce>[1]): void {
+  if (frame.kind === "aida") {
+    const f = frame.frame;
+    if (f.type === "ready") {
+      // The server's word is the truth: it falls back to voice when the avatar would not start.
+      if (f.avatar && avatarParamAsked) startAvatar();
+      else stopAvatar();
+    } else if (f.type === "reconnecting") player?.setReconnecting(true);
+    else if (f.type === "resumed") player?.setReconnecting(false);
+  } else if (frame.kind === "model" && frame.content.interrupted) {
+    player?.interrupt();
+  }
+}
+
+/** Did this call ask for video at all? (A `ready.avatar` we did not ask for is not trusted.) */
+let avatarParamAsked = false;
+
+function videoGaveOut(_reason: FailReason, switching = false): void {
+  if (state.phase !== "live") return;
+  // Save the place (no email: the page reconnects at once), stop listening, and end this call on purpose.
+  voice.switchAway();
+  stopAvatar();
+  dispatch({ kind: "video-stopped", switching });
+  awaitEnd();
+}
+
+voiceOnlyBtn.addEventListener("click", () => {
+  rememberVoiceOnly(safeStorage());
+  videoGaveOut("error", true);
+});
+soundBtn.addEventListener("click", () => {
+  soundBtn.hidden = true;
+  player?.unmute();
+});
+
+function safeStorage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+// A page that goes away must not leave a download running.
+window.addEventListener("pagehide", () => {
+  stopAvatar();
+  voice.close();
+});
 const stagesEl = byId("stages", HTMLOListElement);
 const stageLabel = byId("stage-label", HTMLSpanElement);
 const stageCount = byId("stage-count", HTMLSpanElement);
@@ -537,6 +654,7 @@ const defaultHint = hint.textContent;
 
 /** The room as the first call left it, put back: a second call (continue after a pause) starts clean. */
 function resetRoom(): void {
+  stopAvatar();
   leaving = false;
   startedAt = 0;
   window.clearInterval(clockTimer);
@@ -575,6 +693,8 @@ function resetRoom(): void {
 function enterRoom(typing: boolean): void {
   if (!session) return;
   resetRoom();
+  const ask = avatarAsk();
+  avatarParamAsked = avatarParam(ask) !== undefined;
   textOnly = typing || !voice.hasMic;
   state = initialState(session.sections, session.targetMinutes, session.resumed);
   show("room", false);
@@ -585,18 +705,27 @@ function enterRoom(typing: boolean): void {
     muteLabel.textContent = "No mic";
     openTyper(true);
   }
-  voice.connect(session.id, {
-    onFrame: (frame) => {
-      dispatch(frame.kind === "aida" && frame.frame.type === "note" ? { ...frame, frame: { ...frame.frame, at: elapsed() } } : frame);
+  voice.connect(
+    session.id,
+    {
+      onFrame: (frame) => {
+        onAvatarFrame(frame);
+        dispatch(frame.kind === "aida" && frame.frame.type === "note" ? { ...frame, frame: { ...frame.frame, at: elapsed() } } : frame);
+      },
+      onClose: () => {
+        stopAvatar();
+        onSocketClosed();
+      },
+      onSpeaking: (on) => {
+        renderStatus();
+        drive(on);
+      },
+      onMedia: (bytes) => {
+        player?.push(bytes);
+      },
     },
-    onClose: () => {
-      onSocketClosed();
-    },
-    onSpeaking: (on) => {
-      renderStatus();
-      drive(on);
-    },
-  });
+    avatarParam(ask),
+  );
   if (!lowPower && !textOnly) {
     voice.onMicLevel = (level) => {
       showMicLevel(level);
@@ -659,13 +788,19 @@ function renderStages(s: TalkState): void {
   }
 }
 
+/** On video there is no PCM queue to say she is speaking: her open caption is the signal. */
+function herTurnIsOpen(s: TalkState): boolean {
+  const last = s.turns[s.turns.length - 1];
+  return last?.who === "aida" && last.open;
+}
+
 function statusOf(s: TalkState): [string, string] {
   if (s.phase === "connecting") return ["connecting", "Connecting"];
   if (s.phase === "ending") return ["ending", s.pausing ? "Saving your place" : "Wrapping up"];
   if (s.phase === "ended") return ["ended", "Finished"];
   if (s.link === "reconnecting") return ["reconnecting", "Reconnecting, one moment"];
   if (s.link === "resumed" && performance.now() - resumedAt < 4000) return ["resumed", "Back on the line"];
-  if (voice.isSpeaking) return ["speaking", "Aida is speaking"];
+  if (voice.isSpeaking || (s.avatar && herTurnIsOpen(s))) return ["speaking", "Aida is speaking"];
   // A returning conversation: say so until either of you has spoken.
   if (s.resumed && s.turns.length === 0) return ["resumed", "Welcome back"];
   if (textOnly) return ["listening", "Type your answer"];
@@ -793,7 +928,7 @@ function render(prev: TalkState | null, s: TalkState): void {
   }
   if (changed("link", "phase")) renderStatus();
   if (changed("turns", "error")) renderCaptions(s);
-  if (s.resumed && changed("turns")) renderStatus();
+  if ((s.resumed || s.avatar) && changed("turns")) renderStatus();
   if (!prev && s.resumed) hint.textContent = "Welcome back. She will pick up where you stopped. Talk as you would on a call; you can interrupt her.";
   if (changed("notes")) renderNotesLive(prev, s);
   if (changed("idleWarning")) renderIdle(s.idleWarning);
@@ -1016,6 +1151,7 @@ notebook.addEventListener("keydown", (event) => {
 // Any tap in the room may be what lets a suspended audio context run.
 screens.room.addEventListener("pointerup", () => {
   voice.wake();
+  player?.unmute();
 });
 
 // ---------- 5. what she heard ----------
@@ -1028,6 +1164,7 @@ function leave(): void {
   tick();
   voice.onMicLevel = null;
   voice.stopMic();
+  stopAvatar();
   // Let her last words play out (up to a few seconds), then close the line.
   const wait = Math.min(8000, voice.queued * 1000 + 600);
   setTimeout(() => {
@@ -1040,6 +1177,7 @@ function leave(): void {
 const endActions = byId("end-actions", HTMLDivElement);
 const endContinue = byId("end-continue", HTMLButtonElement);
 const endContinueStatus = byId("end-continue-status", HTMLParagraphElement);
+const endContinueLabel = endContinue.querySelector<HTMLElement>(".label");
 
 function showEnd(): void {
   const title = byId("end-title", HTMLHeadingElement);
@@ -1057,11 +1195,12 @@ function showEnd(): void {
   endContinueStatus.textContent = "";
   next.hidden = view.kind !== "done" && view.kind !== "budget";
   choices.hidden = true;
-  if (view.kind === "paused" || view.kind === "saved" || view.kind === "idle" || view.kind === "declined") {
+  if (view.kind === "paused" || view.kind === "saved" || view.kind === "idle" || view.kind === "declined" || view.kind === "video") {
     // Not finished, or not for the record: no read-back, no follow-up form.
     let copy: { title: string; lede: string; more?: string };
     if (view.kind === "paused") copy = pausedCopy(view.emailed);
     else if (view.kind === "saved") copy = savedCopy(view.emailed);
+    else if (view.kind === "video") copy = view.switching ? SWITCHING_CLOSING : VIDEO_STOPPED_CLOSING;
     else if (view.kind === "idle") copy = IDLE_CLOSING;
     else copy = DECLINED_CLOSING;
     title.textContent = copy.title;
@@ -1069,10 +1208,13 @@ function showEnd(): void {
     more.textContent = copy.more ?? "";
     more.hidden = !copy.more;
     readback.replaceChildren();
-    if (view.kind === "idle") {
+    if (view.kind === "idle" || view.kind === "video") {
       // The cookie lets the server open the saved call again; the click is the gesture for her voice.
       endActions.hidden = false;
       endContinue.disabled = false;
+      if (endContinueLabel) endContinueLabel.textContent = view.kind === "video" ? "Continue without video" : "Continue";
+      // Switching on purpose carries straight on: the choice was already made.
+      if (view.kind === "video" && view.switching) window.setTimeout(() => { endContinue.click(); }, 0);
     }
     if (view.kind === "declined") byId("end-meta", HTMLParagraphElement).textContent = "";
     else
@@ -1417,6 +1559,8 @@ byId("known-forget", HTMLButtonElement).addEventListener("click", () => {
 endContinue.addEventListener("click", () => {
   if (endContinue.disabled) return;
   voice.wake();
+  // "Continue without video" is a choice to remember: the next call starts without it too.
+  if (endView(state).kind === "video") rememberVoiceOnly(safeStorage());
   endContinue.disabled = true;
   endContinueStatus.textContent = "";
   void post("/api/talk/continue", {}).then((r) => {
