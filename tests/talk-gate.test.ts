@@ -10,6 +10,9 @@ import {
   entryFor,
   entryRefusal,
   idleSentence,
+  connectFailedText,
+  MIC_PROMPT_HELP_MS,
+  MIC_STILL_WAITING,
   knownCopy,
   limitMessage,
   readContinued,
@@ -335,5 +338,47 @@ describe("the new ways a call ends", () => {
 
   it("an idle end the server did not mark resumable is still the idle screen", () => {
     expect(endView(ended("idle"))).toEqual({ kind: "idle" });
+  });
+});
+
+describe("a confirmed interview that was never started", () => {
+  const me = readMe({ known: true, name: "Sam", canContinue: false, canStartNew: true, startReady: true });
+
+  it("is read from /me, and a missing or odd flag means no", () => {
+    expect(me?.startReady).toBe(true);
+    expect(readMe({ known: true, name: "Sam", canStartNew: true })?.startReady).toBeUndefined();
+    expect(readMe({ known: true, name: "Sam", startReady: "yes" })?.startReady).toBeUndefined();
+  });
+
+  it("the card says Start, not Start a new conversation", () => {
+    if (!me) throw new Error("expected a known visitor");
+    const copy = knownCopy(me);
+    expect(copy.startLabel).toBe("Start");
+    expect(copy.detail).toBe("Your email is confirmed. Start whenever you are ready.");
+    expect(copy.title).toBe("Welcome back, Sam");
+  });
+
+  it("an ordinary returning visitor still starts a new conversation, and a saved one still continues", () => {
+    const plain = readMe({ known: true, name: "Sam", canContinue: false, canStartNew: true });
+    const saved = readMe({ known: true, name: "Sam", canContinue: true, minutesSoFar: 4, canStartNew: true, startReady: true });
+    if (!plain || !saved) throw new Error("expected known visitors");
+    expect(knownCopy(plain).startLabel).toBe("Start a new conversation");
+    expect(knownCopy(saved).startLabel).toBe("Start a new conversation"); // something to continue wins
+    expect(knownCopy(saved).detail).toMatch(/4 min so far/);
+  });
+});
+
+describe("the microphone and the connection are never a dead end", () => {
+  it("a microphone question nobody answers is given help after eight seconds", () => {
+    expect(MIC_PROMPT_HELP_MS).toBe(8000);
+    expect(MIC_STILL_WAITING).toMatch(/Still waiting for your browser/);
+    expect(MIC_STILL_WAITING).toMatch(/type your answers instead/);
+  });
+
+  it("a line that will not open says so, plainly, and says what to do the second time", () => {
+    expect(connectFailedText(1)).toMatch(/couldn’t connect you to Aida/);
+    expect(connectFailedText(1)).toMatch(/try again/i);
+    expect(connectFailedText(2)).toMatch(/Still no connection/);
+    expect(connectFailedText(2)).toMatch(/open the link in your email again/);
   });
 });

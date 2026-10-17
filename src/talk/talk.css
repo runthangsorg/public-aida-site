@@ -1754,6 +1754,13 @@ input[aria-invalid="true"]:hover {
     aspect-ratio: 1 / 1.02;
   }
 
+  /* The copy column is taller than a laptop screen: keep her face at the top and in view, not centred below the fold. */
+  .screen-intro .portrait {
+    align-self: start;
+    position: sticky;
+    top: 72px;
+  }
+
   .portrait .head {
     top: 7%;
     width: 112%;
@@ -2443,7 +2450,7 @@ input[aria-invalid="true"]:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 22%;
+  object-position: 50% 9%; /* the same framing as the still, so the fade between them does not jump */
   opacity: 0;
   transition: opacity 420ms ease;
   background: transparent;
@@ -2504,4 +2511,38 @@ input[aria-invalid="true"]:hover {
   color: var(--muted);
   font-size: 15px;
   line-height: 1.4;
+}
+
+/* ---------- Vera's still: her face wherever video is expected ---------- */
+
+.vera-still {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 38%;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* The print behind the drawn Aida (rays, halftone dots, the soft halo) is not drawn behind a photograph. */
+[data-face-kind="vera"] > .rays,
+[data-face-kind="vera"] > .dots,
+[data-face-kind="vera"] > .halo {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .screen-intro .portrait .vera-still {
+    animation: fade-in 700ms ease both 80ms;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }

@@ -14,6 +14,9 @@ import {
 } from "./resume";
 import {
   BUDGET_LEDE,
+  MIC_PROMPT_HELP_MS,
+  MIC_STILL_WAITING,
+  connectFailedText,
   DECLINED_CLOSING,
   EXPIRED_GO,
   IDLE_CLOSING,
@@ -61,6 +64,10 @@ import {
 import {
   AvatarPlayer,
   avatarParam,
+  faceFor,
+  nextFace,
+  type Face,
+  type FaceEvent,
   capabilityOf,
   dataNote,
   decideAvatar,
@@ -116,17 +123,36 @@ function show(name: Screen, focus = true): void {
 
 // ---------- her face, wherever the page shows her ----------
 
-const template = byId("face", HTMLTemplateElement);
-const heads: HTMLElement[] = [];
-for (const host of document.querySelectorAll<HTMLElement>("[data-face]")) {
-  const face = template.content.firstElementChild?.cloneNode(true);
-  if (!(face instanceof HTMLElement)) continue;
-  // Only the room's face speaks; the others keep just her portrait and the blink.
-  if (host.id !== "stage") for (const m of face.querySelectorAll(".mouth")) m.remove();
-  host.append(face);
-  heads.push(face);
+// Which face she wears is decided once, here, before anything is drawn, from the same decision as the
+// video choice (Media Source, the codec, no data saver, not "voice only" chosen earlier): so there is no
+// flash of the drawn face first. The drawn Aida, with her mouth and blink patches, is kept for the
+// voice-only path only; the face changes only if the call turns out to be voice only.
+const templates = { drawn: byId("face", HTMLTemplateElement), vera: byId("face-vera", HTMLTemplateElement) };
+let face: Face = faceFor(decideAvatar(capabilityOf(window as unknown as MseWindow)));
+let roomHead: HTMLElement | null = null;
+
+function drawFaces(): void {
+  for (const host of document.querySelectorAll<HTMLElement>("[data-face]")) {
+    for (const old of host.querySelectorAll(".head, .vera-still")) old.remove();
+    const el = templates[face].content.firstElementChild?.cloneNode(true);
+    if (!(el instanceof HTMLElement)) continue;
+    // Only the room's drawn face speaks; the others keep just her portrait and the blink.
+    if (face === "drawn" && host.id !== "stage") for (const m of el.querySelectorAll(".mouth")) m.remove();
+    host.dataset.faceKind = face;
+    host.append(el);
+  }
+  roomHead = byId("stage", HTMLDivElement).querySelector<HTMLElement>(".head");
 }
-const roomHead = byId("stage", HTMLDivElement).querySelector<HTMLElement>(".head");
+drawFaces();
+
+/** Her face, if the call has turned out to be voice only. */
+function faceChanged(e: FaceEvent): void {
+  const next = nextFace(face, e);
+  if (next === face) return;
+  face = next;
+  drawFaces();
+  bindMouths();
+}
 
 // She blinks every few seconds: one class on the faces of the screen in view,
 // nothing measured, nothing running in between.
@@ -450,30 +476,74 @@ const MIC_TROUBLE: Record<MicProblem, string> = {
   failed: "The microphone didn’t start. Try again, or type your answers instead.",
 };
 
+// Each press owns the screen until the next one: a late answer from an earlier question is ignored.
+let micAttempt = 0;
+let connectFails = 0;
+const micRetry = byId("mic-retry", HTMLButtonElement);
+
 async function askForMic(): Promise<void> {
+  const attempt = ++micAttempt;
   show("mic");
   micText.textContent = "Your browser is asking to use your microphone. Choose Allow and the conversation starts.";
   micWait.hidden = false;
   micActions.hidden = true;
+  micRetry.hidden = false;
+  // A question nobody answers (dismissed, hidden, an in-app browser that never shows it) must not be a dead
+  // end: after a few seconds, say so and offer the way round.
+  const help = window.setTimeout(() => {
+    if (attempt !== micAttempt) return;
+    micText.textContent = MIC_STILL_WAITING;
+    micActions.hidden = false;
+  }, MIC_PROMPT_HELP_MS);
   try {
     await voice.openMic();
   } catch (err) {
+    window.clearTimeout(help);
+    if (attempt !== micAttempt) return;
     micWait.hidden = true;
     micActions.hidden = false;
     micText.textContent = MIC_TROUBLE[err instanceof MicError ? err.problem : "failed"];
-    byId("mic-retry", HTMLButtonElement).hidden = err instanceof MicError && (err.problem === "insecure" || err.problem === "unsupported");
+    micRetry.hidden = err instanceof MicError && (err.problem === "insecure" || err.problem === "unsupported");
     return;
   }
-  enterRoom(false);
+  window.clearTimeout(help);
+  if (attempt !== micAttempt) {
+    voice.stopMic(); // the person went another way while the browser was asking
+    return;
+  }
+  startRoom(false);
 }
 
-byId("mic-retry", HTMLButtonElement).addEventListener("click", () => {
+/** Open the room; if anything throws on the way (the socket itself, the page), say so with a way to retry. */
+function startRoom(typing: boolean): void {
+  try {
+    enterRoom(typing);
+  } catch {
+    connectFailed();
+  }
+}
+
+/** The line did not open: stay on a screen with a plain message and a retry, never a silent return. */
+function connectFailed(): void {
+  voice.close();
+  stopAvatar();
+  connectFails++;
+  micAttempt++;
+  show("mic");
+  micWait.hidden = true;
+  micActions.hidden = false;
+  micRetry.hidden = false;
+  micText.textContent = connectFailedText(connectFails);
+}
+
+micRetry.addEventListener("click", () => {
   voice.wake();
   void askForMic();
 });
 byId("mic-type", HTMLButtonElement).addEventListener("click", () => {
   voice.wake();
-  enterRoom(true);
+  micAttempt++;
+  startRoom(true);
 });
 
 // ---------- 4. the room ----------
@@ -540,6 +610,8 @@ function onAvatarFrame(frame: Parameters<typeof reduce>[1]): void {
     const f = frame.frame;
     if (f.type === "ready") {
       // The server's word is the truth: it falls back to voice when the avatar would not start.
+      connectFails = 0;
+      faceChanged({ t: "ready", asked: avatarParamAsked, avatar: f.avatar === true });
       if (f.avatar && avatarParamAsked) startAvatar();
       else stopAvatar();
     } else if (f.type === "reconnecting") player?.setReconnecting(true);
@@ -557,6 +629,7 @@ function videoGaveOut(_reason: FailReason, switching = false): void {
   // Save the place (no email: the page reconnects at once), stop listening, and end this call on purpose.
   voice.switchAway();
   stopAvatar();
+  faceChanged({ t: "video-stopped" });
   dispatch({ kind: "video-stopped", switching });
   awaitEnd();
 }
@@ -735,10 +808,9 @@ function enterRoom(typing: boolean): void {
 
 function onSocketClosed(): void {
   if (state.phase === "connecting") {
-    // Never became ready: nothing happened yet, so go back to the form and say so.
-    voice.close();
-    show("details");
-    showAlert("We couldn’t connect you to Aida just now. Please try again in a moment.");
+    // Never became ready: nothing happened yet. Say so where the person is, with a retry (a person who came
+    // by a link never filled in the form, so sending them back to it would be a dead end).
+    connectFailed();
     return;
   }
   dispatch({ kind: "closed", minutes: elapsed() / 60 });
@@ -983,10 +1055,15 @@ const shape: MouthShape = { open: 0, spread: 0.5 };
 let mouth: Mouth = "closed";
 let mouthTimer = 0;
 const mouthImages = new Map<Mouth, HTMLElement>();
-for (const m of ["small", "mid", "wide", "round", "pucker"] as const) {
-  const img = roomHead?.querySelector<HTMLElement>(`.m-${m}`);
-  if (img) mouthImages.set(m, img);
+function bindMouths(): void {
+  mouthImages.clear();
+  mouth = "closed";
+  for (const m of ["small", "mid", "wide", "round", "pucker"] as const) {
+    const img = roomHead?.querySelector<HTMLElement>(`.m-${m}`);
+    if (img) mouthImages.set(m, img);
+  }
 }
+bindMouths();
 
 let mouthSince = 0;
 
@@ -1469,6 +1546,11 @@ function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
   byId("known-forget", HTMLButtonElement).textContent = copy.notYou;
   knownContinue.hidden = !me.canContinue;
   knownNew.hidden = !me.canStartNew;
+  knownNew.textContent = copy.startLabel;
+  // A confirmed interview waiting to be started is the one thing to do: Start is the main button.
+  const startOnly = me.startReady === true && !me.canContinue;
+  knownNew.classList.toggle("btn-go", startOnly);
+  knownNew.classList.toggle("btn-quiet", !startOnly);
   knownStatus.textContent = copy.limit;
   knownCard.hidden = false;
   introFor("known");
