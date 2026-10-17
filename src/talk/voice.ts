@@ -12,7 +12,7 @@
 
 import { FFT_SIZE, SMOOTHING, shapeFromSpectrum, type MouthShape } from "./mouth";
 import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, base64ToBytes, encodePcm16, pcm16BytesToFloat, rateOf } from "./pcm";
-import { audioMessage, endMessage, parseFrame, pauseMessage, socketUrl, textMessage, type ServerFrame } from "./protocol";
+import { audioMessage, endMessage, hereMessage, parseFrame, pauseMessage, socketUrl, textMessage, type ServerFrame } from "./protocol";
 
 // A Blob-URL module keeps the capture graph in this one file: no second
 // asset to cache, and no deprecated ScriptProcessor on the main thread. It
@@ -228,6 +228,11 @@ export class Voice {
   end(): void {
     this.send(endMessage());
     this.stopMic();
+  }
+
+  /** The person answered the idle warning. */
+  here(): void {
+    this.send(hereMessage());
   }
 
   /** The person chose to continue later: tell the server to save and email a link, and stop listening. */

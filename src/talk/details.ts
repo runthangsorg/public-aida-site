@@ -73,30 +73,43 @@ export interface StartRefusal {
 
 const FIELD_NAMES = new Set<string>([...FIELDS, "consent"]);
 
+const GENERIC_FORM = "Something in the form needs another look.";
+const CODE = /^[a-z][a-z_]*$/;
+
 /** What to tell the person when /api/talk/start says no. */
 export function refusal(status: number, body: unknown): StartRefusal {
   const b = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
   const said = typeof b.error === "string" ? b.error.trim().slice(0, 200) : "";
+  // The server names a refusal with a code word (`invalid`, `too_many`); an older reply carried a sentence.
+  const code = CODE.test(said) ? said : "";
   const field = typeof b.field === "string" && FIELD_NAMES.has(b.field) ? (b.field as Field | "consent") : undefined;
   let message: string;
-  switch (status) {
-    case 400:
-      message = said || "Something in the form needs another look.";
-      break;
-    case 403:
-      message = "This browser was refused. Try again from another network or device.";
-      break;
-    case 404:
-      message = "Interviews are switched off at the moment. Please come back later.";
-      break;
-    case 429:
-      message = "Too many interviews started from here just now. Please wait a few minutes and try again.";
-      break;
-    case 503:
-      message = "Aida can’t take a call right now. Please try again in a little while.";
-      break;
-    default:
-      message = said || "Something went wrong starting the interview. Please try again.";
+  let blame = field;
+  if (status === 422 && code === "email_not_accepted") {
+    message = "Please use your work email.";
+    blame = "email";
+  } else {
+    switch (status) {
+      case 400:
+        if (!code && said) message = said;
+        else if (field && field !== "consent") message = REQUIRED[field] ?? GENERIC_FORM;
+        else message = GENERIC_FORM;
+        break;
+      case 403:
+        message = "This browser was refused. Try again from another network or device.";
+        break;
+      case 404:
+        message = "Interviews are switched off at the moment. Please come back later.";
+        break;
+      case 429:
+        message = "Too many tries; please wait a few minutes.";
+        break;
+      case 503:
+        message = "We couldn’t send the email just now. Please try again in a moment.";
+        break;
+      default:
+        message = !code && said ? said : "Something went wrong starting the interview. Please try again.";
+    }
   }
-  return field ? { message, field } : { message };
+  return blame ? { message, field: blame } : { message };
 }
