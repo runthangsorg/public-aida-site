@@ -1341,7 +1341,9 @@ async function checkMe(): Promise<void> {
   let data: unknown;
   try {
     const res = await fetch("/api/talk/me", { headers: { Accept: "application/json" } });
-    data = res.ok ? await res.json().catch(() => null) : null;
+    // Always read the body, even a refusal: an unread one leaves the request open from the browser's point of view.
+    const body: unknown = await res.json().catch(() => null);
+    data = res.ok ? body : null;
   } catch {
     return; // no answer: the ordinary first screen
   }
