@@ -30,6 +30,9 @@ export const NO_MEDIA_MS = 6000;
 /** ...but a connection swap leaves a gap of about 3.7 s, so allow more while one is under way. */
 export const SWAP_NO_MEDIA_MS = 12_000;
 
+/** A hiccup shorter than this (an interruption's seek costs about 0.25 s) keeps the picture; a longer one shows the portrait. */
+export const STALL_GRACE_MS = 350;
+
 /** The probe string used before connecting; the real one is read from the init segment. */
 export const PROBE_MIME = 'video/mp4; codecs="avc1.42c01f,mp4a.40.2"';
 
@@ -507,6 +510,8 @@ export class AvatarPlayer {
   /** When the playhead last moved (or, before it ever has, when media first arrived). */
   private progressAt = 0;
   private lastTime = 0;
+  /** Since when the element has had too little data to show a frame (0 when it has enough). */
+  private starvedSince = 0;
   private readonly onVideoError = (): void => {
     this.fail({ t: 'player-error' });
   };
@@ -689,7 +694,9 @@ export class AvatarPlayer {
     const action = edgeAction(v.currentTime, ranges);
     if (this.playing && action.kind === 'seek') v.currentTime = action.to;
     this.evict();
-    const stalled = !this.playing || v.readyState < 3;
+    if (v.readyState >= 3) this.starvedSince = 0;
+    else this.starvedSince ||= performance.now();
+    const stalled = !this.playing || (this.starvedSince > 0 && performance.now() - this.starvedSince > STALL_GRACE_MS);
     const visible = isRevealed(v.currentTime, this.hidden, stalled);
     if (visible !== this.visible) {
       this.visible = visible;
@@ -723,6 +730,7 @@ export class AvatarPlayer {
     this.hidden = [];
     this.opened = false;
     this.playing = false;
+    this.starvedSince = 0;
     this.done = true;
     if (this.visible) {
       this.visible = false;
