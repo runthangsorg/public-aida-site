@@ -172,9 +172,11 @@ describe("what to ask for before connecting", () => {
     expect(decideAvatar({ ...base, voiceOnly: true, downlink: 50 })).toBe("off");
   });
 
-  it("the thin stream for a weak link: 2g, 3g, slow-2g, under 6 Mbit/s, or cellular", () => {
+  it("the thin stream for a weak link: 2g, 3g, slow-2g, an estimate under 1 Mbit/s, or cellular", () => {
     for (const effectiveType of ["slow-2g", "2g", "3g"]) expect(decideAvatar({ ...base, effectiveType })).toBe("lite");
-    expect(decideAvatar({ ...base, downlink: 5.9 })).toBe("lite");
+    expect(decideAvatar({ ...base, downlink: 0.9 })).toBe("lite");
+    // Chrome's estimate comes from recent traffic and reads low on a quiet page (1.65 on a good laptop link, seen 17 Oct).
+    expect(decideAvatar({ ...base, effectiveType: "4g", downlink: 1.65 })).toBe("full");
     expect(decideAvatar({ ...base, downlink: 6 })).toBe("full");
     expect(decideAvatar({ ...base, type: "cellular" })).toBe("lite");
     expect(decideAvatar({ ...base, effectiveType: "4g", downlink: 0 })).toBe("full"); // 0 means unknown

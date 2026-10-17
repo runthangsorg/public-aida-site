@@ -255,7 +255,7 @@ export interface Capability {
 export function decideAvatar(c: Capability): AvatarAsk {
   if (c.voiceOnly || !c.hasMse || !c.supported || c.saveData) return 'off';
   const slow = c.effectiveType === 'slow-2g' || c.effectiveType === '2g' || c.effectiveType === '3g';
-  const thin = typeof c.downlink === 'number' && c.downlink > 0 && c.downlink < 6;
+  const thin = typeof c.downlink === 'number' && c.downlink > 0 && c.downlink < 1;
   if (slow || thin || c.type === 'cellular') return 'lite';
   return 'full';
 }
