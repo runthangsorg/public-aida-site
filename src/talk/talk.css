@@ -2278,3 +2278,155 @@ input[aria-invalid="true"]:hover {
     width: 100%;
   }
 }
+
+/* ---------- the gate: confirmation, welcome back, idle ---------- */
+
+.notice {
+  margin: 14px 0 0;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #fdf1f5;
+  box-shadow: 0 0 0 2px var(--pink-ink);
+  color: var(--pink-ink);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.aside-email {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.screen-details .aside-email {
+  margin-top: 14px;
+  text-align: right;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  margin-top: 6px;
+}
+
+.welcome-back .card-actions .btn {
+  margin-top: 0;
+}
+
+@media (max-width: 719px) {
+  .card-actions {
+    display: grid;
+    width: 100%;
+  }
+
+  .welcome-back .card-actions .btn {
+    width: 100%;
+  }
+}
+
+.link-btn {
+  min-height: 44px;
+  margin: 2px 0 -6px;
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+
+.screen-check .lede strong {
+  overflow-wrap: anywhere;
+}
+
+.check-status {
+  min-height: 1.5em;
+  margin: 14px 0 0;
+  color: var(--ink-2);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.screen-check .actions .btn:disabled {
+  cursor: not-allowed;
+}
+
+.end-actions {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.screen-room {
+  position: relative;
+}
+
+/* "Still there?": over the room, above the controls, until it is answered. */
+.idle {
+  position: absolute;
+  z-index: 40; /* above the notebook sheet (30) and its scrim (29) */
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: calc(128px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: var(--paper-hi);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 18px 36px -18px rgb(35 44 92 / 0.7);
+}
+
+.idle-text {
+  flex: 1 1 220px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+@media (min-width: 1000px) {
+  .idle {
+    right: auto;
+    left: 40px;
+    width: min(560px, calc(100% - 40vw - 80px));
+    bottom: 150px;
+  }
+}
+
+/* The person check: nothing is drawn, and nothing moves. */
+.ts-host {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gate-fail {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.gate-fail p {
+  margin: 0;
+}

@@ -107,7 +107,8 @@ describe("the details form", () => {
     expect(refusal(404, null).message).toMatch(/switched off/);
     expect(refusal(429, {}).message).toMatch(/wait a few minutes/);
     expect(refusal(503, {}).message).toMatch(/try again/);
-    expect(refusal(403, {}).message).toMatch(/refused/);
+    expect(refusal(403, {}).message).toMatch(/check that you are a person/);
+    expect(refusal(403, {}).gate).toBe(true);
     expect(refusal(500, {}).message).toMatch(/went wrong/);
   });
 });

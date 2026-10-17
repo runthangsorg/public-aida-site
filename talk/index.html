@@ -53,6 +53,27 @@
         </div>
         <div class="copy">
           <h1 id="intro-title" class="display">Tell Aida how your business runs</h1>
+          <p class="notice" id="intro-notice" role="status" hidden></p>
+          <div class="welcome-back" id="go-card" hidden>
+            <h2>One click to begin</h2>
+            <p>Your email is confirmed once you press the button.</p>
+            <button class="btn btn-go" type="button" id="go-go">
+              <span class="label">Start the conversation</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+            </button>
+            <p class="welcome-status" id="go-status" role="status"></p>
+          </div>
+          <div class="welcome-back" id="known-card" hidden>
+            <h2 id="known-title">Welcome back</h2>
+            <p id="known-detail"></p>
+            <div class="card-actions">
+              <button class="btn btn-go" type="button" id="known-continue">
+                <span class="label">Continue where you left off</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+              </button>
+              <button class="btn btn-quiet" type="button" id="known-new">Start a new conversation</button>
+            </div>
+            <p class="welcome-status" id="known-status" role="status"></p>
+            <button class="link-btn" type="button" id="known-forget">Not you? Use a different email</button>
+          </div>
           <div class="welcome-back" id="welcome-back" hidden>
             <h2>Welcome back</h2>
             <p>Your conversation is waiting where you stopped.</p>
@@ -103,6 +124,7 @@
               Start <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
             </button>
             <p class="aside">Find a quiet spot. Your browser will ask to use the microphone.</p>
+            <p class="aside aside-email">We will email you a link to confirm. One click and you are in.</p>
           </form>
           <details class="again" id="again">
             <summary>Already started? Continue where you left off</summary>
@@ -130,6 +152,12 @@
           </header>
           <form id="details-form" class="form" novalidate>
             <div class="alert" id="form-alert" role="alert" hidden></div>
+            <div class="alert gate-fail" id="gate-fail" role="alert" hidden>
+              <p id="gate-fail-text"></p>
+              <button class="btn btn-quiet" type="button" id="gate-retry">Try again</button>
+            </div>
+            <!-- The person check draws nothing here unless a person has to act; out of the layout either way. -->
+            <div class="ts-host" id="person-check" aria-hidden="true"></div>
             <div class="grid">
               <div class="field">
                 <label for="f-name">Your name</label>
@@ -173,7 +201,27 @@
                 <span class="label">Continue</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
               </button>
             </div>
+            <p class="aside aside-email">We will email you a link to confirm. One click and you are in.</p>
           </form>
+        </div>
+      </section>
+
+      <!-- ===================== 2b. Check your email ===================== -->
+      <section class="screen screen-mic screen-check" id="check" aria-labelledby="check-title" hidden>
+        <div class="sheet sheet-narrow">
+          <div class="avatar avatar-lg" data-face aria-hidden="true"></div>
+          <h1 id="check-title" class="display">Check your email</h1>
+          <p class="lede">
+            We have sent a link to <strong id="check-hint">your email</strong>. Click it and you go straight into your
+            conversation. It can take a minute; check your spam folder.
+          </p>
+          <div class="actions">
+            <button class="btn btn-quiet" type="button" id="check-different">Use a different email</button>
+            <button class="btn btn-go" type="button" id="check-resend" disabled>
+              <span class="label">Send it again</span>
+            </button>
+          </div>
+          <p class="check-status" id="check-status" role="status"></p>
         </div>
       </section>
 
@@ -204,6 +252,12 @@
             <span class="of" id="clock-of">of about 20 min</span>
           </p>
         </header>
+
+        <div class="idle" id="idle" hidden>
+          <p class="visually-hidden" role="alert">Still there? We will pause soon and save your place.</p>
+          <p class="idle-text" id="idle-text" aria-hidden="true"></p>
+          <button class="btn btn-go" type="button" id="idle-here">I’m here</button>
+        </div>
 
         <div class="stage" id="stage" data-face>
           <div class="rays" aria-hidden="true"></div>
@@ -297,6 +351,12 @@
             <h1 id="end-title" class="display" tabindex="-1">Thank you</h1>
             <p class="lede" id="end-lede">Here is what Aida heard. The Aida team will read it and be in touch soon.</p>
             <p class="lede lede-more" id="end-more" hidden></p>
+            <div class="end-actions" id="end-actions" hidden>
+              <button class="btn btn-go" type="button" id="end-continue">
+                <span class="label">Continue</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+              </button>
+              <p class="welcome-status" id="end-continue-status" role="status"></p>
+            </div>
           </div>
         </header>
         <div class="readback" id="readback"></div>

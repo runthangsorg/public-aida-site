@@ -24,7 +24,11 @@ export interface Summary {
   approach: Approach;
 }
 
-export type EndReason = "complete" | "ceiling" | "user" | "error" | "paused";
+/**
+ * Why a call ended. `idle`: it went quiet for too long (resumable). `declined`: it was kept to the
+ * interview and ended after repeated off-topic requests. `budget`: one call's cost limit was reached.
+ */
+export type EndReason = "complete" | "ceiling" | "user" | "error" | "paused" | "idle" | "declined" | "budget";
 
 /** A note the server kept from an earlier part of the same conversation. */
 export interface SavedNote {
@@ -44,6 +48,7 @@ export interface Resumed {
 export type AidaFrame =
   | { type: "ready"; targetMinutes: number; sections: Stage[]; resumed?: Resumed }
   | { type: "budget"; minutes: number }
+  | { type: "idle_warning"; secondsLeft: number }
   | { type: "section"; id: string }
   | { type: "note"; section: string; text: string; at?: number }
   | { type: "summary"; summary: Summary }
@@ -142,7 +147,7 @@ export function readSummary(a: Bag): Summary {
   };
 }
 
-const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error", "paused"]);
+const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error", "paused", "idle", "declined", "budget"]);
 
 /** The time the person has agreed to, in minutes: 5 to 20 from the server; anything sane is believed. */
 export function readMinutes(v: unknown, fallback = 20): number {
@@ -190,6 +195,12 @@ function readAida(a: Bag): AidaFrame | null {
     case "budget": {
       const minutes = Number(a.minutes);
       return Number.isFinite(minutes) && minutes > 0 && minutes < 240 ? { type: "budget", minutes } : null;
+    }
+    case "idle_warning": {
+      const left = Number(a.secondsLeft);
+      return Number.isFinite(left) && left > 0 && left <= 3600
+        ? { type: "idle_warning", secondsLeft: Math.max(1, Math.round(left)) }
+        : null;
     }
     case "section": {
       const id = str(a.id, 40).trim();
@@ -280,6 +291,11 @@ export function textMessage(text: string): string {
 
 export function endMessage(): string {
   return JSON.stringify({ aida: { type: "end" } });
+}
+
+/** "I'm here": the person answered the idle warning. */
+export function hereMessage(): string {
+  return JSON.stringify({ aida: { type: "here" } });
 }
 
 /** Save, email the person a link, and end the call. The server answers with `ended`, reason `paused`. */

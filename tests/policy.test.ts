@@ -105,8 +105,10 @@ describe("the page", () => {
   });
 
   it("makes no third-party network requests", () => {
-    // Only the XML namespace host may appear in shipped files.
-    const allowedHosts = new Set(["www.w3.org"]);
+    // Only the XML namespace host may appear in shipped files, plus the one script the owner approved:
+    // the invisible person check on the registration form (loaded only when that form is first shown;
+    // see tests/talk-turnstile.test.ts).
+    const allowedHosts = new Set(["www.w3.org", "challenges.cloudflare.com"]);
     const hits: string[] = [];
     for (const path of shipped) {
       for (const match of read(path).matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) {

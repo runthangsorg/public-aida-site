@@ -61,6 +61,8 @@ export interface TalkState {
   turns: Turn[];
   summary: Summary | null;
   ended: Ended | null;
+  /** The server warned the line has gone quiet and will pause; null when nothing is pending. */
+  idleWarning: { secondsLeft: number } | null;
   /** The person asked to continue later; the server's `ended` (paused) is awaited. */
   pausing: boolean;
   /** A returning conversation: the minutes already spent, and whether a summary exists. */
@@ -87,6 +89,7 @@ export type TalkEvent =
   | { kind: "typed"; text: string }
   | { kind: "end-pressed" }
   | { kind: "pause-pressed" }
+  | { kind: "here-pressed" }
   | { kind: "closed"; minutes: number };
 
 const MAX_TURNS = 60;
@@ -118,6 +121,7 @@ export function initialState(stages: Stage[] = [], targetMinutes = 20, resumed?:
     summary: null,
     ended: null,
     pausing: false,
+    idleWarning: null,
     resumed: null,
     error: null,
     finished: [],
@@ -197,7 +201,10 @@ function addFragment(s: TalkState, who: Speaker, chunk: string): void {
 
 function applyContent(s: TalkState, c: ServerContent): void {
   if (c.interrupted) closeOpen(s, "you", true);
-  if (c.input) addFragment(s, "you", c.input);
+  if (c.input) {
+    addFragment(s, "you", c.input);
+    s.idleWarning = null; // speaking counts as being there
+  }
   // Her voice or her words: either means the person's turn is over.
   if (c.audio.length || c.output) closeOpen(s, "aida");
   if (c.output) addFragment(s, "aida", c.output);
@@ -210,6 +217,7 @@ function finish(s: TalkState, reason: EndReason | "lost", minutes: number, extra
   closeOpen(s);
   const abandoned = s.phase !== "ending" && (reason === "user" || reason === "error");
   s.phase = "ended";
+  s.idleWarning = null;
   s.link = reason === "lost" ? "lost" : "closed";
   s.ended = { reason, minutes, ...extra, ...(abandoned ? { abandoned: true } : {}) };
 }
@@ -220,6 +228,7 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
     case "typed": {
       const text = event.text.trim();
       if (!text) return state;
+      s.idleWarning = null;
       closeOpen(s);
       pushTurn(s, { who: "you", text, open: false, explicit: true, typed: true });
       return s;
@@ -227,11 +236,17 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
     case "end-pressed":
       if (s.phase === "ended") return state;
       s.phase = "ending";
+      s.idleWarning = null;
+      return s;
+    case "here-pressed":
+      if (!s.idleWarning) return state;
+      s.idleWarning = null;
       return s;
     case "pause-pressed":
       if (s.phase === "ended") return state;
       s.phase = "ending";
       s.pausing = true;
+      s.idleWarning = null;
       return s;
     case "closed":
       // A socket that closes after the end changes nothing; one that closes
@@ -263,6 +278,9 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       return s;
     case "budget":
       s.targetMinutes = f.minutes;
+      return s;
+    case "idle_warning":
+      if (s.phase === "live") s.idleWarning = { secondsLeft: f.secondsLeft };
       return s;
     case "section":
       s.stage = f.id;
@@ -353,13 +371,21 @@ export function latestTurns(s: TalkState): { aida?: Turn; you?: Turn; last?: Spe
 
 // ---------- how it ended ----------
 
-/** Which end screen to show: paused by the person, saved after the line went, or finished. */
-export type EndView = { kind: "paused" | "saved"; emailed: boolean | undefined } | { kind: "done" };
+/**
+ * Which end screen to show: paused by the person, saved after the line went, put on hold because it
+ * went quiet, stopped by the server (declined, budget), or an ordinary finish.
+ */
+export type EndView =
+  | { kind: "paused" | "saved"; emailed: boolean | undefined }
+  | { kind: "idle" | "declined" | "budget" | "done" };
 
 export function endView(s: TalkState): EndView {
   const e = s.ended;
   if (!e) return { kind: "done" };
   if (e.reason === "paused") return { kind: "paused", emailed: e.emailed };
+  if (e.reason === "idle") return { kind: "idle" };
+  if (e.reason === "declined") return { kind: "declined" };
+  if (e.reason === "budget") return { kind: "budget" };
   if (e.resumable && (e.abandoned || e.reason === "error")) return { kind: "saved", emailed: e.emailed };
   return { kind: "done" };
 }

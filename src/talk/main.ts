@@ -1,6 +1,6 @@
 import "./talk.css";
 import type { Mouth } from "../lipsync";
-import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, refusal, startBody, type Field } from "./details";
+import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, startBody, type Field } from "./details";
 import { mouthFor, type MouthShape } from "./mouth";
 import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage } from "./protocol";
 import {
@@ -10,11 +10,29 @@ import {
   relinkOutcome,
   resumeRefusal,
   savedCopy,
-  takeResumeToken,
-  EXPIRED_LINK,
-  NETWORK_TRY_AGAIN,
   RELINK_INVALID,
 } from "./resume";
+import {
+  BUDGET_LEDE,
+  DECLINED_CLOSING,
+  EXPIRED_GO,
+  IDLE_CLOSING,
+  NETWORK_TRY_AGAIN,
+  confirmRefusal,
+  entryFor,
+  entryRefusal,
+  idleSentence,
+  knownCopy,
+  readContinued,
+  readMe,
+  readOpened,
+  readStartReply,
+  resendLabel,
+  resendOutcome,
+  secondsLeft,
+  takeLanding,
+  type Opened,
+} from "./gate";
 import {
   formatClock,
   groupNotes,
@@ -30,6 +48,14 @@ import {
   type TalkState,
 } from "./state";
 import { renderNotes, renderSummary } from "./swot";
+import {
+  GATE_FAILED,
+  HumanCheck,
+  TOKEN_HEADER,
+  loadTurnstile,
+  withToken,
+  type TurnstileApi,
+} from "./turnstile";
 import { MicError, Voice, type MicProblem } from "./voice";
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -54,6 +80,7 @@ const app = byId("app", HTMLDivElement);
 const screens = {
   intro: byId("intro", HTMLElement),
   details: byId("details", HTMLElement),
+  check: byId("check", HTMLElement),
   mic: byId("mic", HTMLElement),
   room: byId("room", HTMLElement),
   end: byId("end-screen", HTMLElement),
@@ -63,6 +90,8 @@ type Screen = keyof typeof screens;
 function show(name: Screen, focus = true): void {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
   app.dataset.screen = name;
+  // The person check's script is loaded the first time the details form is shown, never before.
+  if (name === "details") void check.prepare().catch(() => undefined);
   window.scrollTo(0, 0);
   if (!focus) return;
   const heading = screens[name].querySelector<HTMLElement>("h1");
@@ -209,6 +238,30 @@ interface Session {
 let session: Session | null = null;
 const voice = new Voice(lowPower);
 
+// The invisible person check. Its script is not requested until the details form is first shown.
+const check = new HumanCheck({
+  load: () =>
+    loadTurnstile({
+      find: () => (window as Window & { turnstile?: TurnstileApi }).turnstile,
+      add: (src, onload, onerror) => {
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        script.onload = onload;
+        script.onerror = onerror;
+        document.head.append(script);
+        return () => {
+          script.remove();
+        };
+      },
+    }),
+  container: byId("person-check", HTMLDivElement),
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: (id) => {
+    window.clearTimeout(id);
+  },
+});
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   alertBox.hidden = true;
@@ -224,34 +277,53 @@ form.addEventListener("submit", (event) => {
   void start(checked.details.name, startBody(checked.details));
 });
 
-function readSections(v: unknown): Stage[] {
-  if (!Array.isArray(v)) return [];
-  return v.flatMap((s: unknown) => {
-    if (typeof s !== "object" || s === null) return [];
-    const { id, label } = s as Record<string, unknown>;
-    return typeof id === "string" && id ? [{ id, label: typeof label === "string" && label ? label : id }] : [];
-  });
+const gateFail = byId("gate-fail", HTMLDivElement);
+
+/** The person check could not pass: say so plainly, and offer to try again (nothing was sent). */
+function showGateFailure(): void {
+  alertBox.hidden = true;
+  byId("gate-fail-text", HTMLParagraphElement).textContent = GATE_FAILED;
+  gateFail.hidden = false;
+  byId("gate-retry", HTMLButtonElement).focus();
 }
 
+byId("gate-retry", HTMLButtonElement).addEventListener("click", () => {
+  gateFail.hidden = true;
+  form.requestSubmit();
+});
+
 async function start(name: string, body: Record<string, string | boolean>): Promise<void> {
-  let res: Response;
-  let data: unknown;
-  try {
-    res = await fetch("/api/talk/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    data = await res.json().catch(() => null);
-  } catch {
-    busy(false);
+  gateFail.hidden = true;
+  const attempt = await withToken(check, async (token) => {
+    try {
+      const res = await fetch("/api/talk/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", [TOKEN_HEADER]: token },
+        body: JSON.stringify(body),
+      });
+      return { res, data: (await res.json().catch(() => null)) as unknown };
+    } catch {
+      return null;
+    }
+  });
+  busy(false);
+  if (!attempt.ok) {
+    // The check did not pass: nothing was submitted.
+    showGateFailure();
+    return;
+  }
+  if (!attempt.value) {
     showAlert("We couldn’t reach Aida. Check your connection and try again.");
     return;
   }
-  busy(false);
-  const ok = data as { id?: unknown; targetMinutes?: unknown; sections?: unknown } | null;
-  if (!res.ok || typeof ok?.id !== "string" || !ok.id) {
-    const r = refusal(res.ok ? 500 : res.status, data);
+  const { res, data } = attempt.value;
+  const reply = readStartReply(res.status, data);
+  if (reply.kind === "refused") {
+    const r = reply.refusal;
+    if (r.gate) {
+      showGateFailure();
+      return;
+    }
     showAlert(r.message);
     if (r.field === "consent") {
       show("intro");
@@ -261,13 +333,26 @@ async function start(name: string, body: Record<string, string | boolean>): Prom
     }
     return;
   }
-  const minutes = Number(ok.targetMinutes);
+  if (reply.kind === "pending") {
+    // A link has been emailed: wait for the click on it. No microphone yet.
+    gateEmail = typeof body.email === "string" ? body.email : "";
+    showCheck(reply.hint, reply.resendInSeconds);
+    return;
+  }
+  // This browser already holds a session for the same address: straight to the microphone.
+  openSession({ ...reply.opened, name: reply.opened.name || (name.split(" ")[0] ?? "") });
+}
+
+/** The one way into the microphone screen and the room, whichever door the person used. */
+function openSession(opened: Opened): void {
   session = {
-    id: ok.id,
-    sections: readSections(ok.sections),
-    targetMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 20,
-    name: name.split(" ")[0] ?? "",
+    id: opened.id,
+    sections: opened.sections,
+    targetMinutes: opened.targetMinutes,
+    name: opened.name,
+    ...(opened.resumed ? { resumed: opened.resumed } : {}),
   };
+  gateEmail = "";
   void askForMic();
 }
 
@@ -275,6 +360,67 @@ function showAlert(message: string): void {
   alertBox.textContent = message;
   alertBox.hidden = false;
 }
+
+// ---------- 2b. check your email ----------
+
+const checkHint = byId("check-hint", HTMLElement);
+const checkResend = byId("check-resend", HTMLButtonElement);
+const checkResendLabel = checkResend.querySelector<HTMLElement>(".label");
+const checkStatus = byId("check-status", HTMLParagraphElement);
+
+// The address the person typed, kept in memory only, for "send it again".
+let gateEmail = "";
+let resendEnds = 0;
+let resendTimer = 0;
+
+function resendTick(): void {
+  const left = secondsLeft(resendEnds, performance.now());
+  if (checkResendLabel) checkResendLabel.textContent = resendLabel(left);
+  if (left <= 0) {
+    window.clearInterval(resendTimer);
+    resendTimer = 0;
+    checkResend.disabled = false;
+  }
+}
+
+function startResendCountdown(seconds: number): void {
+  window.clearInterval(resendTimer);
+  resendEnds = performance.now() + seconds * 1000;
+  checkResend.disabled = true;
+  resendTick();
+  if (secondsLeft(resendEnds, performance.now()) > 0) resendTimer = window.setInterval(resendTick, 1000);
+}
+
+function showCheck(hint: string, seconds: number): void {
+  checkHint.textContent = hint || "your email";
+  checkStatus.textContent = "";
+  show("check");
+  startResendCountdown(seconds);
+}
+
+checkResend.addEventListener("click", () => {
+  if (checkResend.disabled || !gateEmail) return;
+  checkResend.disabled = true;
+  checkStatus.textContent = "Sending…";
+  void post("/api/talk/resend", { email: gateEmail })
+    .then((r) => (r ? resendOutcome(r.status, r.data) : resendOutcome(0, null)))
+    .then((outcome) => {
+      checkStatus.textContent = outcome.message;
+      if (outcome.ok) startResendCountdown(outcome.resendInSeconds ?? 120);
+      else {
+        checkResend.disabled = false;
+        resendTick();
+      }
+    });
+});
+
+byId("check-different", HTMLButtonElement).addEventListener("click", () => {
+  window.clearInterval(resendTimer);
+  resendTimer = 0;
+  gateEmail = "";
+  show("details", false);
+  document.getElementById("f-email")?.focus();
+});
 
 // ---------- 3. the microphone ----------
 
@@ -387,8 +533,48 @@ function draw(): void {
   drawn = state;
 }
 
+const defaultHint = hint.textContent;
+
+/** The room as the first call left it, put back: a second call (continue after a pause) starts clean. */
+function resetRoom(): void {
+  leaving = false;
+  startedAt = 0;
+  window.clearInterval(clockTimer);
+  window.clearTimeout(endTimer);
+  window.clearTimeout(drawTimer);
+  drawTimer = 0;
+  drawn = null;
+  finishedSince = [];
+  stagesKey = "";
+  lastLink = "";
+  muted = false;
+  muteBtn.setAttribute("aria-pressed", "false");
+  muteLabel.textContent = "Mute";
+  muteBtn.dataset.hearing = "false";
+  hearing = false;
+  nbGroups.replaceChildren();
+  groupEls.clear();
+  nbToggle.classList.remove("pulse");
+  nbLatest.textContent = "She writes here as you talk";
+  setNotebook(false, false);
+  saidAida.textContent = "";
+  saidYou.textContent = "";
+  hint.textContent = defaultHint;
+  announce.textContent = "";
+  typed.value = "";
+  typer.hidden = true;
+  typeBtn.setAttribute("aria-expanded", "false");
+  closeConfirm();
+  clock.textContent = formatClock(0);
+  delete app.dataset.ending;
+  byId("choices", HTMLFormElement).reset();
+  byId("choices-go", HTMLButtonElement).disabled = false;
+  byId("choices-status", HTMLParagraphElement).textContent = "";
+}
+
 function enterRoom(typing: boolean): void {
   if (!session) return;
+  resetRoom();
   textOnly = typing || !voice.hasMic;
   state = initialState(session.sections, session.targetMinutes, session.resumed);
   show("room", false);
@@ -610,6 +796,7 @@ function render(prev: TalkState | null, s: TalkState): void {
   if (s.resumed && changed("turns")) renderStatus();
   if (!prev && s.resumed) hint.textContent = "Welcome back. She will pick up where you stopped. Talk as you would on a call; you can interrupt her.";
   if (changed("notes")) renderNotesLive(prev, s);
+  if (changed("idleWarning")) renderIdle(s.idleWarning);
   if (s.finished.length) announce.textContent = s.finished.map((t) => `${t.who === "aida" ? "Aida" : "You"}: ${turnText(t)}`).join(" ");
   if (!changed("phase")) return;
   const ending = s.phase === "ending" || s.phase === "ended";
@@ -623,6 +810,33 @@ function render(prev: TalkState | null, s: TalkState): void {
   }
   if (s.phase === "ended" && prev?.phase !== "ended") leave();
 }
+
+// "Still there?": the server says the line has gone quiet and will pause. The number counts down
+// here from the seconds it gave; the sentence is not re-read every second (a separate, static alert
+// does the announcing once). Speaking, typing or the button clears it.
+const idleBox = byId("idle", HTMLDivElement);
+const idleText = byId("idle-text", HTMLParagraphElement);
+let idleEnds = 0;
+let idleTimer = 0;
+
+function idleTick(): void {
+  idleText.textContent = idleSentence(secondsLeft(idleEnds, performance.now()));
+}
+
+function renderIdle(w: TalkState["idleWarning"]): void {
+  window.clearInterval(idleTimer);
+  idleTimer = 0;
+  idleBox.hidden = !w;
+  if (!w) return;
+  idleEnds = performance.now() + w.secondsLeft * 1000;
+  idleTick();
+  idleTimer = window.setInterval(idleTick, 1000);
+}
+
+byId("idle-here", HTMLButtonElement).addEventListener("click", () => {
+  voice.here();
+  dispatch({ kind: "here-pressed" });
+});
 
 // Her mouth follows her voice: 12 times a second (drawn animation's "on
 // twos"), read from the playback analyser, and only while she is actually
@@ -773,10 +987,10 @@ byId("later-yes", HTMLButtonElement).addEventListener("click", () => {
   awaitEnd();
 });
 
-function setNotebook(open: boolean): void {
+function setNotebook(open: boolean, focus = true): void {
   notebook.dataset.open = String(open);
   nbToggle.setAttribute("aria-expanded", String(open));
-  if (open) byId("nb-close", HTMLButtonElement).focus();
+  if (open && focus) byId("nb-close", HTMLButtonElement).focus();
 }
 nbToggle.addEventListener("click", () => {
   setNotebook(notebook.dataset.open !== "true");
@@ -823,6 +1037,10 @@ function leave(): void {
   }, wait);
 }
 
+const endActions = byId("end-actions", HTMLDivElement);
+const endContinue = byId("end-continue", HTMLButtonElement);
+const endContinueStatus = byId("end-continue-status", HTMLParagraphElement);
+
 function showEnd(): void {
   const title = byId("end-title", HTMLHeadingElement);
   const lede = byId("end-lede", HTMLParagraphElement);
@@ -835,16 +1053,29 @@ function showEnd(): void {
   const choices = byId("choices", HTMLFormElement);
   const next = byId("next-steps", HTMLElement);
   more.hidden = true;
-  next.hidden = view.kind !== "done";
+  endActions.hidden = true;
+  endContinueStatus.textContent = "";
+  next.hidden = view.kind !== "done" && view.kind !== "budget";
   choices.hidden = true;
-  if (view.kind !== "done") {
-    // Saved for later, not finished: no read-back, no follow-up form, just where to pick it up.
-    const copy = view.kind === "paused" ? pausedCopy(view.emailed) : savedCopy(view.emailed);
+  if (view.kind === "paused" || view.kind === "saved" || view.kind === "idle" || view.kind === "declined") {
+    // Not finished, or not for the record: no read-back, no follow-up form.
+    let copy: { title: string; lede: string; more?: string };
+    if (view.kind === "paused") copy = pausedCopy(view.emailed);
+    else if (view.kind === "saved") copy = savedCopy(view.emailed);
+    else if (view.kind === "idle") copy = IDLE_CLOSING;
+    else copy = DECLINED_CLOSING;
     title.textContent = copy.title;
     lede.textContent = copy.lede;
-    more.textContent = copy.more;
+    more.textContent = copy.more ?? "";
     more.hidden = !copy.more;
     readback.replaceChildren();
+    if (view.kind === "idle") {
+      // The cookie lets the server open the saved call again; the click is the gesture for her voice.
+      endActions.hidden = false;
+      endContinue.disabled = false;
+    }
+    if (view.kind === "declined") byId("end-meta", HTMLParagraphElement).textContent = "";
+    else
     byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(state.ended?.minutes ?? elapsed() / 60))} min so far.`;
     app.dataset.ending = view.kind;
     show("end");
@@ -860,6 +1091,7 @@ function showEnd(): void {
         ? "The line dropped before the end. Here are the notes she took. The Aida team will be in touch soon."
         : "Here are the notes she took. The Aida team will read them and be in touch soon.";
   }
+  if (view.kind === "budget") lede.textContent = BUDGET_LEDE;
   const minutes = state.ended?.minutes ?? elapsed() / 60;
   const ceiling = reason === "ceiling" ? " She stopped at the time limit." : "";
   byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(minutes))} min.${ceiling}`;
@@ -994,14 +1226,222 @@ welcomeGo.addEventListener("click", () => {
   void resumeNow();
 });
 
-// A link from the email opens here. The token leaves the address bar before anything else happens,
-// and nothing is asked of the server until the person presses the button.
-const link = takeResumeToken(location, history);
-if (link.token) {
-  pendingToken = link.token;
+// ---------- the confirmation link, and a returning visitor ----------
+
+const consentForm = byId("consent-form", HTMLFormElement);
+const introNotice = byId("intro-notice", HTMLParagraphElement);
+const goCard = byId("go-card", HTMLElement);
+const goBtn = byId("go-go", HTMLButtonElement);
+const goStatus = byId("go-status", HTMLParagraphElement);
+const knownCard = byId("known-card", HTMLElement);
+const knownContinue = byId("known-continue", HTMLButtonElement);
+const knownNew = byId("known-new", HTMLButtonElement);
+const knownStatus = byId("known-status", HTMLParagraphElement);
+
+/**
+ * Who the first screen is for. A stranger sees the consent box and Start; someone with a confirmation
+ * link or a cookie has already agreed when they registered, so the consent box is not asked again.
+ */
+function introFor(mode: "stranger" | "go" | "known" | "resume"): void {
+  consentForm.hidden = mode === "go" || mode === "known";
+}
+
+function showNotice(message: string): void {
+  show("intro", false);
+  introNotice.textContent = message;
+  introNotice.hidden = !message;
+  introNotice.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+}
+
+function showOpening(): void {
+  show("mic");
+  micText.textContent = "Opening your conversation…";
+  micWait.hidden = false;
+  micActions.hidden = true;
+}
+
+// The link in the confirmation email. Its token lives in memory only, until the POST that spends it succeeds.
+let pendingGo: string | null = null;
+
+function dropGo(): void {
+  pendingGo = null;
+  goCard.hidden = true;
+}
+
+async function confirmNow(): Promise<void> {
+  const token = pendingGo;
+  if (!token || goBtn.disabled) return;
+  goBtn.disabled = true;
+  goStatus.textContent = "";
+  showOpening();
+  let res: Response;
+  let data: unknown;
+  try {
+    res = await fetch("/api/talk/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    data = await res.json().catch(() => null);
+  } catch {
+    retryGo(NETWORK_TRY_AGAIN);
+    return;
+  }
+  const opened = res.ok ? readOpened(data) : null;
+  if (!opened) {
+    const refusal = confirmRefusal(res.ok ? 500 : res.status, data);
+    if (refusal.outcome === "retry") {
+      retryGo(refusal.message);
+    } else {
+      dropGo();
+      introFor("stranger");
+      if (refusal.outcome === "expired") backToIntro(refusal.message, true);
+      else showNotice(refusal.message);
+    }
+    return;
+  }
+  dropGo();
+  openSession(opened);
+}
+
+/** Back on the first screen, the one-click card still there for another try with the same token. */
+function retryGo(message: string): void {
+  show("intro", false);
+  goStatus.textContent = message;
+  goBtn.disabled = false;
+  goBtn.focus({ preventScroll: true });
+  goCard.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+}
+
+// The click is what lets the browser play her voice, so the audio is woken inside it.
+goBtn.addEventListener("click", () => {
+  voice.wake();
+  void confirmNow();
+});
+
+// Someone this browser knows (the server's own cookie; the page never reads it).
+function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
+  const copy = knownCopy(me);
+  byId("known-title", HTMLElement).textContent = copy.title;
+  byId("known-detail", HTMLElement).textContent = copy.detail;
+  byId("known-forget", HTMLButtonElement).textContent = copy.notYou;
+  knownContinue.hidden = !me.canContinue;
+  knownNew.hidden = !me.canStartNew;
+  knownStatus.textContent = copy.limit;
+  knownCard.hidden = false;
+  introFor("known");
+}
+
+function hideKnown(): void {
+  knownCard.hidden = true;
+  introFor("stranger");
+}
+
+async function checkMe(): Promise<void> {
+  let data: unknown;
+  try {
+    const res = await fetch("/api/talk/me", { headers: { Accept: "application/json" } });
+    data = res.ok ? await res.json().catch(() => null) : null;
+  } catch {
+    return; // no answer: the ordinary first screen
+  }
+  const me = readMe(data);
+  // A visitor who has already started typing their details is left alone.
+  if (me && app.dataset.screen === "intro") showKnown(me);
+}
+
+async function post(url: string, body: unknown): Promise<{ status: number; data: unknown } | null> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, data: await res.json().catch(() => null) };
+  } catch {
+    return null;
+  }
+}
+
+function knownBusy(on: boolean): void {
+  knownContinue.disabled = on;
+  knownNew.disabled = on;
+}
+
+async function enterAs(kind: "continue" | "new"): Promise<void> {
+  if (knownContinue.disabled) return;
+  knownBusy(true);
+  knownStatus.textContent = "";
+  showOpening();
+  const r = await post(`/api/talk/${kind}`, {});
+  const opened = r?.status === 200 ? (kind === "continue" ? readContinued(r.data) : readOpened(r.data)) : null;
+  if (opened) {
+    knownBusy(false);
+    openSession(opened);
+    return;
+  }
+  show("intro", false);
+  knownBusy(false);
+  if (!r) {
+    knownStatus.textContent = NETWORK_TRY_AGAIN;
+    return;
+  }
+  const refusal = entryRefusal(r.status === 200 ? 500 : r.status, r.data);
+  if (refusal.outcome === "login") hideKnown();
+  else if (refusal.outcome === "nothing") {
+    knownContinue.hidden = true;
+    knownStatus.textContent = "";
+  } else {
+    knownStatus.textContent = refusal.message;
+  }
+  knownCard.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+}
+
+knownContinue.addEventListener("click", () => {
+  voice.wake();
+  void enterAs("continue");
+});
+knownNew.addEventListener("click", () => {
+  voice.wake();
+  void enterAs("new");
+});
+byId("known-forget", HTMLButtonElement).addEventListener("click", () => {
+  void post("/api/talk/forget", {});
+  hideKnown();
+  consent.focus({ preventScroll: true });
+});
+
+// After an idle pause the cookie opens the saved call again.
+endContinue.addEventListener("click", () => {
+  if (endContinue.disabled) return;
+  voice.wake();
+  endContinue.disabled = true;
+  endContinueStatus.textContent = "";
+  void post("/api/talk/continue", {}).then((r) => {
+    const opened = r?.status === 200 ? readContinued(r.data) : null;
+    if (opened) {
+      openSession(opened);
+      return;
+    }
+    endContinue.disabled = false;
+    endContinueStatus.textContent = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data).message : NETWORK_TRY_AGAIN;
+  });
+});
+
+// A link opens here. Its token leaves the address bar before anything else happens, and nothing is asked
+// of the server until the person presses the button: that click is what lets her voice play.
+const entry = entryFor(takeLanding(location, history));
+if (entry.kind === "go") {
+  pendingGo = entry.token;
+  goCard.hidden = false;
+  introFor("go");
+} else if (entry.kind === "resume") {
+  pendingToken = entry.token;
   welcomeBack.hidden = false;
-} else if (link.present) {
-  backToIntro(EXPIRED_LINK, true);
+} else if (entry.kind === "bad-link") {
+  backToIntro(EXPIRED_GO, true);
+} else {
+  void checkMe();
 }
 
 byId("choices", HTMLFormElement).addEventListener("submit", (e) => {
