@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
+    <!-- A resume link carries a secret: no request from this page may repeat the address in a Referer header. -->
+    <meta name="referrer" content="no-referrer" />
     <meta name="theme-color" content="#f1e8d4" />
     <title>Talk to Aida</title>
     <meta name="description" content="A spoken conversation of up to 20 minutes with Aida, an AI assistant, about how your business runs. She takes notes as you talk and shows you a summary at the end." />
@@ -17,6 +19,7 @@
       <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M15 10V6a3 3 0 0 0-5.6-1.5M9 9v2a3 3 0 0 0 4.6 2.5M5.5 11a6.5 6.5 0 0 0 10.4 5.2M18.5 11a6.4 6.4 0 0 1-.5 2.5M12 17.5V21M8.5 21h7M4 4l16 16" /></symbol>
       <symbol id="i-keys" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5" /><path d="M6.5 10h1M10.5 10h1M14.5 10h1M17.5 10h.5M7.5 14h9" /></symbol>
       <symbol id="i-end" viewBox="0 0 24 24"><path d="M3.5 14.5c4.7-4.6 12.3-4.6 17 0l-2.2 2.2-3.2-1.6v-2.6a9 9 0 0 0-6.2 0v2.6l-3.2 1.6z" /></symbol>
+      <symbol id="i-later" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
       <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3.5h9l3.5 3.5v13.5H6zM15 3.5V7h3.5M9 11h6.5M9 14.5h6.5M9 18h4" /></symbol>
       <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" /><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.5" /><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.5" /><rect x="13" y="13" width="7.5" height="7.5" rx="1.5" /></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12h14M12.5 6l6 6-6 6" /></symbol>
@@ -50,10 +53,23 @@
         </div>
         <div class="copy">
           <h1 id="intro-title" class="display">Tell Aida how your business runs</h1>
+          <div class="welcome-back" id="welcome-back" hidden>
+            <h2>Welcome back</h2>
+            <p>Your conversation is waiting where you stopped.</p>
+            <button class="btn btn-go" type="button" id="welcome-go">
+              <span class="label">Continue the conversation</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+            </button>
+            <p class="welcome-status" id="welcome-status" role="status"></p>
+          </div>
           <p class="lede">
             A spoken conversation of up to twenty minutes with Aida, an AI assistant. She asks how your week really runs,
-            what it costs you, what you have tried and who decides, and she writes it down as you talk. She will not sell
-            you anything or give advice.
+            what it costs you, what you have tried and who decides, and she writes it down as you talk.
+          </p>
+          <p class="lede lede-more">
+            The Aida team reads what you say and applies decades of strategy and technology experience, with tried
+            frameworks such as SWOT, Rumelt’s <em>Good Strategy / Bad Strategy</em>, Jobs to Be Done and <em>The Mom
+            Test</em>, to find what would help most: a change in how you work, a link between your tools, or an AI
+            helper built around you. We never sell your answers, and you choose what happens next.
           </p>
           <ul class="steps">
             <li>
@@ -78,7 +94,7 @@
               <input type="checkbox" id="consent" name="consent" aria-describedby="consent-error" />
               <span class="box" aria-hidden="true"></span>
               <span>
-                I understand I am talking to an AI. I agree that the conversation is recorded and transcribed, and a summary is sent to the Aida team.
+                I understand I am talking to an AI. I agree that the conversation is recorded and transcribed, that a summary is sent to the Aida team, and that Aida may email me a link to continue later.
                 <a href="/privacy/">How we handle it</a>
               </span>
             </label>
@@ -88,6 +104,17 @@
             </button>
             <p class="aside">Find a quiet spot. Your browser will ask to use the microphone.</p>
           </form>
+          <details class="again" id="again">
+            <summary>Already started? Continue where you left off</summary>
+            <form class="again-form" id="again-form" novalidate>
+              <p class="again-status" id="again-status" role="status"></p>
+              <label for="again-email">The email you gave us</label>
+              <div class="again-row">
+                <input id="again-email" type="email" autocomplete="email" inputmode="email" maxlength="160" aria-describedby="again-status" />
+                <button class="btn btn-quiet" type="submit" id="again-go">Email me a link</button>
+              </div>
+            </form>
+          </details>
         </div>
       </section>
 
@@ -241,6 +268,10 @@
             <span class="ctl-ic"><svg class="ic" aria-hidden="true"><use href="#i-keys" /></svg></span>
             <span class="ctl-label">Type</span>
           </button>
+          <button class="ctl ctl-later" type="button" id="later">
+            <span class="ctl-ic"><svg class="ic" aria-hidden="true"><use href="#i-later" /></svg></span>
+            <span class="ctl-label">Continue later</span>
+          </button>
           <button class="ctl ctl-end" type="button" id="end">
             <span class="ctl-ic"><svg class="ic" aria-hidden="true"><use href="#i-end" /></svg></span>
             <span class="ctl-label">End</span>
@@ -251,6 +282,11 @@
           <button class="btn btn-quiet" type="button" id="confirm-no">Keep talking</button>
           <button class="btn btn-stop" type="button" id="confirm-yes">End now</button>
         </div>
+        <div class="confirm" id="confirm-later" role="group" aria-labelledby="confirm-later-q" hidden>
+          <p id="confirm-later-q">We will email you a link so you can pick this up where you stopped.</p>
+          <button class="btn btn-quiet" type="button" id="later-no">Keep talking</button>
+          <button class="btn btn-go" type="button" id="later-yes">Continue later</button>
+        </div>
       </section>
 
       <!-- ===================== 5. What she heard ===================== -->
@@ -260,6 +296,7 @@
           <div>
             <h1 id="end-title" class="display" tabindex="-1">Thank you</h1>
             <p class="lede" id="end-lede">Here is what Aida heard. The Aida team will read it and be in touch soon.</p>
+            <p class="lede lede-more" id="end-more" hidden></p>
           </div>
         </header>
         <div class="readback" id="readback"></div>
@@ -278,6 +315,14 @@
           <button class="btn" type="submit" id="choices-go">Send</button>
           <p id="choices-status" role="status"></p>
         </form>
+        <section class="next" id="next-steps" aria-labelledby="next-title" hidden>
+          <h2 class="readback-title" id="next-title">What happens next</h2>
+          <ol>
+            <li>The Aida team reads what you said, and the summary above.</li>
+            <li>We apply decades of strategy and technology experience, and tried frameworks, to your situation.</li>
+            <li>If you ticked a follow-up, we get in touch with ideas. We never sell your answers, and you choose what happens next.</li>
+          </ol>
+        </section>
         <footer class="end-foot">
           <p id="end-meta"></p>
           <a class="btn btn-quiet" href="/">Back to the home page</a>

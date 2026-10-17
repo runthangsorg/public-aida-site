@@ -10,6 +10,7 @@ import {
   noteSection,
   type EndReason,
   type NoteSection,
+  type Resumed,
   type ServerContent,
   type ServerFrame,
   type Stage,
@@ -37,6 +38,8 @@ export interface Note {
   text: string;
   /** Seconds into the conversation when she wrote it. */
   at: number;
+  /** Kept from an earlier part of this conversation: already there, so nothing to flash. */
+  restored?: boolean;
 }
 
 /** 4:07 style stamp for a note. */
@@ -57,17 +60,33 @@ export interface TalkState {
   notes: Note[];
   turns: Turn[];
   summary: Summary | null;
-  ended: { reason: EndReason | "lost"; minutes: number } | null;
+  ended: Ended | null;
+  /** The person asked to continue later; the server's `ended` (paused) is awaited. */
+  pausing: boolean;
+  /** A returning conversation: the minutes already spent, and whether a summary exists. */
+  resumed: { minutesSoFar: number; hasSummary: boolean } | null;
   error: string | null;
   /** Turns that finished in this step, for the screen-reader announcement. Fresh on every step. */
   finished: Turn[];
   nextId: number;
 }
 
+export interface Ended {
+  reason: EndReason | "lost";
+  minutes: number;
+  /** The server kept the conversation so it can be picked up again. */
+  resumable?: boolean;
+  /** The server emailed the person a link; absent when it never said. */
+  emailed?: boolean;
+  /** The line ended without the person pressing anything. */
+  abandoned?: boolean;
+}
+
 export type TalkEvent =
   | ServerFrame
   | { kind: "typed"; text: string }
   | { kind: "end-pressed" }
+  | { kind: "pause-pressed" }
   | { kind: "closed"; minutes: number };
 
 const MAX_TURNS = 60;
@@ -87,8 +106,8 @@ export function fallbackStages(): Stage[] {
   return STAGE_IDS.map((id) => ({ id, label: FALLBACK_STAGE_LABELS[id] ?? id }));
 }
 
-export function initialState(stages: Stage[] = [], targetMinutes = 20): TalkState {
-  return {
+export function initialState(stages: Stage[] = [], targetMinutes = 20, resumed?: Resumed): TalkState {
+  const s: TalkState = {
     phase: "connecting",
     link: "connecting",
     targetMinutes,
@@ -98,10 +117,29 @@ export function initialState(stages: Stage[] = [], targetMinutes = 20): TalkStat
     turns: [],
     summary: null,
     ended: null,
+    pausing: false,
+    resumed: null,
     error: null,
     finished: [],
     nextId: 1,
   };
+  if (resumed) restore(s, resumed);
+  return s;
+}
+
+/** Take a returning conversation's notebook, place and clock. Replaces, never appends: safe to apply twice. */
+function restore(s: TalkState, r: Resumed): void {
+  s.resumed = { minutesSoFar: r.minutesSoFar, hasSummary: r.hasSummary };
+  const notes = r.notes.slice(-MAX_NOTES).map((n, i) => ({
+    id: i + 1,
+    section: noteSection(n.section),
+    text: n.text,
+    at: n.at ?? 0,
+    restored: true,
+  }));
+  s.notes = notes;
+  s.nextId = Math.max(s.nextId, notes.length + 1);
+  if (r.stage) s.stage = r.stage;
 }
 
 // ---------- captions ----------
@@ -168,11 +206,12 @@ function applyContent(s: TalkState, c: ServerContent): void {
 
 // ---------- the reducer ----------
 
-function finish(s: TalkState, reason: EndReason | "lost", minutes: number): void {
+function finish(s: TalkState, reason: EndReason | "lost", minutes: number, extra: Partial<Ended> = {}): void {
   closeOpen(s);
+  const abandoned = s.phase !== "ending" && (reason === "user" || reason === "error");
   s.phase = "ended";
   s.link = reason === "lost" ? "lost" : "closed";
-  s.ended = { reason, minutes };
+  s.ended = { reason, minutes, ...extra, ...(abandoned ? { abandoned: true } : {}) };
 }
 
 export function reduce(state: TalkState, event: TalkEvent): TalkState {
@@ -189,6 +228,11 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       if (s.phase === "ended") return state;
       s.phase = "ending";
       return s;
+    case "pause-pressed":
+      if (s.phase === "ended") return state;
+      s.phase = "ending";
+      s.pausing = true;
+      return s;
     case "closed":
       // A socket that closes after the end changes nothing; one that closes
       // before it means the line dropped. Never leave the person in a dead room.
@@ -196,7 +240,7 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
         s.link = s.link === "lost" ? "lost" : "closed";
         return s;
       }
-      finish(s, s.phase === "ending" ? "user" : "lost", event.minutes);
+      finish(s, s.phase === "ending" ? (s.pausing ? "paused" : "user") : "lost", event.minutes);
       return s;
     case "model":
       if (s.phase === "ended") return state;
@@ -211,9 +255,14 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
     case "ready":
       if (f.sections.length) s.stages = f.sections;
       s.targetMinutes = f.targetMinutes;
+      // The resume reply already seeded these; applying them again replaces, so nothing doubles.
+      if (f.resumed && s.phase === "connecting") restore(s, f.resumed);
       if (s.phase === "connecting") s.phase = "live";
       s.link = "live";
       s.stage ??= s.stages[0]?.id ?? null;
+      return s;
+    case "budget":
+      s.targetMinutes = f.minutes;
       return s;
     case "section":
       s.stage = f.id;
@@ -233,7 +282,10 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       if (s.phase !== "ended") s.link = "resumed";
       return s;
     case "ended":
-      finish(s, f.reason, f.minutes);
+      finish(s, f.reason, f.minutes, {
+        ...(f.resumable ? { resumable: true } : {}),
+        ...(f.resumable || f.reason === "paused" ? { emailed: f.emailed } : {}),
+      });
       return s;
     case "error":
       s.error = f.message;
@@ -297,4 +349,17 @@ export function latestTurns(s: TalkState): { aida?: Turn; you?: Turn; last?: Spe
     else out.you ??= t;
   }
   return out;
+}
+
+// ---------- how it ended ----------
+
+/** Which end screen to show: paused by the person, saved after the line went, or finished. */
+export type EndView = { kind: "paused" | "saved"; emailed: boolean | undefined } | { kind: "done" };
+
+export function endView(s: TalkState): EndView {
+  const e = s.ended;
+  if (!e) return { kind: "done" };
+  if (e.reason === "paused") return { kind: "paused", emailed: e.emailed };
+  if (e.resumable && (e.abandoned || e.reason === "error")) return { kind: "saved", emailed: e.emailed };
+  return { kind: "done" };
 }

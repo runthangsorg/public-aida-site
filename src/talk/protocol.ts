@@ -24,16 +24,32 @@ export interface Summary {
   approach: Approach;
 }
 
-export type EndReason = "complete" | "ceiling" | "user" | "error";
+export type EndReason = "complete" | "ceiling" | "user" | "error" | "paused";
+
+/** A note the server kept from an earlier part of the same conversation. */
+export interface SavedNote {
+  section: string;
+  text: string;
+  at?: number;
+}
+
+/** What a returning conversation brings back with it. */
+export interface Resumed {
+  minutesSoFar: number;
+  stage: string;
+  notes: SavedNote[];
+  hasSummary: boolean;
+}
 
 export type AidaFrame =
-  | { type: "ready"; targetMinutes: number; sections: Stage[] }
+  | { type: "ready"; targetMinutes: number; sections: Stage[]; resumed?: Resumed }
+  | { type: "budget"; minutes: number }
   | { type: "section"; id: string }
   | { type: "note"; section: string; text: string; at?: number }
   | { type: "summary"; summary: Summary }
   | { type: "reconnecting" }
   | { type: "resumed" }
-  | { type: "ended"; reason: EndReason; minutes: number }
+  | { type: "ended"; reason: EndReason; minutes: number; resumable: boolean; emailed: boolean }
   | { type: "error"; message: string };
 
 export interface AudioPart {
@@ -97,7 +113,7 @@ const list = (v: unknown): string[] =>
         .slice(0, 12)
     : [];
 
-function readStages(v: unknown): Stage[] {
+export function readStages(v: unknown): Stage[] {
   if (!Array.isArray(v)) return [];
   const out: Stage[] = [];
   for (const item of v) {
@@ -126,17 +142,54 @@ export function readSummary(a: Bag): Summary {
   };
 }
 
-const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error"]);
+const END_REASONS = new Set<string>(["complete", "ceiling", "user", "error", "paused"]);
+
+/** The time the person has agreed to, in minutes: 5 to 20 from the server; anything sane is believed. */
+export function readMinutes(v: unknown, fallback = 20): number {
+  const minutes = Number(v);
+  return Number.isFinite(minutes) && minutes > 0 && minutes < 240 ? minutes : fallback;
+}
+
+/** The returning-conversation block, from a `ready` frame or the resume endpoint. Undefined if absent or malformed. */
+export function readResumed(v: unknown): Resumed | undefined {
+  if (!isBag(v)) return undefined;
+  const minutes = Number(v.minutesSoFar);
+  const notes: SavedNote[] = [];
+  if (Array.isArray(v.notes)) {
+    for (const item of v.notes) {
+      if (!isBag(item)) continue;
+      const text = str(item.text, 600).trim();
+      if (!text) continue;
+      const note: SavedNote = { section: str(item.section, 40).trim(), text };
+      const at = Number(item.at);
+      if (item.at !== undefined && item.at !== null && Number.isFinite(at) && at >= 0) note.at = at;
+      notes.push(note);
+      if (notes.length >= 200) break;
+    }
+  }
+  return {
+    minutesSoFar: Number.isFinite(minutes) && minutes >= 0 && minutes < 240 ? minutes : 0,
+    stage: str(v.stage, 40).trim(),
+    notes,
+    hasSummary: v.hasSummary === true,
+  };
+}
 
 function readAida(a: Bag): AidaFrame | null {
   switch (a.type) {
     case "ready": {
-      const minutes = Number(a.targetMinutes);
-      return {
+      const frame: AidaFrame = {
         type: "ready",
-        targetMinutes: Number.isFinite(minutes) && minutes > 0 && minutes < 240 ? minutes : 20,
+        targetMinutes: readMinutes(a.targetMinutes),
         sections: readStages(a.sections),
       };
+      const resumed = readResumed(a.resumed);
+      if (resumed) frame.resumed = resumed;
+      return frame;
+    }
+    case "budget": {
+      const minutes = Number(a.minutes);
+      return Number.isFinite(minutes) && minutes > 0 && minutes < 240 ? { type: "budget", minutes } : null;
     }
     case "section": {
       const id = str(a.id, 40).trim();
@@ -159,6 +212,8 @@ function readAida(a: Bag): AidaFrame | null {
         type: "ended",
         reason: END_REASONS.has(reason) ? (reason as EndReason) : "complete",
         minutes: Number.isFinite(minutes) && minutes >= 0 ? minutes : 0,
+        resumable: a.resumable === true,
+        emailed: a.emailed === true,
       };
     }
     case "error":
@@ -225,6 +280,11 @@ export function textMessage(text: string): string {
 
 export function endMessage(): string {
   return JSON.stringify({ aida: { type: "end" } });
+}
+
+/** Save, email the person a link, and end the call. The server answers with `ended`, reason `paused`. */
+export function pauseMessage(): string {
+  return JSON.stringify({ aida: { type: "pause" } });
 }
 
 /** The live socket's address, on this same site. */
