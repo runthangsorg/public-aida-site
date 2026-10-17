@@ -53,6 +53,7 @@ const frames = [];
 for (let i = 0; i < boxes.length; i++) {
   if (boxes[i].type === 'moof' && boxes[i + 1]?.type === 'mdat') frames.push(Buffer.from(mp4.subarray(boxes[i].o, boxes[i + 1].o + boxes[i + 1].size)));
 }
+const rawFrames = frames.map((f) => Buffer.from(f)); // as ffmpeg wrote them: Chrome cannot buffer these (see below)
 // ffmpeg's one-frame-per-fragment output differs from the real stream in two ways that Chrome punishes: the
 // audio timeline has a one-packet hole at the start (0, 2048, 3072, ...), and the audio fragments declare a
 // sample duration of 0 (the muxer cannot know the next packet's time). The real stream has continuous PTS and
@@ -277,7 +278,7 @@ async function run(label, viewport, shotAt) {
   const after = samples.filter((s) => s.t > iAt + 0.1 && s.t < iAt + 0.5 && s.lead !== null).map((s) => s.lead);
   const lb = Math.max(...before);
   const la = Math.min(...after);
-  check(`[${label}] an interrupt jumps to the live edge (lead ${lb.toFixed(2)} s before, ${la.toFixed(2)} s after)`, lb > 0.6 && la < 0.4, `${lb.toFixed(2)} -> ${la.toFixed(2)}`);
+  check(`[${label}] an interrupt jumps to the live edge (lead ${lb.toFixed(2)} s before, ${la.toFixed(2)} s after)`, la <= 0.3 && lb - la >= 0.25, `${lb.toFixed(2)} -> ${la.toFixed(2)}`);
   // The swap: stalled while no new media exists (expected), then plays on once it does.
   const swapS = swapAt / 1000;
   const resumeS = (swapAt + GAP) / 1000;
@@ -315,9 +316,131 @@ async function run(label, viewport, shotAt) {
   await ctx.close();
 }
 
+/** A stream this browser cannot play (durations missing, as ffmpeg wrote it): video must give up, never leave a dead screen. */
+async function runFailure(label, viewport, switching = false) {
+  const source = switching ? frames : rawFrames; // switching: a good stream, and the person chooses voice
+  const raw = Buffer.concat([envelope(init), ...source.slice(0, 400).map(envelope)]);
+  const offsets = [];
+  let o = 0;
+  for (const b of [envelope(init), ...source.slice(0, 400).map(envelope)]) {
+    offsets.push([o, b.length]);
+    o += b.length;
+  }
+  const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    const made = new Set();
+    const create = URL.createObjectURL.bind(URL);
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (x) => {
+      const u = create(x);
+      made.add(u);
+      return u;
+    };
+    URL.revokeObjectURL = (u) => {
+      made.delete(u);
+      revoke(u);
+    };
+    window.__liveUrls = () => made.size;
+    window.__sockets = [];
+    class FakeWS {
+      constructor(url) {
+        this.url = url;
+        this.readyState = 1;
+        window.__ws = this;
+        window.__sockets.push(url);
+        window.__sent = [];
+      }
+      send(m) {
+        if (typeof m !== 'string') return;
+        window.__sent.push(m);
+        if (m.includes('"pause"')) setTimeout(() => this.push({ aida: { type: 'ended', reason: 'paused', minutes: 1, resumable: true, emailed: true } }), 150);
+      }
+      close() {
+        this.readyState = 3;
+      }
+      push(x) {
+        this.onmessage?.({ data: JSON.stringify(x) });
+      }
+      pushBinary(ab) {
+        this.onmessage?.({ data: ab });
+      }
+    }
+    FakeWS.OPEN = 1;
+    FakeWS.CONNECTING = 0;
+    FakeWS.CLOSING = 2;
+    FakeWS.CLOSED = 3;
+    window.WebSocket = FakeWS;
+  });
+  await page.route('**/api/talk/me', (r) => r.fulfill(json({ known: false })));
+  await page.route('**/api/talk/confirm', (r) => r.fulfill(json({ id: 's1', targetMinutes: 5, sections, name: 'Sam Example' })));
+  await page.route('**/api/talk/continue', (r) =>
+    r.fulfill(json({ id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 1, stage: 'welcome', hasSummary: false, notes: [] } })),
+  );
+  await page.route('**/__fx/broken.bin', (r) => r.fulfill({ status: 200, contentType: 'application/octet-stream', body: raw }));
+  await page.goto(`${base}/talk/?go=${GO}`);
+  await page.click('#go-go');
+  await page.waitForFunction(() => window.__ws);
+  await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: true } }), sections);
+  await page.evaluate(
+    async ([offs]) => {
+      const buf = await (await fetch('/__fx/broken.bin')).arrayBuffer();
+      let i = 0;
+      const timer = setInterval(() => {
+        // about 47 messages a second
+        for (let k = 0; k < 1 && i < offs.length; k++, i++) window.__ws.pushBinary(buf.slice(offs[i][0], offs[i][0] + offs[i][1]));
+        if (i >= offs.length) clearInterval(timer);
+      }, 21);
+    },
+    [offsets],
+  );
+  const t0 = Date.now();
+  await page.screenshot({ path: `${shotsDir}/avatar-broken-before-${label}.png` });
+  if (switching) {
+    await page.waitForTimeout(3500);
+    await page.screenshot({ path: `${shotsDir}/avatar-switch-before-${label}.png` });
+    await page.click('#voice-only');
+    await page.waitForFunction(() => window.__sockets.length >= 2, null, { timeout: 15000 });
+    const urls = await page.evaluate(() => window.__sockets);
+    check(`[${label}] Switch to voice only pauses, then carries straight on without video`, !/avatar=/.test(urls[1]) && /avatar=/.test(urls[0]));
+    check(`[${label}] and remembers it`, (await page.evaluate(() => localStorage.getItem('aida.talk.voice-only'))) === '1');
+    await ctx.close();
+    return;
+  }
+  await page.waitForSelector('#end-screen:not([hidden])', { timeout: 30000 });
+  const gaveUpAfter = (Date.now() - t0) / 1000;
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${shotsDir}/avatar-broken-end-${label}.png`, fullPage: true });
+  const info = await page.evaluate(() => ({
+    title: document.querySelector('#end-title').textContent,
+    label: document.querySelector('#end-continue .label').textContent,
+    button: !document.querySelector('#end-actions').hidden,
+    sent: window.__sent.filter((m) => m.includes('aida')),
+    urls: window.__liveUrls(),
+  }));
+  check(`[${label}] a stream Chrome cannot play makes video give up (after ${gaveUpAfter.toFixed(1)} s), never a dead screen`, gaveUpAfter < 14, gaveUpAfter.toFixed(1));
+  check(`[${label}] it pauses the call to save the place`, info.sent.some((m) => m.includes('"pause"')), info.sent.join(' '));
+  check(`[${label}] and offers Continue without video`, info.title === 'The video stopped' && info.label === 'Continue without video' && info.button, `${info.title} / ${info.label}`);
+  check(`[${label}] the object URL is revoked`, info.urls === 0, info.urls);
+  await page.click('#end-continue');
+  await page.waitForFunction(() => window.__sockets.length >= 2, null, { timeout: 15000 });
+  const urls = await page.evaluate(() => window.__sockets);
+  const remembered = await page.evaluate(() => localStorage.getItem('aida.talk.voice-only'));
+  check(`[${label}] the next call connects without an avatar parameter (${urls[1].replace(/id=[^&]+/, 'id=…')})`, !/avatar=/.test(urls[1]) && /avatar=/.test(urls[0]));
+  check(`[${label}] and the choice is remembered`, remembered === '1', remembered);
+  await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: false } }), sections);
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${shotsDir}/avatar-voice-only-room-${label}.png` });
+  const voiceOnly = await page.evaluate(() => ({ video: document.querySelector('#avatar-video').hidden, pill: document.querySelector('#voice-only').hidden }));
+  check(`[${label}] the room is the drawn portrait again, with no video and no switch link`, voiceOnly.video && voiceOnly.pill);
+  await ctx.close();
+}
+
 const SHOTS = { poster: 0.7, playing: 3.8, swapgap: 10.2, playing2: 15 };
 await run('phone', { width: 390, height: 844 }, SHOTS);
 await run('desktop', { width: 1280, height: 800 }, SHOTS);
+await runFailure('phone', { width: 390, height: 844 });
+await runFailure('switch', { width: 390, height: 844 }, true);
 await browser.close();
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');

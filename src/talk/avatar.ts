@@ -419,7 +419,8 @@ export function isRevealed(currentTime: number, hidden: Range[], stalled: boolea
 
 // ---------- health: when does video give up? ----------
 
-export type FailReason = 'codec' | 'append' | 'error' | 'no-media';
+/** `stalled`: media keeps arriving but the picture does not move (a stream this browser cannot play). */
+export type FailReason = 'codec' | 'append' | 'error' | 'no-media' | 'stalled';
 
 export interface Health {
   phase: 'waiting' | 'live' | 'failed';
@@ -434,7 +435,7 @@ export type HealthEvent =
   | { t: 'append-error' }
   | { t: 'codec-unsupported' }
   | { t: 'player-error' }
-  | { t: 'tick'; now: number; reconnecting: boolean };
+  | { t: 'tick'; now: number; reconnecting: boolean; sinceProgress?: number };
 
 export const startHealth = (now: number): Health => ({ phase: 'waiting', lastMediaAt: now, appendErrors: 0 });
 
@@ -452,8 +453,13 @@ export function nextHealth(h: Health, e: HealthEvent): Health {
       return { ...h, phase: 'failed', reason: 'codec' };
     case 'player-error':
       return { ...h, phase: 'failed', reason: 'error' };
-    case 'tick':
-      return e.now - h.lastMediaAt > (e.reconnecting ? SWAP_NO_MEDIA_MS : NO_MEDIA_MS) ? { ...h, phase: 'failed', reason: 'no-media' } : h;
+    case 'tick': {
+      const limit = e.reconnecting ? SWAP_NO_MEDIA_MS : NO_MEDIA_MS;
+      if (e.now - h.lastMediaAt > limit) return { ...h, phase: 'failed', reason: 'no-media' };
+      // Media is arriving but the playhead has not moved: never a dead screen, so give up on video.
+      if (h.phase === 'live' && (e.sinceProgress ?? 0) > limit) return { ...h, phase: 'failed', reason: 'stalled' };
+      return h;
+    }
   }
 }
 
@@ -498,6 +504,9 @@ export class AvatarPlayer {
   private visible = false;
   private reconnecting = false;
   private done = true;
+  /** When the playhead last moved (or, before it ever has, when media first arrived). */
+  private progressAt = 0;
+  private lastTime = 0;
   private readonly onVideoError = (): void => {
     this.fail({ t: 'player-error' });
   };
@@ -510,6 +519,8 @@ export class AvatarPlayer {
     this.stop();
     this.done = false;
     this.health = startHealth(performance.now());
+    this.progressAt = performance.now();
+    this.lastTime = 0;
     const ms = new Mse();
     this.ms = ms;
     ms.addEventListener('sourceopen', () => {
@@ -534,7 +545,9 @@ export class AvatarPlayer {
   /** One fragment, or an init segment, from the socket. */
   push(bytes: Uint8Array): void {
     if (this.done) return;
-    this.health = nextHealth(this.health, { t: 'media', now: performance.now() });
+    const now = performance.now();
+    if (this.health.phase === 'waiting') this.progressAt = now; // the stall clock starts when media does
+    this.health = nextHealth(this.health, { t: 'media', now });
     this.queue.push(bytes);
   }
 
@@ -576,7 +589,12 @@ export class AvatarPlayer {
 
   private tick(): void {
     if (this.done) return;
-    if (this.fail({ t: 'tick', now: performance.now(), reconnecting: this.reconnecting })) return;
+    const now = performance.now();
+    if (Math.abs(this.video.currentTime - this.lastTime) > 0.01) {
+      this.lastTime = this.video.currentTime;
+      this.progressAt = now;
+    }
+    if (this.fail({ t: 'tick', now, reconnecting: this.reconnecting, sinceProgress: now - this.progressAt })) return;
     this.pump();
     this.maintain();
   }

@@ -398,6 +398,17 @@ describe("when video fails", () => {
     expect(nextHealth(h, { t: "tick", now: 1000 + 7000, reconnecting: false }).phase).toBe("failed");
   });
 
+  it("media that keeps arriving while the picture never moves is a failure too, never a dead screen", () => {
+    const h = live(1000);
+    expect(nextHealth(h, { t: "tick", now: 2000, reconnecting: false, sinceProgress: 5000 }).phase).toBe("live");
+    expect(nextHealth(h, { t: "tick", now: 2000, reconnecting: false, sinceProgress: 6100 })).toMatchObject({ phase: "failed", reason: "stalled" });
+    // A swap's gap is not a stall until it outlasts the swap allowance.
+    expect(nextHealth(h, { t: "tick", now: 2000, reconnecting: true, sinceProgress: 6100 }).phase).toBe("live");
+    expect(nextHealth(h, { t: "tick", now: 2000, reconnecting: true, sinceProgress: SWAP_NO_MEDIA_MS + 1 })).toMatchObject({ reason: "stalled" });
+    // Before any media there is nothing to stall: the no-media rule covers it.
+    expect(nextHealth(startHealth(0), { t: "tick", now: 1000, reconnecting: false, sinceProgress: 9000 }).phase).toBe("waiting");
+  });
+
   it("an append that throws twice in a row fails; one that recovers does not", () => {
     let h = live();
     h = nextHealth(h, { t: "append-error" });
