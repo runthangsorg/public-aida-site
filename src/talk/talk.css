@@ -2066,3 +2066,165 @@ input[aria-invalid="true"]:hover {
 .choices .choices-note { display: grid; gap: 6px; }
 .choices textarea { font: inherit; padding: 8px; }
 .choices .btn { justify-self: start; }
+
+/* ---------- continuing later ---------- */
+
+.lede-more {
+  margin-top: 12px;
+  font-size: 17px;
+  color: var(--muted);
+}
+
+.lede em {
+  font-style: italic;
+}
+
+/* "Already started?": quiet, under Start, opens to one email field. */
+.again {
+  margin-top: 22px;
+  max-width: 600px;
+}
+
+.again summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 2px;
+  color: var(--ink-2);
+  font-size: 17px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: var(--pink);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.again summary::-webkit-details-marker {
+  display: none;
+}
+
+.again summary::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: solid var(--ink-2);
+  border-width: 0 2.5px 2.5px 0;
+  rotate: -45deg;
+  transition: rotate 160ms var(--out);
+}
+
+.again[open] summary::before {
+  rotate: 45deg;
+}
+
+.again-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 18px 18px 16px;
+  border-radius: 20px;
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 1.5px var(--rule);
+}
+
+.again-form label {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.again-row {
+  display: grid;
+  gap: 10px;
+}
+
+.again-status {
+  margin: 0;
+  min-height: 1.5em;
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.again-status[data-bad="true"] {
+  color: var(--pink-ink);
+  font-weight: 650;
+}
+
+.again-status:empty {
+  display: none;
+}
+
+@media (min-width: 720px) {
+  .again-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+/* A fourth button in the room's row: tighter on a phone, still 44px targets. */
+.ctl-later .ctl-label {
+  max-width: 5.6em;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .controls {
+    gap: 4px;
+  }
+
+  .ctl {
+    min-width: 72px;
+  }
+}
+
+.confirm p + .btn {
+  flex: 0 1 auto;
+}
+
+/* The end screen's three steps. */
+.next {
+  margin-top: 28px;
+  padding: 20px 20px 18px;
+  border-radius: 22px;
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 1.5px var(--rule);
+}
+
+.next .readback-title {
+  margin-bottom: 14px;
+}
+
+.next ol {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.next li {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 12px;
+  align-items: start;
+  font-size: 18px;
+  line-height: 1.45;
+  counter-increment: step;
+}
+
+.next li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--gold);
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1;
+}

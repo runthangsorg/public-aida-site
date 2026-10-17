@@ -2,12 +2,24 @@ import "./talk.css";
 import type { Mouth } from "../lipsync";
 import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, refusal, startBody, type Field } from "./details";
 import { mouthFor, type MouthShape } from "./mouth";
-import { NOTE_SECTIONS, noteLabel, type NoteSection, type Stage } from "./protocol";
+import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage } from "./protocol";
+import {
+  looksLikeEmail,
+  pausedCopy,
+  readResumeReply,
+  relinkOutcome,
+  resumeRefusal,
+  savedCopy,
+  takeResumeToken,
+  EXPIRED_LINK,
+  RELINK_INVALID,
+} from "./resume";
 import {
   formatClock,
   groupNotes,
   noteStamp,
   initialState,
+  endView,
   latestTurns,
   progress,
   reduce,
@@ -189,6 +201,8 @@ interface Session {
   sections: Stage[];
   targetMinutes: number;
   name: string;
+  /** Present when this is a returning conversation. */
+  resumed?: Resumed;
 }
 
 let session: Session | null = null;
@@ -327,6 +341,8 @@ const typeBtn = byId("type", HTMLButtonElement);
 const typer = byId("typer", HTMLFormElement);
 const typed = byId("typed", HTMLInputElement);
 const endBtn = byId("end", HTMLButtonElement);
+const laterBtn = byId("later", HTMLButtonElement);
+const confirmLater = byId("confirm-later", HTMLDivElement);
 const controls = byId("controls", HTMLDivElement);
 const confirmBox = byId("confirm", HTMLDivElement);
 const notebook = byId("notebook", HTMLElement);
@@ -373,7 +389,7 @@ function draw(): void {
 function enterRoom(typing: boolean): void {
   if (!session) return;
   textOnly = typing || !voice.hasMic;
-  state = initialState(session.sections, session.targetMinutes);
+  state = initialState(session.sections, session.targetMinutes, session.resumed);
   show("room", false);
   render(null, state);
   drawn = state;
@@ -458,11 +474,13 @@ function renderStages(s: TalkState): void {
 
 function statusOf(s: TalkState): [string, string] {
   if (s.phase === "connecting") return ["connecting", "Connecting"];
-  if (s.phase === "ending") return ["ending", "Wrapping up"];
+  if (s.phase === "ending") return ["ending", s.pausing ? "Saving your place" : "Wrapping up"];
   if (s.phase === "ended") return ["ended", "Finished"];
   if (s.link === "reconnecting") return ["reconnecting", "Reconnecting, one moment"];
   if (s.link === "resumed" && performance.now() - resumedAt < 4000) return ["resumed", "Back on the line"];
   if (voice.isSpeaking) return ["speaking", "Aida is speaking"];
+  // A returning conversation: say so until either of you has spoken.
+  if (s.resumed && s.turns.length === 0) return ["resumed", "Welcome back"];
   if (textOnly) return ["listening", "Type your answer"];
   if (muted) return ["muted", "You’re muted"];
   return ["listening", "Listening"];
@@ -542,9 +560,10 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
     stamp.className = "note-time";
     stamp.textContent = noteStamp(note.at);
     li.append(stamp, note.text);
-    if (prev) li.className = "fresh";
+    const fresh = Boolean(prev) && !note.restored;
+    if (fresh) li.className = "fresh";
     noteGroup(note.section).append(li);
-    if (prev) {
+    if (fresh) {
       setTimeout(() => {
         li.classList.remove("fresh");
       }, 2600);
@@ -563,7 +582,7 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
   if (last && last.id !== prev?.notes[prev.notes.length - 1]?.id) {
     nbLatest.textContent = last.text;
     nbToggle.classList.remove("pulse");
-    if (prev && !still) {
+    if (prev && !last.restored && !still) {
       requestAnimationFrame(() => {
         nbToggle.classList.add("pulse"); // a frame later, so the highlight restarts
       });
@@ -576,8 +595,10 @@ function render(prev: TalkState | null, s: TalkState): void {
   if (changed("stages", "stage", "phase")) renderStages(s);
   if (changed("targetMinutes")) clockOf.textContent = `of about ${s.targetMinutes} min`;
   if (s.phase !== "connecting" && !startedAt) {
-    startedAt = performance.now();
+    // A returning conversation keeps its clock: the minutes already spent count.
+    startedAt = performance.now() - (s.resumed?.minutesSoFar ?? 0) * 60_000;
     clockTimer = window.setInterval(tick, 1000);
+    tick();
   }
   if (s.link === "resumed" && prev?.link !== "resumed") {
     resumedAt = performance.now();
@@ -585,15 +606,18 @@ function render(prev: TalkState | null, s: TalkState): void {
   }
   if (changed("link", "phase")) renderStatus();
   if (changed("turns", "error")) renderCaptions(s);
+  if (s.resumed && changed("turns")) renderStatus();
+  if (!prev && s.resumed) hint.textContent = "Welcome back. She will pick up where you stopped. Talk as you would on a call; you can interrupt her.";
   if (changed("notes")) renderNotesLive(prev, s);
   if (s.finished.length) announce.textContent = s.finished.map((t) => `${t.who === "aida" ? "Aida" : "You"}: ${turnText(t)}`).join(" ");
   if (!changed("phase")) return;
   const ending = s.phase === "ending" || s.phase === "ended";
   endBtn.disabled = ending;
+  laterBtn.disabled = s.phase !== "live";
   typeBtn.disabled = ending;
   muteBtn.disabled = ending || textOnly;
   if (ending) {
-    closeConfirm(false);
+    closeConfirm();
     typer.hidden = true;
   }
   if (s.phase === "ended" && prev?.phase !== "ended") leave();
@@ -697,10 +721,11 @@ typed.addEventListener("keydown", (event) => {
   }
 });
 
-function closeConfirm(focusEnd: boolean): void {
+function closeConfirm(focus?: HTMLElement | false): void {
   confirmBox.hidden = true;
+  confirmLater.hidden = true;
   controls.hidden = false;
-  if (focusEnd) endBtn.focus();
+  if (focus) focus.focus();
 }
 
 endBtn.addEventListener("click", () => {
@@ -708,21 +733,43 @@ endBtn.addEventListener("click", () => {
   confirmBox.hidden = false;
   byId("confirm-no", HTMLButtonElement).focus();
 });
+laterBtn.addEventListener("click", () => {
+  controls.hidden = true;
+  confirmLater.hidden = false;
+  byId("later-no", HTMLButtonElement).focus();
+});
 byId("confirm-no", HTMLButtonElement).addEventListener("click", () => {
-  closeConfirm(true);
+  closeConfirm(endBtn);
+});
+byId("later-no", HTMLButtonElement).addEventListener("click", () => {
+  closeConfirm(laterBtn);
 });
 confirmBox.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeConfirm(true);
+  if (event.key === "Escape") closeConfirm(endBtn);
 });
-byId("confirm-yes", HTMLButtonElement).addEventListener("click", () => {
-  if (state.phase !== "live" && state.phase !== "connecting") return;
-  voice.end();
-  dispatch({ kind: "end-pressed" });
-  // The summary and the end should follow within seconds; never wait forever.
+confirmLater.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeConfirm(laterBtn);
+});
+
+/** The server should answer within seconds; never wait forever. */
+function awaitEnd(): void {
   endTimer = window.setTimeout(() => {
     voice.close();
     dispatch({ kind: "closed", minutes: elapsed() / 60 });
   }, 25_000);
+}
+
+byId("confirm-yes", HTMLButtonElement).addEventListener("click", () => {
+  if (state.phase !== "live" && state.phase !== "connecting") return;
+  voice.end();
+  dispatch({ kind: "end-pressed" });
+  awaitEnd();
+});
+byId("later-yes", HTMLButtonElement).addEventListener("click", () => {
+  if (state.phase !== "live") return;
+  voice.pause();
+  dispatch({ kind: "pause-pressed" });
+  awaitEnd();
 });
 
 function setNotebook(open: boolean): void {
@@ -782,6 +829,26 @@ function showEnd(): void {
   const name = session?.name ?? "";
   title.textContent = name ? `Thank you, ${name}` : "Thank you";
   const reason = state.ended?.reason;
+  const view = endView(state);
+  const more = byId("end-more", HTMLParagraphElement);
+  const choices = byId("choices", HTMLFormElement);
+  const next = byId("next-steps", HTMLElement);
+  more.hidden = true;
+  next.hidden = view.kind !== "done";
+  choices.hidden = true;
+  if (view.kind !== "done") {
+    // Saved for later, not finished: no read-back, no follow-up form, just where to pick it up.
+    const copy = view.kind === "paused" ? pausedCopy(view.emailed) : savedCopy(view.emailed);
+    title.textContent = copy.title;
+    lede.textContent = copy.lede;
+    more.textContent = copy.more;
+    more.hidden = !copy.more;
+    readback.replaceChildren();
+    byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(state.ended?.minutes ?? elapsed() / 60))} min so far.`;
+    app.dataset.ending = view.kind;
+    show("end");
+    return;
+  }
   if (state.summary) {
     readback.innerHTML = `<h2 class="visually-hidden">What Aida heard</h2>${renderSummary(state.summary)}`;
     lede.textContent = "Here is what Aida heard. The Aida team will read it and be in touch soon.";
@@ -797,8 +864,100 @@ function showEnd(): void {
   byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(minutes))} min.${ceiling}`;
   app.dataset.ending = reason ?? "";
   show("end");
-  if (session) byId("choices", HTMLFormElement).hidden = false;
+  if (session) choices.hidden = false;
 }
+
+// ---------- continuing later ----------
+
+const again = byId("again", HTMLDetailsElement);
+const againForm = byId("again-form", HTMLFormElement);
+const againEmail = byId("again-email", HTMLInputElement);
+const againGo = byId("again-go", HTMLButtonElement);
+const againStatus = byId("again-status", HTMLParagraphElement);
+
+function againSay(message: string, bad: boolean): void {
+  againStatus.textContent = message;
+  againStatus.dataset.bad = String(bad);
+  if (bad) againEmail.setAttribute("aria-invalid", "true");
+  else againEmail.removeAttribute("aria-invalid");
+}
+
+againForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (againGo.disabled) return;
+  if (!looksLikeEmail(againEmail.value)) {
+    againSay(RELINK_INVALID, true);
+    againEmail.focus();
+    return;
+  }
+  againGo.disabled = true;
+  againSay("Sending…", false);
+  fetch("/api/talk/relink", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: againEmail.value.trim() }),
+  })
+    .then((r) => {
+      const outcome = relinkOutcome(r.status);
+      againSay(outcome.message, !outcome.ok);
+    })
+    .catch(() => {
+      againSay("We couldn’t reach Aida. Check your connection and try again.", true);
+    })
+    .finally(() => {
+      againGo.disabled = false;
+    });
+});
+
+/** Back on the first screen with a plain reason, and the way to a new link open. */
+function backToIntro(message: string, offerRelink: boolean): void {
+  show("intro", false);
+  againSay(message, true);
+  againEmail.removeAttribute("aria-invalid");
+  again.open = true;
+  if (offerRelink) againEmail.focus({ preventScroll: true });
+  again.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+}
+
+async function resumeFrom(token: string): Promise<void> {
+  show("mic");
+  micText.textContent = "Opening your conversation…";
+  micWait.hidden = false;
+  micActions.hidden = true;
+  let res: Response;
+  let data: unknown;
+  try {
+    res = await fetch("/api/talk/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    data = await res.json().catch(() => null);
+  } catch {
+    backToIntro("We couldn’t reach Aida. Check your connection, then open the link in your email again.", true);
+    return;
+  }
+  const reply = res.ok ? readResumeReply(data) : null;
+  if (!reply) {
+    const refusal = resumeRefusal(res.ok ? 500 : res.status, data);
+    backToIntro(refusal.message, refusal.offerRelink);
+    return;
+  }
+  session = {
+    id: reply.id,
+    sections: reply.sections,
+    targetMinutes: reply.targetMinutes,
+    name: reply.name,
+    resumed: reply.resumed,
+  };
+  voice.wake();
+  void askForMic();
+}
+
+// A link from the email opens here. The token leaves the address bar before anything else happens.
+const link = takeResumeToken(location, history);
+if (link.token) void resumeFrom(link.token);
+else if (link.present) backToIntro(EXPIRED_LINK, true);
 
 byId("choices", HTMLFormElement).addEventListener("submit", (e) => {
   e.preventDefault();

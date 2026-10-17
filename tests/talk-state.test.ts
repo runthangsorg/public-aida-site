@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { audioMessage, endMessage, parseFrame, socketUrl, textMessage } from "../src/talk/protocol";
+import { audioMessage, endMessage, parseFrame, pauseMessage, socketUrl, textMessage } from "../src/talk/protocol";
 import {
   formatClock,
+  endView,
   groupNotes,
   initialState,
   joinFragment,
@@ -20,6 +21,7 @@ const SECTIONS = [
   { id: "workflows", label: "How work flows" },
   { id: "challenges", label: "Challenges" },
   { id: "needs", label: "Needs and wants" },
+  { id: "timekeeping", label: "Time tracking" },
   { id: "summary", label: "Read-back" },
 ];
 
@@ -76,6 +78,63 @@ describe("reading frames", () => {
       clientContent: { turns: [{ role: "user", parts: [{ text: "We use spreadsheets" }] }], turnComplete: true },
     });
     expect(JSON.parse(endMessage())).toEqual({ aida: { type: "end" } });
+    expect(JSON.parse(pauseMessage())).toEqual({ aida: { type: "pause" } });
+  });
+
+  it("reads the budget frame, and ignores a nonsense one", () => {
+    expect(parseFrame(JSON.stringify(aida({ type: "budget", minutes: 5 })))).toEqual({
+      kind: "aida",
+      frame: { type: "budget", minutes: 5 },
+    });
+    expect(parseFrame(JSON.stringify(aida({ type: "budget", minutes: "soon" })))).toBeNull();
+    expect(parseFrame(JSON.stringify(aida({ type: "budget", minutes: 0 })))).toBeNull();
+  });
+
+  it("reads the returning-conversation block of a ready frame, and tolerates a damaged one", () => {
+    const frame = parseFrame(
+      JSON.stringify(
+        aida({
+          type: "ready",
+          targetMinutes: 5,
+          sections: SECTIONS,
+          resumed: {
+            minutesSoFar: 3.5,
+            stage: "tools",
+            hasSummary: false,
+            notes: [{ section: "org", text: " Two sites ", at: 42 }, { section: "tools", text: "Spreadsheets" }, { text: "  " }, 7],
+          },
+        }),
+      ),
+    );
+    expect(frame).toMatchObject({
+      kind: "aida",
+      frame: {
+        type: "ready",
+        targetMinutes: 5,
+        resumed: {
+          minutesSoFar: 3.5,
+          stage: "tools",
+          hasSummary: false,
+          notes: [
+            { section: "org", text: "Two sites", at: 42 },
+            { section: "tools", text: "Spreadsheets" },
+          ],
+        },
+      },
+    });
+    const plain = parseFrame(JSON.stringify(ready));
+    expect(plain?.kind === "aida" && plain.frame.type === "ready" && "resumed" in plain.frame).toBe(false);
+    const damaged = parseFrame(JSON.stringify(aida({ type: "ready", targetMinutes: 20, sections: [], resumed: "yes" })));
+    expect(damaged?.kind === "aida" && damaged.frame.type === "ready" && damaged.frame.resumed).toBeFalsy();
+  });
+
+  it("reads paused, resumable and emailed from an ended frame; absent means no", () => {
+    const f = (body: Record<string, unknown>) => parseFrame(JSON.stringify(aida({ type: "ended", minutes: 2, ...body })));
+    expect(f({ reason: "paused", resumable: true, emailed: true })).toEqual({
+      kind: "aida",
+      frame: { type: "ended", reason: "paused", minutes: 2, resumable: true, emailed: true },
+    });
+    expect(f({ reason: "complete" })).toMatchObject({ frame: { reason: "complete", resumable: false, emailed: false } });
   });
 
   it("opens the socket on this same site, secure when the page is", () => {
@@ -88,7 +147,7 @@ describe("the room's state", () => {
   it("waits for ready, then takes the stages and the time from it", () => {
     const start = initialState();
     expect(start.phase).toBe("connecting");
-    expect(start.stages.map((s) => s.id)).toEqual(SECTIONS.map((s) => s.id));
+    expect(start.stages.map((s) => s.id)).toEqual(SECTIONS.map((s) => s.id).filter((id) => id !== "timekeeping"));
     const s = feed(start, ready);
     expect(s.phase).toBe("live");
     expect(s.link).toBe("live");
@@ -97,16 +156,34 @@ describe("the room's state", () => {
     expect(s.targetMinutes).toBe(20);
   });
 
+  it("takes however many stages the server names: eight here, between needs and the summary", () => {
+    const s = feed(initialState(), ready);
+    expect(s.stages.map((x) => x.id)).toEqual([
+      "welcome",
+      "org",
+      "tools",
+      "workflows",
+      "challenges",
+      "needs",
+      "timekeeping",
+      "summary",
+    ]);
+    // The page's own fallback is only for a server that sends none.
+    expect(initialState().stages.length).toBeGreaterThan(0);
+    const late = feed(s, aida({ type: "section", id: "timekeeping" }));
+    expect(progress(late)).toEqual({ index: 6, total: 8, label: "Time tracking" });
+  });
+
   it("moves the stage bar as sections change", () => {
     let s = feed(initialState(), ready);
-    expect(progress(s)).toEqual({ index: 0, total: 7, label: "Hello" });
+    expect(progress(s)).toEqual({ index: 0, total: 8, label: "Hello" });
     s = feed(s, aida({ type: "section", id: "tools" }));
     const p = progress(s);
-    expect(p).toEqual({ index: 2, total: 7, label: "Your tools" });
+    expect(p).toEqual({ index: 2, total: 8, label: "Your tools" });
     expect([0, 1, 2, 3].map((i) => stageStatus(i, p))).toEqual(["done", "done", "current", "todo"]);
     s = feed(s, aida({ type: "ended", reason: "complete", minutes: 19.5 }));
-    expect(progress(s).index).toBe(7);
-    expect(stageStatus(6, progress(s))).toBe("done");
+    expect(progress(s).index).toBe(8);
+    expect(stageStatus(7, progress(s))).toBe("done");
   });
 
   it("groups notes by section in the notebook's order, unknown sections last", () => {
@@ -232,6 +309,93 @@ describe("the room's state", () => {
     const closedAfter = reduce(done, { kind: "closed", minutes: 6 });
     expect(closedAfter.ended?.reason).toBe("user");
     expect(closedAfter.link).toBe("closed");
+  });
+
+  it("follows the budget the server sends, wherever it comes in the call", () => {
+    let s = feed(initialState(), ready);
+    expect(s.targetMinutes).toBe(20);
+    s = feed(s, aida({ type: "budget", minutes: 5 }));
+    expect(s.targetMinutes).toBe(5);
+    s = feed(s, aida({ type: "budget", minutes: 12 }));
+    expect(s.targetMinutes).toBe(12);
+    expect(feed(initialState(), aida({ type: "ready", targetMinutes: 5, sections: [] })).targetMinutes).toBe(5);
+  });
+
+  it("brings a returning conversation back: notes, place and clock", () => {
+    const resumed = {
+      minutesSoFar: 7.25,
+      stage: "tools",
+      hasSummary: false,
+      notes: [
+        { section: "org", text: "Forty staff on two sites", at: 61 },
+        { section: "tools", text: "Spreadsheets for rotas" },
+        { section: "mystery", text: "Paper diary" },
+      ],
+    };
+    const s = feed(initialState(), aida({ type: "ready", targetMinutes: 5, sections: SECTIONS, resumed }));
+    expect(s.phase).toBe("live");
+    expect(s.stage).toBe("tools");
+    expect(s.resumed).toEqual({ minutesSoFar: 7.25, hasSummary: false });
+    expect(s.notes.map((n) => [n.section, n.text, n.at, n.restored])).toEqual([
+      ["org", "Forty staff on two sites", 61, true],
+      ["tools", "Spreadsheets for rotas", 0, true],
+      ["other", "Paper diary", 0, true],
+    ]);
+    // New notes carry on after the old ones, and are not "restored".
+    const more = feed(s, aida({ type: "note", section: "needs", text: "Faster payroll" }));
+    expect(more.notes).toHaveLength(4);
+    expect(more.notes[3]?.restored).toBeUndefined();
+    expect(new Set(more.notes.map((n) => n.id)).size).toBe(4);
+  });
+
+  it("does not double the notebook when the resume reply and the ready frame both carry it", () => {
+    const resumed = { minutesSoFar: 2, stage: "org", hasSummary: false, notes: [{ section: "org", text: "Two sites" }] };
+    const seeded = initialState(SECTIONS, 5, resumed);
+    expect(seeded.notes).toHaveLength(1);
+    expect(seeded.stage).toBe("org");
+    const after = feed(seeded, aida({ type: "ready", targetMinutes: 5, sections: SECTIONS, resumed }));
+    expect(after.notes.map((n) => [n.id, n.text])).toEqual(seeded.notes.map((n) => [n.id, n.text]));
+    expect(after.phase).toBe("live");
+  });
+
+  it("a fresh conversation has no returning state", () => {
+    const s = feed(initialState(), ready);
+    expect(s.resumed).toBeNull();
+    expect(s.pausing).toBe(false);
+  });
+
+  it("ends as paused when the person asks to continue later, and keeps whether a link was emailed", () => {
+    const live = feed(initialState(), ready, aida({ type: "note", section: "org", text: "Two sites" }));
+    const pausing = reduce(live, { kind: "pause-pressed" });
+    expect(pausing.phase).toBe("ending");
+    expect(pausing.pausing).toBe(true);
+    const done = feed(pausing, aida({ type: "ended", reason: "paused", minutes: 3, resumable: true, emailed: true }));
+    expect(done.phase).toBe("ended");
+    expect(done.ended).toEqual({ reason: "paused", minutes: 3, resumable: true, emailed: true });
+    expect(endView(done)).toEqual({ kind: "paused", emailed: true });
+    const notEmailed = feed(pausing, aida({ type: "ended", reason: "paused", minutes: 3, resumable: true, emailed: false }));
+    expect(endView(notEmailed)).toEqual({ kind: "paused", emailed: false });
+    // Silence from the server: still paused, and we do not claim an email.
+    const silent = reduce(pausing, { kind: "closed", minutes: 3 });
+    expect(silent.ended?.reason).toBe("paused");
+    expect(endView(silent)).toEqual({ kind: "paused", emailed: undefined });
+    expect(reduce(done, { kind: "pause-pressed" })).toBe(done);
+  });
+
+  it("shows the saved screen when the line ends without the person, and the server kept the call", () => {
+    const live = feed(initialState(), ready);
+    const left = feed(live, aida({ type: "ended", reason: "user", minutes: 4, resumable: true, emailed: true }));
+    expect(left.ended).toEqual({ reason: "user", minutes: 4, resumable: true, emailed: true, abandoned: true });
+    expect(endView(left)).toEqual({ kind: "saved", emailed: true });
+    const broke = feed(live, aida({ type: "ended", reason: "error", minutes: 4, resumable: true, emailed: false }));
+    expect(endView(broke)).toEqual({ kind: "saved", emailed: false });
+    // Not resumable: the plain ending.
+    expect(endView(feed(live, aida({ type: "ended", reason: "error", minutes: 4 })))).toEqual({ kind: "done" });
+    // The person pressed End: that is theirs, however resumable the server calls it.
+    const pressed = feed(reduce(live, { kind: "end-pressed" }), aida({ type: "ended", reason: "user", minutes: 6, resumable: true, emailed: true }));
+    expect(endView(pressed)).toEqual({ kind: "done" });
+    expect(endView(feed(live, aida({ type: "ended", reason: "complete", minutes: 20 })))).toEqual({ kind: "done" });
+    expect(endView(reduce(live, { kind: "closed", minutes: 1 }))).toEqual({ kind: "done" });
   });
 
   it("keeps a server error to show, without ending", () => {
