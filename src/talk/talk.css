@@ -1754,6 +1754,13 @@ input[aria-invalid="true"]:hover {
     aspect-ratio: 1 / 1.02;
   }
 
+  /* The copy column is taller than a laptop screen: keep her face at the top and in view, not centred below the fold. */
+  .screen-intro .portrait {
+    align-self: start;
+    position: sticky;
+    top: 72px;
+  }
+
   .portrait .head {
     top: 7%;
     width: 112%;
