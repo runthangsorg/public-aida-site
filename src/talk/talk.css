@@ -2228,3 +2228,53 @@ input[aria-invalid="true"]:hover {
   font-size: 18px;
   line-height: 1;
 }
+
+/* "Welcome back": a returning person's one button, above the first screen's copy. */
+.welcome-back {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin: 18px 0 4px;
+  padding: 18px 20px 18px;
+  border-radius: 22px;
+  background: var(--paper-hi);
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 18px 36px -24px rgb(35 44 92 / 0.55);
+}
+
+.welcome-back h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.welcome-back p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 18px;
+}
+
+.welcome-back .btn {
+  margin-top: 6px;
+}
+
+.welcome-status {
+  color: var(--pink-ink);
+  font-weight: 650;
+  font-size: 16px;
+}
+
+.welcome-status:empty {
+  display: none;
+}
+
+@media (max-width: 719px) {
+  .welcome-back .btn {
+    width: 100%;
+  }
+}

@@ -12,6 +12,7 @@ import {
   savedCopy,
   takeResumeToken,
   EXPIRED_LINK,
+  NETWORK_TRY_AGAIN,
   RELINK_INVALID,
 } from "./resume";
 import {
@@ -919,7 +920,35 @@ function backToIntro(message: string, offerRelink: boolean): void {
   again.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
 }
 
-async function resumeFrom(token: string): Promise<void> {
+// The token from the link lives here, in memory only, until the POST that spends it succeeds.
+let pendingToken: string | null = null;
+const welcomeBack = byId("welcome-back", HTMLElement);
+const welcomeGo = byId("welcome-go", HTMLButtonElement);
+const welcomeStatus = byId("welcome-status", HTMLParagraphElement);
+
+function welcomeSay(message: string): void {
+  welcomeStatus.textContent = message;
+}
+
+function dropToken(): void {
+  pendingToken = null;
+  welcomeBack.hidden = true;
+}
+
+/** Back on the first screen, the Welcome back card still there for another try. */
+function retryLater(message: string): void {
+  show("intro", false);
+  welcomeSay(message);
+  welcomeGo.disabled = false;
+  welcomeGo.focus({ preventScroll: true });
+  welcomeBack.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+}
+
+async function resumeNow(): Promise<void> {
+  const token = pendingToken;
+  if (!token || welcomeGo.disabled) return;
+  welcomeGo.disabled = true;
+  welcomeSay("");
   show("mic");
   micText.textContent = "Opening your conversation…";
   micWait.hidden = false;
@@ -934,15 +963,21 @@ async function resumeFrom(token: string): Promise<void> {
     });
     data = await res.json().catch(() => null);
   } catch {
-    backToIntro("We couldn’t reach Aida. Check your connection, then open the link in your email again.", true);
+    retryLater(NETWORK_TRY_AGAIN);
     return;
   }
   const reply = res.ok ? readResumeReply(data) : null;
   if (!reply) {
     const refusal = resumeRefusal(res.ok ? 500 : res.status, data);
-    backToIntro(refusal.message, refusal.offerRelink);
+    if (refusal.retry) {
+      retryLater(refusal.message);
+    } else {
+      dropToken();
+      backToIntro(refusal.message, refusal.offerRelink);
+    }
     return;
   }
+  dropToken();
   session = {
     id: reply.id,
     sections: reply.sections,
@@ -950,14 +985,24 @@ async function resumeFrom(token: string): Promise<void> {
     name: reply.name,
     resumed: reply.resumed,
   };
-  voice.wake();
   void askForMic();
 }
 
-// A link from the email opens here. The token leaves the address bar before anything else happens.
+// The click is the gesture that lets her voice play later, so the audio is woken inside it.
+welcomeGo.addEventListener("click", () => {
+  voice.wake();
+  void resumeNow();
+});
+
+// A link from the email opens here. The token leaves the address bar before anything else happens,
+// and nothing is asked of the server until the person presses the button.
 const link = takeResumeToken(location, history);
-if (link.token) void resumeFrom(link.token);
-else if (link.present) backToIntro(EXPIRED_LINK, true);
+if (link.token) {
+  pendingToken = link.token;
+  welcomeBack.hidden = false;
+} else if (link.present) {
+  backToIntro(EXPIRED_LINK, true);
+}
 
 byId("choices", HTMLFormElement).addEventListener("submit", (e) => {
   e.preventDefault();

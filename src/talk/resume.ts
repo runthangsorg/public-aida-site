@@ -68,17 +68,24 @@ export const EXPIRED_LINK =
   "That link has expired or was already used. Enter your email below and we will send a new one.";
 export const WAIT_A_FEW_MINUTES = "Please wait a few minutes and try again.";
 
-/** What to say on the first screen when the link could not be opened. */
-export function resumeRefusal(status: number, data: unknown): { message: string; offerRelink: boolean } {
+export const NETWORK_TRY_AGAIN = "We couldn’t reach Aida. Check your connection and try again.";
+
+export interface ResumeRefusal {
+  message: string;
+  /** Open the "send me a new link" form. */
+  offerRelink: boolean;
+  /** Keep the token in memory so the same button can try again; false means the link is spent or unknown. */
+  retry: boolean;
+}
+
+/** What to say when the link could not be opened, and whether the same link is worth another try. */
+export function resumeRefusal(status: number, data: unknown): ResumeRefusal {
   const error = typeof data === "object" && data !== null ? (data as Record<string, unknown>).error : undefined;
   if (status === 404 || status === 410 || error === "unknown" || error === "expired" || error === "used") {
-    return { message: EXPIRED_LINK, offerRelink: true };
+    return { message: EXPIRED_LINK, offerRelink: true, retry: false };
   }
-  if (status === 429 || error === "too_many") return { message: WAIT_A_FEW_MINUTES, offerRelink: false };
-  return {
-    message: "We could not open that link just now. Please try again in a moment, or enter your email below.",
-    offerRelink: true,
-  };
+  if (status === 429 || error === "too_many") return { message: WAIT_A_FEW_MINUTES, offerRelink: false, retry: true };
+  return { message: "We could not open that link just now. Please try again in a moment.", offerRelink: false, retry: true };
 }
 
 /** A well-formed address in the loose sense the server also uses: something, an @, something with a dot. */

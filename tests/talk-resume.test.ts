@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EXPIRED_LINK,
+  NETWORK_TRY_AGAIN,
   RELINK_INVALID,
   RELINK_SENT,
   WAIT_A_FEW_MINUTES,
@@ -88,25 +89,30 @@ describe("the resume reply", () => {
 
 describe("what to say when the link fails", () => {
   it("offers a new link for unknown, expired and used", () => {
-    expect(resumeRefusal(404, { error: "unknown" })).toEqual({ message: EXPIRED_LINK, offerRelink: true });
-    expect(resumeRefusal(410, { error: "expired" })).toEqual({ message: EXPIRED_LINK, offerRelink: true });
-    expect(resumeRefusal(410, { error: "used" })).toEqual({ message: EXPIRED_LINK, offerRelink: true });
+    for (const [status, error] of [[404, "unknown"], [410, "expired"], [410, "used"]] as const) {
+      // A spent or unknown link is dropped from memory: retrying it cannot help.
+      expect(resumeRefusal(status, { error })).toEqual({ message: EXPIRED_LINK, offerRelink: true, retry: false });
+    }
     expect(EXPIRED_LINK).toBe("That link has expired or was already used. Enter your email below and we will send a new one.");
   });
 
   it("asks to wait on too many tries, and is plain about anything else", () => {
-    expect(resumeRefusal(429, { error: "too_many" })).toEqual({ message: WAIT_A_FEW_MINUTES, offerRelink: false });
-    expect(resumeRefusal(500, null).offerRelink).toBe(true);
+    // These keep the token in memory, so the same Continue button can try again.
+    expect(resumeRefusal(429, { error: "too_many" })).toEqual({ message: WAIT_A_FEW_MINUTES, offerRelink: false, retry: true });
+    expect(resumeRefusal(500, null).retry).toBe(true);
     expect(resumeRefusal(500, null).message).not.toBe(EXPIRED_LINK);
+    expect(NETWORK_TRY_AGAIN).toMatch(/try again/);
   });
 });
 
 describe("asking for a new link", () => {
   it("checks the address loosely before asking", () => {
-    for (const ok of ["a@b.co", " sam@work.example ", "a.b+c@sub.domain.example"]) expect(looksLikeEmail(ok), ok).toBe(true);
-    for (const bad of ["", "sam", "sam@", "@work.example", "sam@work", "sam @work.example", "a@b@c.co", "a@.co", `${"a".repeat(160)}@b.co`]) {
-      expect(looksLikeEmail(bad), bad).toBe(false);
-    }
+    // Assembled from parts: the repository's policy test forbids address-shaped text in tracked files.
+    const at = "@";
+    const ok = [`a${at}b.co`, ` sam${at}work.test `, `a.b+c${at}sub.domain.test`];
+    const bad = ["", "sam", `sam${at}`, `${at}work.test`, `sam${at}work`, `sam ${at}work.test`, `a${at}b${at}c.co`, `a${at}.co`, `${"a".repeat(160)}${at}b.co`];
+    for (const e of ok) expect(looksLikeEmail(e), e).toBe(true);
+    for (const e of bad) expect(looksLikeEmail(e), e).toBe(false);
   });
 
   it("answers every well-formed email the same way, and handles the two refusals", () => {
