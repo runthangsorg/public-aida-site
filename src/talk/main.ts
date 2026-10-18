@@ -1,6 +1,6 @@
 import "./talk.css";
 import type { Mouth } from "../lipsync";
-import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, startBody, type Field } from "./details";
+import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, limitHint, startBody, type Field } from "./details";
 import { mouthFor, type MouthShape } from "./mouth";
 import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage, setRelayOrigin } from "./protocol";
 import {
@@ -757,6 +757,28 @@ let endTimer = 0;
 let leaving = false;
 let stagesKey = "";
 let lastLink = "";
+
+// A small "78/80" once a capped field is within two characters of its limit — a silent cut is a bug
+// to the person it happens to (QA round 2, breaker). Details fields, the typed answer and the note.
+function wireLimit(el: HTMLInputElement | HTMLTextAreaElement, max: number): void {
+  const counter = document.createElement("span");
+  counter.className = "limit";
+  counter.hidden = true;
+  el.insertAdjacentElement("afterend", counter);
+  const update = (): void => {
+    const text = limitHint(el.value, max);
+    counter.hidden = text === null;
+    counter.textContent = text ?? "";
+  };
+  el.addEventListener("input", update);
+  update();
+}
+for (const f of FIELDS) {
+  const el = document.getElementById(`f-${f}`);
+  if (el instanceof HTMLInputElement) wireLimit(el, MAX_LENGTH[f]);
+}
+wireLimit(typed, 2000);
+wireLimit(byId("choices-note", HTMLTextAreaElement), 500);
 
 // Frames can arrive dozens of times a second (captions come a word at a
 // time); the page is drawn at most about seven times a second from the

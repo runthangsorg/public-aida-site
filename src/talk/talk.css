@@ -392,6 +392,15 @@ input[aria-invalid="true"]:hover {
   font-weight: 650;
 }
 
+/* The "78/80" that appears just before a capped field stops taking characters. */
+.limit {
+  display: block;
+  margin-top: 4px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* ---------- 1. what happens ---------- */
 
 .screen-intro {
