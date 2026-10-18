@@ -117,7 +117,7 @@ describe("asking for a new link", () => {
 
   it("answers every well-formed email the same way, and handles the two refusals", () => {
     expect(relinkOutcome(200)).toEqual({ message: RELINK_SENT, ok: true });
-    expect(RELINK_SENT).toBe("If we have a conversation of yours waiting, we have emailed you a link. It can take a minute.");
+    expect(RELINK_SENT).toBe("If we have a conversation of yours waiting, we have emailed you a link. It can take up to a minute.");
     expect(relinkOutcome(400)).toEqual({ message: RELINK_INVALID, ok: false });
     expect(relinkOutcome(429)).toEqual({ message: "Please wait a few minutes and try again.", ok: false });
     expect(relinkOutcome(500).ok).toBe(false);

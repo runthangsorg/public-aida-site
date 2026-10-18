@@ -1,6 +1,6 @@
 import "./talk.css";
 import type { Mouth } from "../lipsync";
-import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, startBody, type Field } from "./details";
+import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, limitHint, startBody, type Field } from "./details";
 import { mouthFor, type MouthShape } from "./mouth";
 import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage, setRelayOrigin } from "./protocol";
 import {
@@ -121,6 +121,10 @@ type Screen = keyof typeof screens;
 function show(name: Screen, focus = true): void {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
   app.dataset.screen = name;
+  // In-app history per screen (QA round 2 E): the browser's Back button walks the person back through
+  // the pages they have been on instead of leaving the site.
+  const hs = history.state as { screen?: string } | null | undefined;
+  if (hs?.screen !== name) history.pushState({ screen: name }, "");
   // The person check's script is loaded the first time the details form is shown, never before.
   if (name === "details") void check.prepare().catch(() => undefined);
   window.scrollTo(0, 0);
@@ -131,6 +135,21 @@ function show(name: Screen, focus = true): void {
     heading.focus({ preventScroll: true });
   }
 }
+
+// Back out of the room asks before hanging up; anywhere else Back simply goes to the previous screen.
+window.addEventListener("popstate", () => {
+  if (app.dataset.screen === "room") {
+    // Stay in the room's history entry, so a second Back asks again instead of leaving the site.
+    history.pushState({ screen: "room" }, "");
+    controls.hidden = true;
+    confirmBox.hidden = false;
+    byId("confirm-no", HTMLButtonElement).focus();
+    return;
+  }
+  const st = history.state as { screen?: string } | null | undefined;
+  const target = typeof st?.screen === "string" ? (st.screen as Screen) : "intro";
+  if (target !== app.dataset.screen) show(target, false);
+});
 
 // ---------- her face, wherever the page shows her ----------
 
@@ -255,6 +274,49 @@ function readForm(): Partial<Record<Field, string>> {
   return out;
 }
 
+// The details form and the consent box survive a trip to the privacy page (QA round 2 E): both are kept
+// in sessionStorage as they are typed, and put back when this tab returns.
+const DETAILS_KEY = "aida:details";
+const CONSENT_KEY = "aida:consent";
+function loadSaved(key: string): unknown {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function saveDetails(): void {
+  try {
+    sessionStorage.setItem(DETAILS_KEY, JSON.stringify(readForm()));
+  } catch {
+    /* storage can be off: the form still works, just not kept */
+  }
+}
+function restoreDetails(): void {
+  const saved = loadSaved(DETAILS_KEY) as Partial<Record<Field, string>> | null;
+  if (!saved) return;
+  for (const f of FIELDS) {
+    const v = saved[f];
+    const el = document.getElementById(`f-${f}`);
+    if (typeof v === "string" && el instanceof HTMLInputElement) el.value = v.slice(0, MAX_LENGTH[f]);
+  }
+}
+for (const f of FIELDS) {
+  const el = document.getElementById(`f-${f}`);
+  if (el instanceof HTMLInputElement) el.addEventListener("input", saveDetails);
+}
+consent.addEventListener("change", () => {
+  try {
+    sessionStorage.setItem(CONSENT_KEY, JSON.stringify({ consent: consent.checked }));
+  } catch {
+    /* ignore */
+  }
+});
+const savedConsent = loadSaved(CONSENT_KEY) as { consent: boolean } | null;
+if (savedConsent) consent.checked = savedConsent.consent;
+restoreDetails();
+
 function busy(on: boolean): void {
   go.disabled = on;
   go.setAttribute("aria-busy", String(on));
@@ -376,7 +438,8 @@ async function start(name: string, body: Record<string, string | boolean>): Prom
   if (reply.kind === "pending") {
     // A link has been emailed: wait for the click on it. No microphone yet.
     gateEmail = typeof body.email === "string" ? body.email : "";
-    showCheck(reply.hint, reply.resendInSeconds);
+    // It is their own screen: show the full address, so a typo is visible before they chase the email (QA round 2 J).
+    showCheck(gateEmail || reply.hint, reply.resendInSeconds);
     return;
   }
   // This browser already holds a session for the same address: straight to the microphone.
@@ -727,6 +790,22 @@ const lineAida = byId("line-aida", HTMLDivElement);
 const lineYou = byId("line-you", HTMLDivElement);
 const saidAida = byId("said-aida", HTMLParagraphElement);
 const saidYou = byId("said-you", HTMLParagraphElement);
+const saidMore = byId("said-more", HTMLDetailsElement);
+const saidList = byId("said-list", HTMLOListElement);
+
+saidMore.addEventListener("toggle", () => {
+  if (saidMore.open) renderSaidList();
+});
+
+function renderSaidList(): void {
+  const recent = state.turns.filter((t) => t.who === "aida").slice(-6);
+  saidList.replaceChildren();
+  for (const t of recent) {
+    const li = document.createElement("li");
+    li.textContent = t.text;
+    saidList.append(li);
+  }
+}
 const whoYou = byId("who-you", HTMLParagraphElement);
 const hint = byId("hint", HTMLParagraphElement);
 const announce = byId("announce", HTMLParagraphElement);
@@ -734,7 +813,7 @@ const muteBtn = byId("mute", HTMLButtonElement);
 const muteLabel = byId("mute-label", HTMLSpanElement);
 const typeBtn = byId("type", HTMLButtonElement);
 const typer = byId("typer", HTMLFormElement);
-const typed = byId("typed", HTMLInputElement);
+const typed = byId("typed", HTMLTextAreaElement);
 const endBtn = byId("end", HTMLButtonElement);
 const laterBtn = byId("later", HTMLButtonElement);
 const confirmLater = byId("confirm-later", HTMLDivElement);
@@ -757,6 +836,28 @@ let endTimer = 0;
 let leaving = false;
 let stagesKey = "";
 let lastLink = "";
+
+// A small "78/80" once a capped field is within two characters of its limit — a silent cut is a bug
+// to the person it happens to (QA round 2, breaker). Details fields, the typed answer and the note.
+function wireLimit(el: HTMLInputElement | HTMLTextAreaElement, max: number): void {
+  const counter = document.createElement("span");
+  counter.className = "limit";
+  counter.hidden = true;
+  el.insertAdjacentElement("afterend", counter);
+  const update = (): void => {
+    const text = limitHint(el.value, max);
+    counter.hidden = text === null;
+    counter.textContent = text ?? "";
+  };
+  el.addEventListener("input", update);
+  update();
+}
+for (const f of FIELDS) {
+  const el = document.getElementById(`f-${f}`);
+  if (el instanceof HTMLInputElement) wireLimit(el, MAX_LENGTH[f]);
+}
+wireLimit(typed, 2000);
+wireLimit(byId("choices-note", HTMLTextAreaElement), 500);
 
 // Frames can arrive dozens of times a second (captions come a word at a
 // time); the page is drawn at most about seven times a second from the
@@ -813,9 +914,13 @@ function resetRoom(): void {
   setNotebook(false, false);
   saidAida.textContent = "";
   saidYou.textContent = "";
+  saidMore.open = false;
+  saidMore.hidden = true;
+  saidList.replaceChildren();
   hint.textContent = defaultHint;
   announce.textContent = "";
   typed.value = "";
+  typed.style.height = "auto";
   typer.hidden = true;
   typeBtn.setAttribute("aria-expanded", "false");
   closeConfirm();
@@ -1099,6 +1204,8 @@ function renderCaptions(s: TalkState): void {
     whoYou.textContent = latest.you.typed ? "You, typed" : "You";
   }
   captions.dataset.last = latest.last ?? "";
+  // The list of what she said: only while there is something to read back.
+  saidMore.hidden = !latest.aida && !latest.you;
 }
 
 /** One owner for the hint line, so a stale error or a welcome can never sit beside a newer line state. */
@@ -1327,12 +1434,29 @@ typer.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = typed.value.trim();
   if (!text || state.phase !== "live") return;
+  // A double Enter must not send twice (QA round 2, breaker): guard for 400ms.
+  const now = performance.now();
+  const last = (typed as HTMLTextAreaElement & { _last?: number })._last ?? 0;
+  if (now - last < 400) return;
+  (typed as HTMLTextAreaElement & { _last?: number })._last = now;
   voice.sendText(text);
   dispatch({ kind: "typed", text });
   typed.value = "";
+  typed.style.height = "auto";
+});
+
+typed.addEventListener("input", () => {
+  typed.style.height = "auto";
+  typed.style.height = String(Math.min(typed.scrollHeight, 6.5 * 16)) + "px";
 });
 
 typed.addEventListener("keydown", (event) => {
+  // Enter sends, Shift+Enter starts a new line (the answer box grows to about four lines).
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    typed.form?.requestSubmit();
+    return;
+  }
   if (event.key === "Escape" && !textOnly) {
     openTyper(false);
     typeBtn.focus();
@@ -1505,10 +1629,15 @@ function showEnd(): void {
   if (state.summary) {
     readback.innerHTML = `<h2 class="visually-hidden">What Aida heard</h2>${renderSummary(state.summary)}`;
     lede.textContent = "Here is what Aida heard. The Aida team will read it and build your AI and automation strategy.";
+    // Only promise what happens: the team gets the report; the person gets a copy only if they ask below.
+    more.textContent = "Want a copy? Choose “Email me this summary” below.";
+    more.hidden = false;
   } else {
     readback.innerHTML = `<h2 class="readback-title">Aida’s notes</h2><div class="nb-sheet">${renderNotes(groupNotes(state.notes))}</div>`;
     lede.textContent =
-      reason === "lost" ? DROPPED_LEDE : "Here are the notes she took. The Aida team will read them and build your AI and automation strategy.";
+      reason === "lost"
+        ? DROPPED_LEDE
+        : "Here are the notes she took. The full summary (strengths, weaknesses, opportunities, threats and the crux) comes when a conversation reaches its end; the Aida team will read what you said and build your AI and automation strategy.";
   }
   if (view.kind === "dropped") {
     // The server keeps a dropped call: carry on from here (Continue). It is not over, so no follow-up form yet.
@@ -1797,19 +1926,18 @@ function hideKnown(): void {
   introFor("stranger");
 }
 
-async function checkMe(): Promise<void> {
+async function checkMe(): Promise<ReturnType<typeof readMe> | null> {
   let data: unknown;
   try {
     const res = await fetch("/api/talk/me", { headers: { Accept: "application/json" } });
-    // Always read the body, even a refusal: an unread one leaves the request open from the browser's point of view.
     const body: unknown = await res.json().catch(() => null);
     data = res.ok ? body : null;
   } catch {
-    return; // no answer: the ordinary first screen
+    return null;
   }
   const me = readMe(data);
-  // A visitor who has already started typing their details is left alone.
   if (me && app.dataset.screen === "intro") showKnown(me);
+  return me;
 }
 
 async function post(url: string, body: unknown): Promise<{ status: number; data: unknown } | null> {
@@ -1923,7 +2051,10 @@ if (entry.kind === "go") {
   welcomeBack.hidden = false;
   introFor("resume");
 } else if (entry.kind === "bad-link") {
-  backToIntro(EXPIRED_GO, true);
+  // A used/expired link with a still-live session is not an error: show welcome-back instead (QA round 2, breaker H).
+  void checkMe().then((me) => {
+    if (!me?.known) backToIntro(EXPIRED_GO, true);
+  });
 } else {
   void checkMe();
 }
@@ -1937,7 +2068,7 @@ byId("choices", HTMLFormElement).addEventListener("submit", (e) => {
   const choices = [...form.querySelectorAll<HTMLInputElement>("input[name=choice]:checked")].map((i) => i.value);
   const note = byId("choices-note", HTMLTextAreaElement).value;
   if (!choices.length && !note.trim()) {
-    status.textContent = "Tick at least one, or write a note.";
+    status.textContent = "Choose at least one, or write a note.";
     return;
   }
   button.disabled = true;

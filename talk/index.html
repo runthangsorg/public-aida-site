@@ -109,11 +109,11 @@
           <ul class="steps">
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-mic" /></svg>
-              <span><strong>Out loud, both ways.</strong> Interrupt her, change the subject, or type instead.</span>
+              <span><strong>A spoken conversation.</strong> Interrupt her, change the subject, or type instead.</span>
             </li>
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-mic" /></svg>
-              <span><strong>In your language.</strong> She speaks 23 languages; switch whenever you like.</span>
+              <span><strong>In your language.</strong> Speak or type in any of 23 languages and she answers in it.</span>
             </li>
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-note" /></svg>
@@ -130,7 +130,7 @@
               <span class="box" aria-hidden="true"></span>
               <span>
                 I understand I am talking to an AI. I agree that the conversation is transcribed — the voice itself is not stored — that the transcript, notes and summary go to the Aida team, and that Aida may email me a link to continue later.
-                <a href="/privacy/">How we handle it</a>
+                <a href="/privacy/">How we handle your data</a>
               </span>
             </label>
             <p class="field-error" id="consent-error" hidden></p>
@@ -161,7 +161,7 @@
             <div class="avatar" data-face aria-hidden="true"></div>
             <div>
               <h1 id="details-title" class="display">First, a little about you</h1>
-              <p class="lede">So she knows who she is talking to. It takes a minute.</p>
+              <p class="lede">So she knows who she is talking to. This takes about one minute.</p>
             </div>
           </header>
           <form id="details-form" class="form" novalidate>
@@ -227,7 +227,7 @@
           <h1 id="check-title" class="display">Check your email</h1>
           <p class="lede">
             We have sent a link to <strong id="check-hint">your email</strong>. Click it and you go straight into your
-            conversation. It can take a minute; check your spam folder.
+            conversation. It can take up to a minute; check your spam folder.
           </p>
           <div class="actions">
             <button class="btn btn-quiet" type="button" id="check-different">Use a different email</button>
@@ -296,16 +296,18 @@
             <p class="said" id="said-you"></p>
           </div>
           <p class="hint" id="hint">She will start in a moment — you can interrupt her once she does.</p>
+          <details class="said-more" id="said-more">
+            <summary>Show what she said</summary>
+            <ol id="said-list"></ol>
+          </details>
         </div>
         <p class="visually-hidden" id="announce" aria-live="polite"></p>
         <p class="visually-hidden" id="link-status" role="status"></p>
 
         <form class="typer" id="typer" hidden>
           <label class="visually-hidden" for="typed">Type your answer</label>
-          <input id="typed" type="text" maxlength="2000" autocomplete="off" placeholder="Type your answer…" enterkeyhint="send" />
-          <button class="btn btn-go btn-icon" type="submit" aria-label="Send">
-            <svg class="ic" aria-hidden="true"><use href="#i-send" /></svg>
-          </button>
+          <textarea id="typed" rows="1" maxlength="2000" autocomplete="off" placeholder="Type your answer…" enterkeyhint="send"></textarea>
+          <button class="btn btn-go btn-icon" type="submit" aria-label="Send">Send</button>
         </form>
 
         <aside class="notebook" id="notebook" aria-labelledby="nb-title" data-open="false">
@@ -383,7 +385,7 @@
           <p class="choices-hint">Optional: tick any that fit, or add a note for the team.</p>
           <fieldset>
             <legend class="visually-hidden">What would help</legend>
-            <label><input type="checkbox" name="choice" value="bespoke" /> Something made for us (bespoke)</label>
+            <label><input type="checkbox" name="choice" value="bespoke" /> Something built just for us</label>
             <label><input type="checkbox" name="choice" value="commodity" /> Ready-made tools</label>
             <label><input type="checkbox" name="choice" value="integration" /> Connect the software we already use</label>
             <label><input type="checkbox" name="choice" value="workflow" /> Automate a workflow</label>

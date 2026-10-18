@@ -95,7 +95,7 @@ export function looksLikeEmail(value: string): boolean {
 }
 
 export const RELINK_SENT =
-  "If we have a conversation of yours waiting, we have emailed you a link. It can take a minute.";
+  "If we have a conversation of yours waiting, we have emailed you a link. It can take up to a minute.";
 export const RELINK_INVALID = "Please enter a valid email address.";
 
 /** What /api/talk/relink's answer means for the person. */

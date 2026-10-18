@@ -81,6 +81,12 @@ export function entryFor(l: Landing): Entry {
 
 export const EXPIRED_GO = "That link has expired or was already used. Enter your email to get a new one.";
 export const WAIT_FEW_MINUTES = "Please wait a few minutes.";
+export const waitMessage = (retryAfter: unknown): string => {
+  const n = Number(retryAfter);
+  if (!Number.isFinite(n) || n <= 0) return WAIT_FEW_MINUTES;
+  const minutes = Math.max(1, Math.ceil(n / 60));
+  return `Please wait about ${minutes} minute${minutes === 1 ? "" : "s"} and try again.`;
+};
 export const NETWORK_TRY_AGAIN = "We couldn’t reach Aida. Check your connection and try again.";
 export const BUSY_OTHER_WINDOW = "You already have a conversation open in another window.";
 export const DAILY_LIMIT = "You have reached today’s limit. Please come back tomorrow.";
@@ -158,7 +164,7 @@ export function resendLabel(left: number): string {
   if (left <= 0) return "Send it again";
   const m = Math.floor(left / 60);
   const s = String(left % 60).padStart(2, "0");
-  return `Send it again (${m}:${s})`;
+  return `Send it again in ${m}:${s}`;
 }
 
 export interface ResendOutcome {
@@ -173,7 +179,7 @@ export function resendOutcome(status: number, data: unknown): ResendOutcome {
   if (status === 200) {
     return { message: RESENT, ok: true, resendInSeconds: readSeconds(isBag(data) ? data.resendInSeconds : undefined) };
   }
-  if (status === 429) return { message: WAIT_FEW_MINUTES, ok: false };
+  if (status === 429) return { message: waitMessage(isBag(data) ? data.retryAfter : undefined), ok: false };
   return { message: EMAIL_FAILED, ok: false };
 }
 
@@ -197,7 +203,7 @@ export function confirmRefusal(status: number, data: unknown): ConfirmRefusal {
   }
   if (status === 409 || c === "busy") return { message: BUSY_OTHER_WINDOW, outcome: "retry" };
   if (c === "daily_limit") return { message: DAILY_LIMIT, outcome: "stop" };
-  if (status === 429) return { message: WAIT_FEW_MINUTES, outcome: "retry" };
+  if (status === 429) return { message: waitMessage(isBag(data) ? data.retryAfter : undefined), outcome: "retry" };
   return { message: "We could not open that link just now. Please try again in a moment.", outcome: "retry" };
 }
 
@@ -300,7 +306,7 @@ export function entryRefusal(status: number, data: unknown): EntryRefusal {
   }
   if (c === "daily_limit") return { message: DAILY_LIMIT, outcome: "stop" };
   if (status === 409 || c === "busy") return { message: BUSY_OTHER_WINDOW, outcome: "stop" };
-  if (status === 429) return { message: WAIT_FEW_MINUTES, outcome: "retry" };
+  if (status === 429) return { message: waitMessage(isBag(data) ? data.retryAfter : undefined), outcome: "retry" };
   return { message: "We could not open it just now. Please try again in a moment.", outcome: "retry" };
 }
 

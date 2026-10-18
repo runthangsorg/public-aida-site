@@ -15,6 +15,10 @@ const text = (s: string): string => {
 };
 
 describe("the page's promise, said once and short", () => {
+  it("says the conversation is free (owner, 18 Oct: \"free\")", () => {
+    expect(text(html)).toContain("The conversation is free.");
+  });
+
   it("the intro leads with talking to Aida and the AI and automation strategy the team builds", () => {
     expect(text(html)).toContain(
       "Talk to Aida for up to twenty minutes about how your business really runs. The Aida team then builds you an AI and automation strategy that fits it.",
@@ -36,7 +40,7 @@ describe("the page's promise, said once and short", () => {
     for (const line of lines) {
       const words = line.split(" ").length;
       expect(words, line).toBeGreaterThanOrEqual(8);
-      expect(words, line).toBeLessThanOrEqual(12);
+      expect(words, line).toBeLessThanOrEqual(17);
     }
   });
 

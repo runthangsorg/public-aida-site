@@ -47,7 +47,7 @@ export function checkDetails(raw: Partial<Record<Field, unknown>>): Checked {
     const message = REQUIRED[f];
     if (message && !details[f]) errors[f] = message;
   }
-  if (details.email && !EMAIL.test(details.email)) errors.email = "That email address doesn’t look complete.";
+  if (details.email && !EMAIL.test(details.email)) errors.email = EMAIL_FORMAT;
   if (details.phone && !PHONE.test(details.phone))
     errors.phone = "Use digits, spaces and + ( ) - only, or leave it blank.";
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, details };
@@ -77,8 +77,24 @@ export interface StartRefusal {
 
 const FIELD_NAMES = new Set<string>([...FIELDS, "consent"]);
 
+/** A typo and an empty field are different problems, and now say so (QA round 2, breaker). */
+export const EMAIL_FORMAT = "That email address does not look right. Please check it.";
+
 const GENERIC_FORM = "Something in the form needs another look.";
 const CODE = /^[a-z][a-z_]*$/;
+
+/** A small "78/80" once a capped field is within two characters of its limit, so a cut is never silent. */
+export function limitHint(value: string, max: number): string | null {
+  return value.length >= max - 2 ? `${value.length}/${max}` : null;
+}
+
+/** The 429's words: the server's real wait when it sent one ("Please wait about N minutes"), else the old line. */
+function waitMessage(retryAfter: unknown): string {
+  const n = Number(retryAfter);
+  if (!Number.isFinite(n) || n <= 0) return "Too many tries; please wait a few minutes.";
+  const minutes = Math.max(1, Math.ceil(n / 60));
+  return `Please wait about ${minutes} minute${minutes === 1 ? "" : "s"} and try again.`;
+}
 
 /** What to tell the person when /api/talk/start says no. */
 export function refusal(status: number, body: unknown): StartRefusal {
@@ -96,6 +112,7 @@ export function refusal(status: number, body: unknown): StartRefusal {
     switch (status) {
       case 400:
         if (!code && said) message = said;
+        else if (field === "email" && b.reason === "format") message = EMAIL_FORMAT;
         else if (field && field !== "consent") message = REQUIRED[field] ?? GENERIC_FORM;
         else message = GENERIC_FORM;
         break;
@@ -106,7 +123,7 @@ export function refusal(status: number, body: unknown): StartRefusal {
         message = "Interviews are switched off at the moment. Please come back later.";
         break;
       case 429:
-        message = "Too many tries; please wait a few minutes.";
+        message = waitMessage(b.retryAfter);
         break;
       case 503:
         message = "We couldn’t send the email just now. Please try again in a moment.";

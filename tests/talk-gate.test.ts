@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { refusal } from "../src/talk/details";
+import { refusal, limitHint } from "../src/talk/details";
 import {
   BUDGET_LEDE,
   BUSY_CARD,
@@ -111,6 +111,16 @@ describe("what the first screen does on load: go, resume, known, unknown", () =>
   });
 });
 
+describe("the small counter before a field cuts you off", () => {
+  it("shows len/max only in the last two characters of room, so a cut is never silent", () => {
+    expect(limitHint("x".repeat(77), 80)).toBeNull();
+    expect(limitHint("x".repeat(78), 80)).toBe("78/80");
+    expect(limitHint("x".repeat(80), 80)).toBe("80/80");
+    expect(limitHint("", 2_000)).toBeNull();
+    expect(limitHint("hello", 5)).toBe("5/5");
+  });
+});
+
 describe("the start reply", () => {
   it("pending: a link was emailed, with the masked address and the countdown", () => {
     expect(readStartReply(200, { pending: true, hint: HINT, resendInSeconds: 120 })).toEqual({
@@ -141,10 +151,20 @@ describe("the start reply", () => {
       message: "We need a work email to send the team’s follow-up.",
       field: "email",
     });
+    // QA round 2, breaker: a malformed address got the "we need a work email" line. The server now
+    // sends a format reason and the page names the real problem.
+    expect(msg(400, { error: "invalid", field: "email", reason: "format" })).toEqual({
+      message: "That email address does not look right. Please check it.",
+      field: "email",
+    });
     expect(msg(400, { error: "invalid" })?.message).toBe("Something in the form needs another look.");
     expect(msg(403, { error: "forbidden" })).toEqual({ message: GATE_FAILED, gate: true });
     expect(msg(422, { error: "email_not_accepted" })).toEqual({ message: "Please use your work email.", field: "email" });
     expect(msg(429, { error: "too_many" })?.message).toBe("Too many tries; please wait a few minutes.");
+    // QA round 2, breaker: the refusal carries the real wait, so the page says it rather than "a few minutes".
+    expect(msg(429, { error: "too_many", retryAfter: 2400 })?.message).toBe("Please wait about 40 minutes and try again.");
+    expect(msg(429, { error: "too_many", retryAfter: 61 })?.message).toBe("Please wait about 2 minutes and try again.");
+    expect(msg(429, { error: "too_many", retryAfter: 30 })?.message).toBe("Please wait about 1 minute and try again.");
     for (const error of ["email_failed", "busy", "unavailable"]) {
       expect(msg(503, { error })?.message).toBe("We couldn’t send the email just now. Please try again in a moment.");
     }
@@ -164,9 +184,9 @@ describe("the resend countdown", () => {
   });
 
   it("labels the button with m:ss while it counts, and plainly once it is ready", () => {
-    expect(resendLabel(120)).toBe("Send it again (2:00)");
-    expect(resendLabel(61)).toBe("Send it again (1:01)");
-    expect(resendLabel(9)).toBe("Send it again (0:09)");
+    expect(resendLabel(120)).toBe("Send it again in 2:00");
+    expect(resendLabel(61)).toBe("Send it again in 1:01");
+    expect(resendLabel(9)).toBe("Send it again in 0:09");
     expect(resendLabel(0)).toBe("Send it again");
   });
 
