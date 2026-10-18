@@ -301,7 +301,7 @@ describe("the vendor script loader", () => {
 describe("the key the widget uses", () => {
   it("is the live key everywhere but a local host, which gets Cloudflare's always-pass test key", async () => {
     const { SITE_KEY, TEST_SITE_KEY, siteKeyFor } = await import("../src/talk/turnstile");
-    expect(siteKeyFor("aida.chowdhree.com")).toBe(SITE_KEY);
+    expect(siteKeyFor("aida.example.org")).toBe(SITE_KEY);
     expect(siteKeyFor("localhost.evil.example")).toBe(SITE_KEY);
     expect(siteKeyFor("127.0.0.1")).toBe(TEST_SITE_KEY);
     expect(siteKeyFor("localhost")).toBe(TEST_SITE_KEY);
