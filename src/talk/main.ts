@@ -754,9 +754,11 @@ function resetRoom(): void {
   finishedSince = [];
   stagesKey = "";
   lastLink = "";
-  muted = false;
-  muteBtn.setAttribute("aria-pressed", "false");
-  muteLabel.textContent = "Mute";
+  // A person who muted stays muted through an automatic reconnect (17 Oct: the reconnected room opened the
+  // microphone again and picked up the room). A new conversation starts unmuted.
+  if (!carriedStart) muted = false;
+  muteBtn.setAttribute("aria-pressed", String(muted));
+  muteLabel.textContent = muted ? "Unmute" : "Mute";
   muteBtn.dataset.hearing = "false";
   hearing = false;
   nbGroups.replaceChildren();
@@ -900,6 +902,8 @@ function reopen(opened: Opened): void {
   // The microphone was allowed a minute ago, so this does not ask again; if it fails, the microphone screen says why.
   voice.openMic().then(
     () => {
+      // The new microphone stream starts live: put the person's mute back before anything is sent.
+      voice.setMuted(muted);
       startRoom(false);
     },
     () => {

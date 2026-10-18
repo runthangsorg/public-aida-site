@@ -8,6 +8,15 @@
 
 /** The widget's public site key (a public value). */
 export const SITE_KEY = "0x4AAAAAAFZTdtD16pKQUQq6";
+/**
+ * Cloudflare's published always-pass test key. The live key refuses a local host, which stranded every local
+ * end-to-end run on the form; on a local host (and only there) the page uses this one. A local server has no
+ * TURNSTILE_SECRET, so it does not check the token either. Production never matches this test.
+ */
+export const TEST_SITE_KEY = "1x00000000000000000000AA";
+export function siteKeyFor(hostname: string): string {
+  return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(hostname) ? TEST_SITE_KEY : SITE_KEY;
+}
 export const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 /** The request header the server reads the token from. */
 export const TOKEN_HEADER = "X-Aida-Turnstile";
@@ -59,7 +68,7 @@ export class HumanCheck {
       (api) => {
         this.api = api;
         this.widget = api.render(this.deps.container, {
-          sitekey: SITE_KEY,
+          sitekey: siteKeyFor(typeof location === "undefined" ? "" : location.hostname),
           execution: "execute",
           appearance: "interaction-only",
           callback: (token) => {

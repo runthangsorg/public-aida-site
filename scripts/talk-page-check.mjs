@@ -58,6 +58,15 @@ async function open(browser, { size, perms = [], init = '', ws = 'ok', me = { kn
   await page.addInitScript(
     ([mode, extra]) => {
       new Function(extra)();
+      // Keep every microphone stream the page opens, so a check can see whether its track is live.
+      const gum = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+      if (gum) {
+        navigator.mediaDevices.getUserMedia = async (c) => {
+          const stream = await gum(c);
+          (window.__streams ??= []).push(stream);
+          return stream;
+        };
+      }
       class FakeWS {
         constructor(url) {
           if (mode === 'throw') throw new DOMException('blocked', 'SecurityError');
@@ -294,7 +303,7 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
   const resumedBody = { id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [{ section: 'org', text: 'Forty staff on two sites', at: 40 }] } };
   let roomAt = 0;
   /** Opens a live call, drops its line, answers /continue with `replies` in turn (the last repeats). */
-  async function dropped(tag, size, replies, { clock = false } = {}) {
+  async function dropped(tag, size, replies, { clock = false, mute = false } = {}) {
     const asked = [];
     const { ctx, page, errors } = await open(browser, {
       size,
@@ -315,6 +324,7 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
     roomAt = await page.evaluate(() => Date.now());
     await page.evaluate(() => window.__ws.push({ aida: { type: 'note', section: 'org', text: 'Forty staff on two sites' } }));
     await page.waitForTimeout(600);
+    if (mute) await page.click('#mute');
     await page.evaluate(() => window.__ws.drop());
     return { ctx, page, asked, errors };
   }
@@ -332,6 +342,16 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
       const back = await page.evaluate((t0) => { const c = document.querySelector('#clock').textContent; const [m, sec] = c.split(':').map(Number); return { screen: document.querySelector('#app').dataset.screen, notes: document.querySelectorAll('#nb-groups li').length, stage: document.querySelector('#stage-label').textContent, clock: c, clockS: m * 60 + sec, wallS: Math.floor((Date.now() - t0) / 1000), status: document.querySelector('#status-text').textContent }; }, roomAt);
       check(`[${tag}] 200 after two 409s: back in the room by itself, notes and stage carried on, the clock still running from before the drop, 'Back on the line' (asked ${asked.join(', ')})`, asked.join() === '409,409,200' && back.screen === 'room' && back.notes === 1 && back.stage === 'tools' && back.clockS >= back.wallS - 2 && back.status === 'Back on the line', JSON.stringify(back));
       check(`[${tag}] no page errors while reconnecting`, errors.length === 0, errors.join('; '));
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      // 17 Oct, production: the owner's muted call reconnected with the microphone live and picked up the room.
+      const { ctx, page } = await dropped(tag, size, [200], { mute: true });
+      await page.waitForFunction(() => (window.__sockets ?? 0) >= 2, null, { timeout: 20000 });
+      await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: true, resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [] } } }), sections);
+      await page.waitForTimeout(500);
+      const m = await page.evaluate(() => ({ pressed: document.querySelector('#mute').getAttribute('aria-pressed'), label: document.querySelector('#mute').textContent.trim(), live: (window.__streams ?? []).at(-1)?.getAudioTracks().some((t) => t.enabled) ?? null, streams: (window.__streams ?? []).length }));
+      check(`[${tag}] muted before the drop: still muted after the reconnect, and the new microphone track is off`, m.pressed === 'true' && /Unmute/.test(m.label) && m.live === false && m.streams >= 2, JSON.stringify(m));
       await ctx.close();
     }
     if (tag === 'phone') {
