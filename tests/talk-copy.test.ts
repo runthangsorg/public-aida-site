@@ -3,7 +3,16 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const html = readFileSync(resolve(import.meta.dirname, "../talk/index.html"), "utf8");
-const text = (s: string): string => s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+// Our own page's visible text, for matching copy. Tags are dropped until none are left, then any stray angle
+// bracket, so the result can never still hold the start of an element (CodeQL js/incomplete-multi-character-sanitization).
+const text = (s: string): string => {
+  let out = s;
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replace(/<[^<>]*>/g, "");
+  }
+  return out.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
+};
 
 describe("the page's promise, said once and short", () => {
   it("the intro leads with talking to Aida and the AI and automation strategy the team builds", () => {
