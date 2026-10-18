@@ -277,6 +277,29 @@ for (const [w, h] of [[390, 844], [1280, 800]]) {
     await p.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
     await shot(p, 'end-dropped', w);
   }, { routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: 'nothing_to_continue' }, 404)) } });
+  // The common real path is a video call: its dropped, paused and idle screens must keep Vera's face.
+  await run('end-dropped-video', async (p) => {
+    await intoRoom(p, true);
+    await talk(p);
+    await p.evaluate(() => window.__ws.drop());
+    await p.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+    await shot(p, 'end-dropped-video', w);
+  }, { routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: 'nothing_to_continue' }, 404)) } });
+  await run('end-paused-video', async (p) => {
+    await intoRoom(p, true);
+    await talk(p);
+    await p.click('#later');
+    await p.click('#later-yes');
+    await p.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+    await shot(p, 'end-paused-video', w);
+  });
+  await run('end-idle-video', (p) => endWith(p, { reason: 'idle', resumable: true }, true).then(() => shot(p, 'end-idle-video', w)));
+  await run('room-typing-video', async (p) => {
+    await intoRoom(p, true);
+    await talk(p);
+    await p.click('#type');
+    await shot(p, 'room-typing-video', w, false);
+  });
   await run('end-idle', (p) => endWith(p, { reason: 'idle', resumable: true }).then(() => shot(p, 'end-idle', w)));
   await run('end-declined', (p) => endWith(p, { reason: 'declined' }).then(() => shot(p, 'end-declined', w)));
   await run('end-budget', (p) => endWith(p, { reason: 'budget' }).then(() => shot(p, 'end-budget', w)));
