@@ -2,8 +2,8 @@
 /**
  * Drives the built talk page in real Chrome with the server stubbed, for two things:
  *
- *   1. Which face she wears: Vera's still wherever video is expected, the drawn Aida only on the voice-only
- *      path, decided once at load (no flash of the other face, and the other face's art is never fetched).
+ *   1. Which face she wears: Vera's still everywhere, including voice-only calls (owner, 18 Oct: no drawn
+ *      character), decided once at load and never fetched as the other art.
  *   2. The Start press is never a silent dead end: microphone denied, a microphone question nobody answers,
  *      a socket that throws or closes before `ready`, and a confirmed-but-never-started interview.
  *
@@ -26,7 +26,9 @@ const server = createServer((req, res) => {
   let p = url.pathname.endsWith('/') ? `${url.pathname}index.html` : url.pathname;
   if (!existsSync(`${dist}${p}`)) p = `${p}/index.html`;
   try {
-    res.writeHead(200, { 'content-type': types[p.slice(p.lastIndexOf('.'))] ?? 'application/octet-stream' }).end(readFileSync(`${dist}${p}`));
+    // Read first: writeHead before a read that throws would send the 404 headers on top of a 200 and crash the server.
+    const body = readFileSync(`${dist}${p}`);
+    res.writeHead(200, { 'content-type': types[p.slice(p.lastIndexOf('.'))] ?? 'application/octet-stream' }).end(body);
   } catch {
     res.writeHead(404).end('not found');
   }
@@ -143,15 +145,15 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
     {
       const { ctx, page, requests } = await open(browser, { size, init: "localStorage.setItem('aida.talk.voice-only','1')" });
       const f = await faceState(page);
-      check(`[${tag}] voice only chosen earlier: the drawn Aida, with no still fetched (${f.drawn} of ${f.hosts})`, f.drawn === f.hosts && f.vera === 0 && f.kinds.join() === 'drawn' && !artFetched(requests, VERA));
+      check(`[${tag}] voice only chosen earlier: Vera's still too, and the drawn art is never fetched (${f.vera} of ${f.hosts})`, f.vera === f.hosts && f.drawn === 0 && f.kinds.join() === 'vera' && artFetched(requests, VERA) && !artFetched(requests, DRAWN), JSON.stringify(f));
       await page.waitForTimeout(900);
-      await page.screenshot({ path: `${shots}/face-intro-drawn-voiceonly-${tag}.png`, fullPage: false });
+      await page.screenshot({ path: `${shots}/face-intro-voiceonly-vera-${tag}.png`, fullPage: false });
       await ctx.close();
     }
     {
       const { ctx, page } = await open(browser, { size, init: 'delete window.MediaSource; delete window.ManagedMediaSource;' });
       const f = await faceState(page);
-      check(`[${tag}] no Media Source: the drawn Aida`, f.drawn === f.hosts && f.vera === 0);
+      check(`[${tag}] no Media Source: still Vera's still`, f.vera === f.hosts && f.drawn === 0);
       await ctx.close();
     }
   }
@@ -183,29 +185,39 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
       await page.screenshot({ path: `${shots}/face-room-poster-vera-${tag}.png` });
       await ctx.close();
     }
-    // the server says voice only: the drawn Aida, with her mouth working
+    // the server says voice only: Vera's still stays the face, no video
     {
       const { ctx, page } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}` });
       await page.click('#go-go');
       await page.waitForFunction(() => window.__ws);
       await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: false } }), sections);
       await page.waitForTimeout(700);
-      const f = await page.evaluate(() => ({ faces: [...document.querySelectorAll('[data-face]')].map((h) => h.dataset.faceKind), mouths: document.querySelectorAll('#stage .mouth').length, video: document.querySelector('#avatar-video').hidden }));
-      check(`[${tag}] ready.avatar false: every face becomes the drawn Aida, with her mouth patches, and no video`, f.faces.every((k) => k === 'drawn') && f.mouths === 5 && f.video, JSON.stringify(f));
-      await page.screenshot({ path: `${shots}/face-room-drawn-voiceonly-${tag}.png` });
+      const f = await page.evaluate(() => ({ faces: [...document.querySelectorAll('[data-face]')].map((h) => h.dataset.faceKind), still: !!document.querySelector('#stage .vera-still'), video: document.querySelector('#avatar-video').hidden }));
+      check(`[${tag}] ready.avatar false: every face stays Vera's still, and no video`, f.faces.every((k) => k === 'vera') && f.still && f.video, JSON.stringify(f));
+      await page.screenshot({ path: `${shots}/face-room-voiceonly-vera-${tag}.png` });
       await ctx.close();
     }
-    // video gives out: the end screen wears the drawn face
+    // Switch to voice only: the room stays, the clock runs, and the page moves the call itself
     {
-      const { ctx, page } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}` });
+      const { ctx, page } = await open(browser, {
+        size,
+        perms: ['microphone'],
+        goto: `/talk/?go=${GO}`,
+        routes: { '**/api/talk/continue': async (r) => { await r.fulfill(json({ id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [] } })); } },
+      });
       await page.click('#go-go');
       await page.waitForFunction(() => window.__ws);
       await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: true } }), sections);
       await page.waitForTimeout(500);
       await page.click('#voice-only');
-      await page.waitForTimeout(500);
-      const kinds = await page.evaluate(() => [...document.querySelectorAll('[data-face]')].map((h) => h.dataset.faceKind));
-      check(`[${tag}] after Switch to voice only the drawn Aida is the face`, kinds.every((k) => k === 'drawn'), kinds.join());
+      await page.waitForTimeout(300);
+      const mid = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, status: document.querySelector('#status-text').textContent, face: document.querySelector('#stage').dataset.faceKind, video: document.querySelector('#avatar-video').hidden, saved: localStorage.getItem('aida.talk.voice-only') }));
+      check(`[${tag}] Switch to voice only: the room stays saying "Switching to voice only…", Vera's still, no video, the choice remembered`, mid.screen === 'room' && mid.status === 'Switching to voice only…' && mid.face === 'vera' && mid.video && mid.saved === '1', JSON.stringify(mid));
+      await page.waitForFunction(() => (window.__sockets ?? 0) >= 2, null, { timeout: 20000 });
+      await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: false, resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [] } } }), sections);
+      await page.waitForTimeout(400);
+      const back = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, status: document.querySelector('#status-text').textContent, face: document.querySelector('#stage').dataset.faceKind, video: document.querySelector('#avatar-video').hidden }));
+      check(`[${tag}] ...then carries straight on in the room by voice, still Vera`, back.screen === 'room' && back.face === 'vera' && back.video && back.status === 'Back on the line', JSON.stringify(back));
       await ctx.close();
     }
   }

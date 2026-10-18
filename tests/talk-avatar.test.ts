@@ -20,7 +20,6 @@ import {
   edgeAction,
   evictRange,
   faceFor,
-  nextFace,
   hideRangeFor,
   interruptTarget,
   isInitSegment,
@@ -439,29 +438,8 @@ describe("when video fails", () => {
 // ---------- which face she wears ----------
 
 describe("which face she wears", () => {
-  it("Vera's still wherever video is expected, the drawn Aida only for voice only", () => {
-    expect(faceFor("full")).toBe("vera");
-    expect(faceFor("lite")).toBe("vera");
-    expect(faceFor("off")).toBe("drawn");
-  });
-
-  it("follows the same decision as the video choice: no Media Source, no codec, data saver, or voice only chosen", () => {
-    const face = (c: Partial<Capability>) => faceFor(decideAvatar({ ...base, ...c }));
-    expect(face({})).toBe("vera");
-    expect(face({ effectiveType: "3g" })).toBe("vera"); // a weak link still gets her still, and the lite stream
-    expect(face({ hasMse: false })).toBe("drawn");
-    expect(face({ supported: false })).toBe("drawn");
-    expect(face({ saveData: true })).toBe("drawn");
-    expect(face({ voiceOnly: true })).toBe("drawn");
-  });
-
-  it("changes only when the call turns out to be voice only, and never back", () => {
-    expect(nextFace("vera", { t: "ready", asked: true, avatar: true })).toBe("vera");
-    expect(nextFace("vera", { t: "ready", asked: true, avatar: false })).toBe("drawn");
-    expect(nextFace("vera", { t: "ready", asked: false, avatar: false })).toBe("drawn");
-    expect(nextFace("vera", { t: "video-stopped" })).toBe("drawn");
-    expect(nextFace("drawn", { t: "ready", asked: true, avatar: true })).toBe("drawn");
-    expect(nextFace("drawn", { t: "video-stopped" })).toBe("drawn");
+  it("Vera's still everywhere, including voice only (owner, 18 Oct: no drawn character swap)", () => {
+    expect(faceFor()).toBe("vera");
   });
 });
 

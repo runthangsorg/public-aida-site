@@ -32,7 +32,7 @@
     <template id="face">
       <div class="head" data-mouth="closed">
         <div class="shadow"></div>
-        <img class="fig" src="/aida/aida-640.webp" srcset="/aida/aida-640.webp 640w, /aida/aida.webp 1024w" sizes="(min-width: 900px) 560px, 92vw" width="1024" height="1024" alt="" />
+        <img class="fig" src="/aida/aida-640.webp" srcset="/aida/aida-640.webp 640w, /aida/aida.webp 1024w" sizes="(min-width: 900px) 560px, (min-width: 560px) 92vw, 320px" width="1024" height="1024" alt="" />
         <img class="mouth m-small" src="/aida/mouth-small.webp" alt="" />
         <img class="mouth m-mid" src="/aida/mouth-mid.webp" alt="" />
         <img class="mouth m-wide" src="/aida/mouth-wide.webp" alt="" />
@@ -42,9 +42,10 @@
       </div>
     </template>
 
-    <!-- Vera's still: her face wherever video is expected. The drawn Aida above is for the voice-only path. -->
+    <!-- Vera's still: the face on this page, wherever she appears (voice only included). The drawn Aida template
+         above is kept for the other pages that use it; nothing here selects it. -->
     <template id="face-vera">
-      <img class="vera-still" src="/aida/vera-640.webp" srcset="/aida/vera-640.webp 640w, /aida/vera.webp 1024w" sizes="(min-width: 900px) 560px, 92vw" width="1024" height="1024" alt="Aida, a calm woman with short silver hair" />
+      <img class="vera-still" src="/aida/vera-640.webp" srcset="/aida/vera-640.webp 640w, /aida/vera.webp 1024w" sizes="(min-width: 900px) 560px, (min-width: 560px) 92vw, 320px" width="1024" height="1024" alt="Aida, a calm woman with short silver hair" />
     </template>
 
     <div class="app" id="app" data-screen="intro">
@@ -65,6 +66,7 @@
             <button class="btn btn-go" type="button" id="go-go">
               <span class="label">Start the conversation</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
             </button>
+            <button class="link-btn" type="button" id="go-voice">Start with voice only</button>
             <p class="welcome-status" id="go-status" role="status"></p>
             <p class="data-note" data-note hidden></p>
           </div>
@@ -77,6 +79,7 @@
               </button>
               <button class="btn btn-quiet" type="button" id="known-new">Start a new conversation</button>
             </div>
+            <button class="link-btn" type="button" id="known-voice">Continue with voice only</button>
             <p class="welcome-status" id="known-status" role="status"></p>
             <button class="link-btn" type="button" id="known-check" hidden>Check again</button>
             <p class="data-note" data-note hidden></p>
@@ -88,6 +91,7 @@
             <button class="btn btn-go" type="button" id="welcome-go">
               <span class="label">Continue the conversation</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
             </button>
+            <button class="link-btn" type="button" id="welcome-voice">Continue with voice only</button>
             <p class="welcome-status" id="welcome-status" role="status"></p>
             <p class="data-note" data-note hidden></p>
           </div>
@@ -99,6 +103,9 @@
             Aida is an AI assistant. We bring decades of strategy and technology experience to what you tell her. We never
             sell your answers, and you choose what happens next.
           </p>
+          <button class="btn btn-go start-top" type="button" id="start-top">
+            <span class="label">Start</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+          </button>
           <ul class="steps">
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-mic" /></svg>
@@ -122,7 +129,7 @@
               <input type="checkbox" id="consent" name="consent" aria-describedby="consent-error" />
               <span class="box" aria-hidden="true"></span>
               <span>
-                I understand I am talking to an AI. I agree that the conversation is recorded and transcribed, that a summary is sent to the Aida team, and that Aida may email me a link to continue later.
+                I understand I am talking to an AI. I agree that the conversation is transcribed — the voice itself is not stored — that the transcript, notes and summary go to the Aida team, and that Aida may email me a link to continue later.
                 <a href="/privacy/">How we handle it</a>
               </span>
             </label>
@@ -131,7 +138,7 @@
               Start <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
             </button>
             <p class="aside">Find a quiet spot. Your browser will ask to use the microphone.</p>
-            <p class="aside aside-email">We will email you a link to confirm. One click and you are in.</p>
+            <p class="aside aside-email">We email you a link; open it and press Start.</p>
           </form>
           <details class="again" id="again">
             <summary>Already started? Continue where you left off</summary>
@@ -208,7 +215,7 @@
                 <span class="label">Continue</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
               </button>
             </div>
-            <p class="aside aside-email">We will email you a link to confirm. One click and you are in.</p>
+            <p class="aside aside-email">We email you a link; open it and press Start.</p>
           </form>
         </div>
       </section>
@@ -288,7 +295,7 @@
             <p class="who" id="who-you">You</p>
             <p class="said" id="said-you"></p>
           </div>
-          <p class="hint" id="hint">She will start in a moment. Talk as you would on a call; you can interrupt her.</p>
+          <p class="hint" id="hint">She will start in a moment — you can interrupt her once she does.</p>
         </div>
         <p class="visually-hidden" id="announce" aria-live="polite"></p>
         <p class="visually-hidden" id="link-status" role="status"></p>

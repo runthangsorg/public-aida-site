@@ -68,9 +68,7 @@ import {
   AvatarPlayer,
   avatarParam,
   faceFor,
-  nextFace,
   type Face,
-  type FaceEvent,
   capabilityOf,
   dataNote,
   decideAvatar,
@@ -136,12 +134,10 @@ function show(name: Screen, focus = true): void {
 
 // ---------- her face, wherever the page shows her ----------
 
-// Which face she wears is decided once, here, before anything is drawn, from the same decision as the
-// video choice (Media Source, the codec, no data saver, not "voice only" chosen earlier): so there is no
-// flash of the drawn face first. The drawn Aida, with her mouth and blink patches, is kept for the
-// voice-only path only; the face changes only if the call turns out to be voice only.
+// Which face she wears is decided once, here, before anything is drawn: Vera's still everywhere, voice-only
+// calls included (owner, 18 Oct: never the drawn character). faceFor is the single decision point.
 const templates = { drawn: byId("face", HTMLTemplateElement), vera: byId("face-vera", HTMLTemplateElement) };
-let face: Face = faceFor(decideAvatar(capabilityOf(window as unknown as MseWindow)));
+const face: Face = faceFor();
 let roomHead: HTMLElement | null = null;
 
 function drawFaces(): void {
@@ -157,15 +153,6 @@ function drawFaces(): void {
   roomHead = byId("stage", HTMLDivElement).querySelector<HTMLElement>(".head");
 }
 drawFaces();
-
-/** Her face, if the call has turned out to be voice only. */
-function faceChanged(e: FaceEvent): void {
-  const next = nextFace(face, e);
-  if (next === face) return;
-  face = next;
-  drawFaces();
-  bindMouths();
-}
 
 // She blinks every few seconds: one class on the faces of the screen in view,
 // nothing measured, nothing running in between.
@@ -271,7 +258,8 @@ function readForm(): Partial<Record<Field, string>> {
 function busy(on: boolean): void {
   go.disabled = on;
   go.setAttribute("aria-busy", String(on));
-  if (goLabel) goLabel.textContent = on ? "Starting…" : "Continue";
+  // This button only sends the email: "Starting…" read as if the conversation had begun (impatient, 18 Oct).
+  if (goLabel) goLabel.textContent = on ? "Sending your link…" : "Continue";
 }
 
 byId("details-back", HTMLButtonElement).addEventListener("click", () => {
@@ -574,7 +562,7 @@ const stageEl = byId("stage", HTMLDivElement);
 // ---------- her video ----------
 // Decided before connecting (what this browser and link can carry), confirmed by `ready.avatar`, and
 // given up gracefully: if video fails the call is paused (the place is saved) and the person can go on
-// by voice with one button. The drawn portrait sits under the video the whole time.
+// by voice with one button. Vera's still sits under the video the whole time.
 
 const videoEl = byId("avatar-video", HTMLVideoElement);
 const voiceOnlyBtn = byId("voice-only", HTMLButtonElement);
@@ -633,7 +621,6 @@ function onAvatarFrame(frame: Parameters<typeof reduce>[1]): void {
       // The server's word is the truth: it falls back to voice when the avatar would not start.
       connectFails = 0;
       carriedStart = 0;
-      faceChanged({ t: "ready", asked: avatarParamAsked, avatar: f.avatar === true });
       if (f.avatar && avatarParamAsked) startAvatar();
       else stopAvatar();
     } else if (f.type === "reconnecting") player?.setReconnecting(true);
@@ -651,14 +638,55 @@ function videoGaveOut(_reason: FailReason, switching = false): void {
   // Save the place (no email: the page reconnects at once), stop listening, and end this call on purpose.
   voice.switchAway();
   stopAvatar();
-  faceChanged({ t: "video-stopped" });
   dispatch({ kind: "video-stopped", switching });
   awaitEnd();
 }
 
+// The person chose voice only mid-call: the room stays, the clock runs, and the page moves the call to a
+// new voice-only line itself. (17-18 Oct: the old path paused the call, showed the whole end page and only
+// then reconnected - ~23 s, a "Saving your place" frame in between, and the clock restarted at 0:00.)
+const SWITCH_RETRY_MS = 2500;
+const SWITCH_WINDOW_MS = 60_000;
+
+/** Is the switch still the page's job? Read fresh each time: End or a new call may have moved the state on. */
+function switchStillOn(): boolean {
+  return state.phase === "live" && state.switching;
+}
+
+async function switchToVoiceOnly(): Promise<void> {
+  // The entry guard, not switchStillOn(): the flag this reads is set below, on this path.
+  if (state.phase !== "live" || state.switching) return;
+  voice.switchAway(); // the server saves the place, no email; its `ended` is expected, not an ending
+  voice.onMicLevel = null;
+  voice.stopMic();
+  voice.flush();
+  stopAvatar();
+  dispatch({ kind: "switching" });
+  // The old socket is done with us; closing it locally must not look like a dropped line
+  // (voice.close() takes its onclose off first).
+  voice.close();
+  const deadline = performance.now() + SWITCH_WINDOW_MS;
+  for (;;) {
+    const r = await post("/api/talk/continue", {});
+    if (!switchStillOn()) return; // End pressed while the request was out
+    const opened = r?.status === 200 ? readContinued(r.data) : null;
+    if (opened) {
+      reopen(opened);
+      return;
+    }
+    if (r && (r.status === 401 || r.status === 404)) break; // nothing to carry on: the end screen
+    if (performance.now() >= deadline) break; // or it never cleared: the end screen, with Continue
+    await new Promise<void>((resolve) => window.setTimeout(resolve, SWITCH_RETRY_MS));
+  }
+  if (!switchStillOn()) return;
+  dispatch({ kind: "video-stopped", switching: false });
+  dispatch({ kind: "closed", minutes: elapsed() / 60 });
+}
+
 voiceOnlyBtn.addEventListener("click", () => {
+  if (state.switching) return;
   rememberVoiceOnly(safeStorage());
-  videoGaveOut("error", true);
+  void switchToVoiceOnly();
 });
 soundBtn.addEventListener("click", () => {
   soundBtn.hidden = true;
@@ -671,6 +699,13 @@ function safeStorage(): Storage | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** A quiet "voice only" start beside a Start/Continue button: the same action, the choice remembered first. */
+function voiceStart(act: () => void): void {
+  rememberVoiceOnly(safeStorage());
+  voice.wake(); // the click is what lets her voice play
+  act();
 }
 
 // A page that goes away must not leave a download running.
@@ -798,7 +833,9 @@ function enterRoom(typing: boolean): void {
   const ask = avatarAsk();
   avatarParamAsked = avatarParam(ask) !== undefined;
   textOnly = typing || !voice.hasMic;
+  const switching = state.switching; // the voice-only switch re-enters the room: the move is still on
   state = initialState(session.sections, session.targetMinutes, session.resumed);
+  if (switching) dispatch({ kind: "switching" });
   show("room", false);
   render(null, state);
   drawn = state;
@@ -987,20 +1024,41 @@ function herTurnIsOpen(s: TalkState): boolean {
 }
 
 function statusOf(s: TalkState): [string, string] {
+  if (s.phase === "ending") return ["ending", s.pausing ? "Saving your place" : "Wrapping up"];
+  if (s.phase === "ended") return ["ended", "Finished"];
+  // The person chose voice only: the room stays, and the page is moving the call to a new line. This
+  // outranks connecting/reconnecting: the new socket opening is part of the switch, not a dropped line.
+  if (s.switching) return ["switching", "Switching to voice only…"];
   // The socket of an automatic reconnect is opening: still the same quiet word.
   if (s.phase === "connecting" && carriedStart) return ["reconnecting", DROPPED_STATUS];
   if (s.phase === "connecting") return ["connecting", "Connecting"];
-  if (s.phase === "ending") return ["ending", s.pausing ? "Saving your place" : "Wrapping up"];
-  if (s.phase === "ended") return ["ended", "Finished"];
   if (s.link === "dropped") return ["reconnecting", DROPPED_STATUS];
   if (s.link === "reconnecting") return ["reconnecting", "Reconnecting, one moment"];
   if (s.link === "resumed" && performance.now() - resumedAt < 4000) return ["resumed", "Back on the line"];
   if (voice.isSpeaking || (s.avatar && herTurnIsOpen(s))) return ["speaking", "Aida is speaking"];
   // A returning conversation: say so until either of you has spoken.
   if (s.resumed && s.turns.length === 0) return ["resumed", rejoined ? "Back on the line" : "Welcome back"];
+  // Before her first word the page must not invite anyone in (all three personas, 18 Oct: "Listening"
+  // was read as an invitation, and the person talked over the welcome).
+  if (!s.turns.some((t) => t.who === "aida")) return ["starting", "Aida is about to speak"];
   if (textOnly) return ["listening", "Type your answer"];
   if (muted) return ["muted", "You’re muted"];
   return ["listening", "Listening"];
+}
+
+/** The hint line's truth: the state of the line, in the same words as the status. */
+function hintFor(s: TalkState): string {
+  if (s.switching) return "Switching to voice only…";
+  // Never "Back on the line" while "Reconnecting…" is on screen (mobile, 18 Oct: both at once).
+  if (s.link === "dropped" || (s.phase === "connecting" && carriedStart)) return DROPPED_STATUS;
+  if (s.link === "reconnecting") return "Reconnecting, one moment…";
+  if (s.link === "resumed") return rejoined ? "Back on the line. She will carry on where you stopped." : "Welcome back. She will pick up where you stopped.";
+  if (s.resumed && s.turns.length === 0) {
+    return rejoined
+      ? "Back on the line. She will carry on where you stopped."
+      : "Welcome back. She will pick up where you stopped. Talk as you would on a call; you can interrupt her.";
+  }
+  return s.error ?? defaultHint;
 }
 
 function renderStatus(): void {
@@ -1011,7 +1069,7 @@ function renderStatus(): void {
   }
   if (statusText.textContent !== text) statusText.textContent = text;
   // Only changes to the line itself are announced; speaking and listening are visible, not read aloud.
-  const linkKey = ["connecting", "reconnecting", "resumed", "ending"].includes(key) ? key : "live";
+  const linkKey = ["connecting", "reconnecting", "resumed", "ending", "switching"].includes(key) ? key : "live";
   if (linkKey !== lastLink) {
     linkStatus.textContent = linkKey === "live" ? (lastLink ? "Connected." : "") : `${text}.`;
     lastLink = linkKey;
@@ -1032,8 +1090,6 @@ function renderCaptions(s: TalkState): void {
   const latest = latestTurns(s);
   lineAida.hidden = !latest.aida;
   lineYou.hidden = !latest.you;
-  hint.hidden = Boolean(latest.aida ?? latest.you) && !s.error;
-  if (s.error) hint.textContent = s.error;
   if (latest.aida) {
     setSaid(saidAida, turnText(latest.aida) + (latest.aida.interrupted ? " …" : ""));
     lineAida.dataset.open = String(latest.aida.open);
@@ -1043,6 +1099,14 @@ function renderCaptions(s: TalkState): void {
     whoYou.textContent = latest.you.typed ? "You, typed" : "You";
   }
   captions.dataset.last = latest.last ?? "";
+}
+
+/** One owner for the hint line, so a stale error or a welcome can never sit beside a newer line state. */
+function renderHint(s: TalkState): void {
+  const latest = latestTurns(s);
+  hint.hidden = Boolean(latest.aida ?? latest.you) && !s.error;
+  const text = hintFor(s);
+  if (hint.textContent !== text) hint.textContent = text;
 }
 
 const groupEls = new Map<NoteSection, HTMLUListElement>();
@@ -1121,21 +1185,18 @@ function render(prev: TalkState | null, s: TalkState): void {
     resumedAt = performance.now();
     setTimeout(renderStatus, 4100);
   }
-  if (changed("link", "phase")) renderStatus();
+  if (changed("link", "phase", "switching")) renderStatus();
   if (changed("turns", "error")) renderCaptions(s);
+  if (changed("turns", "error", "link", "phase", "resumed", "switching")) renderHint(s);
   if ((s.resumed || s.avatar) && changed("turns")) renderStatus();
-  if (!prev && s.resumed) {
-    hint.textContent = rejoined
-      ? "Back on the line. She will carry on where you stopped."
-      : "Welcome back. She will pick up where you stopped. Talk as you would on a call; you can interrupt her.";
-  }
   if (changed("notes")) renderNotesLive(prev, s);
   if (changed("idleWarning")) renderIdle(s.idleWarning);
   if (s.finished.length) announce.textContent = s.finished.map((t) => `${t.who === "aida" ? "Aida" : "You"}: ${turnText(t)}`).join(" ");
-  if (!changed("phase", "link")) return;
+  if (!changed("phase", "link", "switching")) return;
   const ending = s.phase === "ending" || s.phase === "ended";
-  // While the line is down only End works: there is no socket to pause, type into or mute.
-  const down = s.link === "dropped";
+  // While the line is down - or the call is moving to a voice-only line - only End works:
+  // there is no socket to pause, type into or mute.
+  const down = s.link === "dropped" || s.switching;
   endBtn.disabled = ending;
   laterBtn.disabled = s.phase !== "live" || down;
   typeBtn.disabled = ending || down;
@@ -1593,6 +1654,9 @@ welcomeGo.addEventListener("click", () => {
   voice.wake();
   void resumeNow();
 });
+byId("welcome-voice", HTMLButtonElement).addEventListener("click", () => {
+  voiceStart(() => void resumeNow());
+});
 
 // ---------- the confirmation link, and a returning visitor ----------
 
@@ -1604,6 +1668,7 @@ const goStatus = byId("go-status", HTMLParagraphElement);
 const knownCard = byId("known-card", HTMLElement);
 const knownContinue = byId("known-continue", HTMLButtonElement);
 const knownNew = byId("known-new", HTMLButtonElement);
+const knownVoice = byId("known-voice", HTMLButtonElement);
 const knownStatus = byId("known-status", HTMLParagraphElement);
 
 /**
@@ -1614,7 +1679,17 @@ function introFor(mode: "stranger" | "go" | "known" | "resume"): void {
   consentForm.hidden = mode !== "stranger";
   // "Already started? Continue where you left off" is for a stranger only: a card above already offers it.
   again.hidden = mode !== "stranger";
+  // The near-the-top Start is for the consent route only: the cards above carry their own buttons.
+  startTop.hidden = mode !== "stranger";
 }
+
+// A clear Start near the top, for a viewport where the consent box is below the fold
+// (impatient on a laptop, mobile, 18 Oct): it scrolls to the box and puts the cursor in it.
+const startTop = byId("start-top", HTMLButtonElement);
+startTop.addEventListener("click", () => {
+  consentForm.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+  consent.focus({ preventScroll: true });
+});
 
 function showNotice(message: string): void {
   show("intro", false);
@@ -1689,6 +1764,9 @@ goBtn.addEventListener("click", () => {
   voice.wake();
   void confirmNow();
 });
+byId("go-voice", HTMLButtonElement).addEventListener("click", () => {
+  voiceStart(() => void confirmNow());
+});
 
 // Someone this browser knows (the server's own cookie; the page never reads it).
 function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
@@ -1698,6 +1776,7 @@ function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
   byId("known-forget", HTMLButtonElement).textContent = copy.notYou;
   knownContinue.hidden = !me.canContinue;
   knownNew.hidden = !me.canStartNew;
+  knownVoice.hidden = !me.canContinue; // a voice-only Continue beside an ordinary one, or nothing
   knownNew.textContent = copy.startLabel;
   // A confirmed interview waiting to be started is the one thing to do: Start is the main button.
   // With nothing to continue, Start is the one thing to do: the main button.
@@ -1752,6 +1831,7 @@ const knownCheck = byId("known-check", HTMLButtonElement);
 function knownBusy(on: boolean): void {
   knownContinue.disabled = on || knownBlocked;
   knownNew.disabled = on || knownBlocked;
+  knownVoice.disabled = on || knownBlocked;
 }
 
 knownCheck.addEventListener("click", () => {
@@ -1799,6 +1879,9 @@ knownContinue.addEventListener("click", () => {
 knownNew.addEventListener("click", () => {
   voice.wake();
   void enterAs("new");
+});
+knownVoice.addEventListener("click", () => {
+  voiceStart(() => void enterAs("continue"));
 });
 byId("known-forget", HTMLButtonElement).addEventListener("click", () => {
   void post("/api/talk/forget", {});

@@ -66,6 +66,8 @@ export interface TalkState {
   avatar: boolean;
   /** Video gave out (or the person switched it off): the call was paused so it can go on by voice. */
   videoStopped: { switching: boolean } | null;
+  /** The person chose voice only: the page is moving the call to a new voice-only line, the room staying. */
+  switching: boolean;
   /** The server warned the line has gone quiet and will pause; null when nothing is pending. */
   idleWarning: { secondsLeft: number } | null;
   /** The person asked to continue later; the server's `ended` (paused) is awaited. */
@@ -97,6 +99,7 @@ export type TalkEvent =
   | { kind: "here-pressed" }
   | { kind: "line-dropped" }
   | { kind: "video-stopped"; switching: boolean }
+  | { kind: "switching" }
   | { kind: "closed"; minutes: number };
 
 const MAX_TURNS = 60;
@@ -131,6 +134,7 @@ export function initialState(stages: Stage[] = [], targetMinutes = 20, resumed?:
     idleWarning: null,
     avatar: false,
     videoStopped: null,
+    switching: false,
     resumed: null,
     error: null,
     finished: [],
@@ -254,6 +258,14 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       s.idleWarning = null;
       s.videoStopped = { switching: event.switching };
       return s;
+    case "switching":
+      // The button, not a failure: the room stays, the clock runs, and the page moves the call itself
+      // (18 Oct, mobile: the old path showed the whole end page for ~23 s and reset the clock). Allowed
+      // while connecting too: re-entering the reopened room resets the state, and the move is still on.
+      if (s.phase === "ending" || s.phase === "ended" || s.switching) return state;
+      s.switching = true;
+      s.idleWarning = null;
+      return s;
     case "line-dropped":
       // The page reconnects on its own; until then the room stays, quiet, with what she said so far.
       if (s.phase !== "live") return state;
@@ -297,6 +309,8 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       if (f.resumed && s.phase === "connecting") restore(s, f.resumed);
       if (s.phase === "connecting") s.phase = "live";
       s.link = "live";
+      // The opened line is up: if this was the voice-only switch, the move is done.
+      s.switching = false;
       s.avatar = f.avatar === true;
       s.stage ??= s.stages[0]?.id ?? null;
       return s;
@@ -324,6 +338,9 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       if (s.phase !== "ended") s.link = "resumed";
       return s;
     case "ended":
+      // While the page is moving the call to voice only, an `ended` (switch) from the old socket is
+      // expected, not an ending: the page's own /continue decides what happens next.
+      if (s.switching) return state;
       finish(s, f.reason, f.minutes, {
         ...(f.resumable ? { resumable: true } : {}),
         ...(f.resumable || f.reason === "paused" ? { emailed: f.emailed } : {}),
