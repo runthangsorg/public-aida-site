@@ -313,5 +313,25 @@ export function switchMessage(): string {
 /** The live socket's address, on this same site. `avatar`: `1` asks for full-quality video, `lite` for the thin stream. */
 export function socketUrl(id: string, location: { protocol: string; host: string }, avatar?: "1" | "lite"): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/talk?id=${encodeURIComponent(id)}${avatar ? `&avatar=${avatar}` : ""}`;
+  const base = relayOrigin ?? `${scheme}//${location.host}`;
+  return `${base}/api/talk?id=${encodeURIComponent(id)}${avatar ? `&avatar=${avatar}` : ""}`;
+}
+
+/**
+ * Where the live call runs when it is not on this site. The site's owner publishes it at /talk/relay.json
+ * ({"url": "wss://host"}); when that file is absent or wrong, the call runs here as before. Only a secure
+ * origin is taken, or a local address when the page itself is local.
+ */
+let relayOrigin: string | null = null;
+
+export function validRelay(value: unknown, pageHostname: string): string | null {
+  if (typeof value !== "string" || value.length > 200) return null;
+  if (/^wss:\/\/[a-z0-9.-]+(:\d{1,5})?$/i.test(value)) return value;
+  const localPage = /^(localhost|127\.0\.0\.1)$/.test(pageHostname);
+  if (localPage && /^ws:\/\/(localhost|127\.0\.0\.1):\d{1,5}$/.test(value)) return value;
+  return null;
+}
+
+export function setRelayOrigin(value: unknown, pageHostname: string): void {
+  relayOrigin = validRelay(value, pageHostname);
 }

@@ -2,7 +2,7 @@ import "./talk.css";
 import type { Mouth } from "../lipsync";
 import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, startBody, type Field } from "./details";
 import { mouthFor, type MouthShape } from "./mouth";
-import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage } from "./protocol";
+import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage, setRelayOrigin } from "./protocol";
 import {
   looksLikeEmail,
   pausedCopy,
@@ -80,6 +80,16 @@ import {
   type MseWindow,
 } from "./avatar";
 import { MicError, Voice, type MicProblem } from "./voice";
+
+
+// Where the live call runs (the site's owner may move it off this host): read once, early. Absent or wrong
+// means the call runs on this site, as before.
+void fetch("/talk/relay.json", { cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : null))
+  .then((j: unknown) => {
+    setRelayOrigin((j as { url?: unknown } | null)?.url, location.hostname);
+  })
+  .catch(() => undefined);
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
