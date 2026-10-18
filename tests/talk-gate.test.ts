@@ -145,6 +145,10 @@ describe("the start reply", () => {
     expect(msg(403, { error: "forbidden" })).toEqual({ message: GATE_FAILED, gate: true });
     expect(msg(422, { error: "email_not_accepted" })).toEqual({ message: "Please use your work email.", field: "email" });
     expect(msg(429, { error: "too_many" })?.message).toBe("Too many tries; please wait a few minutes.");
+    // QA round 2, breaker: the refusal carries the real wait, so the page says it rather than "a few minutes".
+    expect(msg(429, { error: "too_many", retryAfter: 2400 })?.message).toBe("Please wait about 40 minutes and try again.");
+    expect(msg(429, { error: "too_many", retryAfter: 61 })?.message).toBe("Please wait about 2 minutes and try again.");
+    expect(msg(429, { error: "too_many", retryAfter: 30 })?.message).toBe("Please wait about 1 minute and try again.");
     for (const error of ["email_failed", "busy", "unavailable"]) {
       expect(msg(503, { error })?.message).toBe("We couldn’t send the email just now. Please try again in a moment.");
     }

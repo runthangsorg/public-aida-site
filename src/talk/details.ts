@@ -80,6 +80,14 @@ const FIELD_NAMES = new Set<string>([...FIELDS, "consent"]);
 const GENERIC_FORM = "Something in the form needs another look.";
 const CODE = /^[a-z][a-z_]*$/;
 
+/** The 429's words: the server's real wait when it sent one ("Please wait about N minutes"), else the old line. */
+function waitMessage(retryAfter: unknown): string {
+  const n = Number(retryAfter);
+  if (!Number.isFinite(n) || n <= 0) return "Too many tries; please wait a few minutes.";
+  const minutes = Math.max(1, Math.ceil(n / 60));
+  return `Please wait about ${minutes} minute${minutes === 1 ? "" : "s"} and try again.`;
+}
+
 /** What to tell the person when /api/talk/start says no. */
 export function refusal(status: number, body: unknown): StartRefusal {
   const b = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
@@ -106,7 +114,7 @@ export function refusal(status: number, body: unknown): StartRefusal {
         message = "Interviews are switched off at the moment. Please come back later.";
         break;
       case 429:
-        message = "Too many tries; please wait a few minutes.";
+        message = waitMessage(b.retryAfter);
         break;
       case 503:
         message = "We couldn’t send the email just now. Please try again in a moment.";
