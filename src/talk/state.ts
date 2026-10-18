@@ -49,7 +49,8 @@ export function noteStamp(at: number): string {
 }
 
 /** The socket's health, for the quiet status line. */
-export type Link = "connecting" | "live" | "reconnecting" | "resumed" | "lost" | "closed";
+/** `dropped`: the page's own socket closed mid-call and the page is reconnecting it (see reconnect.ts). */
+export type Link = "connecting" | "live" | "reconnecting" | "resumed" | "dropped" | "lost" | "closed";
 
 export interface TalkState {
   phase: "connecting" | "live" | "ending" | "ended";
@@ -94,6 +95,7 @@ export type TalkEvent =
   | { kind: "end-pressed" }
   | { kind: "pause-pressed" }
   | { kind: "here-pressed" }
+  | { kind: "line-dropped" }
   | { kind: "video-stopped"; switching: boolean }
   | { kind: "closed"; minutes: number };
 
@@ -252,6 +254,13 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
       s.idleWarning = null;
       s.videoStopped = { switching: event.switching };
       return s;
+    case "line-dropped":
+      // The page reconnects on its own; until then the room stays, quiet, with what she said so far.
+      if (s.phase !== "live") return state;
+      closeOpen(s);
+      s.link = "dropped";
+      s.idleWarning = null;
+      return s;
     case "here-pressed":
       if (!s.idleWarning) return state;
       s.idleWarning = null;
@@ -393,7 +402,7 @@ export function latestTurns(s: TalkState): { aida?: Turn; you?: Turn; last?: Spe
 export type EndView =
   | { kind: "paused" | "saved"; emailed: boolean | undefined }
   | { kind: "video"; switching: boolean }
-  | { kind: "idle" | "declined" | "budget" | "done" };
+  | { kind: "idle" | "declined" | "budget" | "dropped" | "done" };
 
 export function endView(s: TalkState): EndView {
   const e = s.ended;
@@ -404,5 +413,8 @@ export function endView(s: TalkState): EndView {
   if (e.reason === "declined") return { kind: "declined" };
   if (e.reason === "budget") return { kind: "budget" };
   if (e.resumable && (e.abandoned || e.reason === "error")) return { kind: "saved", emailed: e.emailed };
+  // The socket closed with no `ended` and reconnecting did not bring it back: the server keeps a dropped
+  // call resumable, so this screen offers Continue as well as the notes.
+  if (e.reason === "lost") return { kind: "dropped" };
   return { kind: "done" };
 }

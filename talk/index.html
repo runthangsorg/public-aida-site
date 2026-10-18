@@ -8,7 +8,7 @@
     <meta name="referrer" content="no-referrer" />
     <meta name="theme-color" content="#f1e8d4" />
     <title>Talk to Aida</title>
-    <meta name="description" content="A spoken conversation of up to 20 minutes with Aida, an AI assistant, about how your business runs. She takes notes as you talk and shows you a summary at the end." />
+    <meta name="description" content="Talk to Aida for up to twenty minutes about how your business runs; the Aida team then builds you an AI and automation strategy that fits it." />
     <meta name="robots" content="noindex" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preload" href="/fonts/anton.woff2" as="font" type="font/woff2" crossorigin />
@@ -78,6 +78,7 @@
               <button class="btn btn-quiet" type="button" id="known-new">Start a new conversation</button>
             </div>
             <p class="welcome-status" id="known-status" role="status"></p>
+            <button class="link-btn" type="button" id="known-check" hidden>Check again</button>
             <p class="data-note" data-note hidden></p>
             <button class="link-btn" type="button" id="known-forget">Not you? Use a different email</button>
           </div>
@@ -91,31 +92,29 @@
             <p class="data-note" data-note hidden></p>
           </div>
           <p class="lede">
-            A spoken conversation of up to twenty minutes with Aida, an AI assistant. She asks how your week really runs,
-            what it costs you, what you have tried and who decides, and she writes it down as you talk.
+            Talk to Aida for up to twenty minutes about how your business really runs. The Aida team then builds you an
+            AI and automation strategy that fits it.
           </p>
           <p class="lede lede-more">
-            The Aida team reads what you say and applies decades of strategy and technology experience, with tried
-            frameworks such as SWOT, Rumelt’s <em>Good Strategy / Bad Strategy</em>, Jobs to Be Done and <em>The Mom
-            Test</em>, to find what would help most: a change in how you work, a link between your tools, or an AI
-            helper built around you. We never sell your answers, and you choose what happens next.
+            Aida is an AI assistant. We bring decades of strategy and technology experience to what you tell her. We never
+            sell your answers, and you choose what happens next.
           </p>
           <ul class="steps">
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-mic" /></svg>
-              <span><strong>A real two-way conversation.</strong> About 20 minutes, out loud: interrupt her or change the subject whenever you like, or type an answer instead.</span>
+              <span><strong>Out loud, both ways.</strong> Interrupt her, change the subject, or type instead.</span>
             </li>
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-mic" /></svg>
-              <span><strong>In your language.</strong> She speaks 23 languages, including Arabic, Hindi, Bengali, Polish, Romanian, Spanish and French. Talk in whichever you like, and switch whenever you want.</span>
+              <span><strong>In your language.</strong> She speaks 23 languages; switch whenever you like.</span>
             </li>
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-note" /></svg>
-              <span><strong>Her notes fill in as you go,</strong> so you can see what she heard and put her right.</span>
+              <span><strong>Her notes fill in as you talk,</strong> so you can correct her.</span>
             </li>
             <li>
               <svg class="ic" aria-hidden="true"><use href="#i-grid" /></svg>
-              <span><strong>You see a summary at the end:</strong> strengths, weaknesses, opportunities, threats, and the crux.</span>
+              <span><strong>A summary at the end:</strong> strengths, weaknesses, opportunities, threats and the crux.</span>
             </li>
           </ul>
           <form class="consent" id="consent-form" novalidate>
@@ -361,7 +360,7 @@
           <div class="avatar avatar-lg" data-face aria-hidden="true"></div>
           <div>
             <h1 id="end-title" class="display" tabindex="-1">Thank you</h1>
-            <p class="lede" id="end-lede">Here is what Aida heard. The Aida team will read it and be in touch soon.</p>
+            <p class="lede" id="end-lede">Here is what Aida heard. The Aida team will read it and build your AI and automation strategy.</p>
             <p class="lede lede-more" id="end-more" hidden></p>
             <div class="end-actions" id="end-actions" hidden>
               <button class="btn btn-go" type="button" id="end-continue">
@@ -373,7 +372,8 @@
         </header>
         <div class="readback" id="readback"></div>
         <form class="choices" id="choices" hidden>
-          <h2 class="readback-title">Tell the Aida team what would help (optional)</h2>
+          <h2 class="readback-title">What would help you most</h2>
+          <p class="choices-hint">Optional: tick any that fit, or add a note for the team.</p>
           <fieldset>
             <legend class="visually-hidden">What would help</legend>
             <label><input type="checkbox" name="choice" value="bespoke" /> Something made for us (bespoke)</label>
@@ -384,15 +384,15 @@
             <label><input type="checkbox" name="choice" value="summary_email" /> Email me this summary</label>
           </fieldset>
           <label class="choices-note">Anything to add? <textarea id="choices-note" maxlength="500" rows="2"></textarea></label>
-          <button class="btn" type="submit" id="choices-go">Send</button>
-          <p id="choices-status" role="status"></p>
+          <button class="btn btn-go" type="submit" id="choices-go">Send</button>
+          <p class="choices-status" id="choices-status" role="status"></p>
         </form>
         <section class="next" id="next-steps" aria-labelledby="next-title" hidden>
           <h2 class="readback-title" id="next-title">What happens next</h2>
           <ol>
-            <li>The Aida team reads what you said, and the summary above.</li>
-            <li>We apply decades of strategy and technology experience, and tried frameworks, to your situation.</li>
-            <li>If you ticked a follow-up, we get in touch with ideas. We never sell your answers, and you choose what happens next.</li>
+            <li>The Aida team reads your conversation.</li>
+            <li>We build an AI and automation strategy for your business, using decades of strategy and technology experience.</li>
+            <li>If you asked for a follow-up, we get in touch. We never sell your answers.</li>
           </ol>
         </section>
         <footer class="end-foot">

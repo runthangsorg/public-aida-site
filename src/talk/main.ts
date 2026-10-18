@@ -14,6 +14,8 @@ import {
 } from "./resume";
 import {
   BUDGET_LEDE,
+  DROPPED_LEDE,
+  DROPPED_STILL_CLOSING,
   MIC_PROMPT_HELP_MS,
   MIC_STILL_WAITING,
   connectFailedText,
@@ -53,6 +55,7 @@ import {
   type TalkState,
 } from "./state";
 import { renderNotes, renderSummary } from "./swot";
+import { DROPPED_STATUS, RECONNECT_RETRY_MS, reconnecting, startReconnect, stepReconnect, type Reconnect } from "./reconnect";
 import {
   GATE_FAILED,
   HumanCheck,
@@ -464,6 +467,11 @@ byId("check-different", HTMLButtonElement).addEventListener("click", () => {
 // ---------- 3. the microphone ----------
 
 const micText = byId("mic-text", HTMLParagraphElement);
+const micTitle = byId("mic-title", HTMLHeadingElement);
+/** The microphone screen also opens a conversation and reports a line that would not open: its heading says which. */
+function micHeading(kind: "mic" | "opening" | "failed"): void {
+  micTitle.textContent = kind === "opening" ? "One moment" : kind === "failed" ? "The line did not open" : "Can she hear you?";
+}
 const micWait = byId("mic-wait", HTMLParagraphElement);
 const micActions = byId("mic-actions", HTMLDivElement);
 
@@ -483,6 +491,7 @@ const micRetry = byId("mic-retry", HTMLButtonElement);
 
 async function askForMic(): Promise<void> {
   const attempt = ++micAttempt;
+  micHeading("mic");
   show("mic");
   micText.textContent = "Your browser is asking to use your microphone. Choose Allow and the conversation starts.";
   micWait.hidden = false;
@@ -493,6 +502,7 @@ async function askForMic(): Promise<void> {
   const help = window.setTimeout(() => {
     if (attempt !== micAttempt) return;
     micText.textContent = MIC_STILL_WAITING;
+    micWait.hidden = true; // the sentence says it is still waiting; the spinner line would say it twice
     micActions.hidden = false;
   }, MIC_PROMPT_HELP_MS);
   try {
@@ -529,6 +539,7 @@ function connectFailed(): void {
   stopAvatar();
   connectFails++;
   micAttempt++;
+  micHeading("failed");
   show("mic");
   micWait.hidden = true;
   micActions.hidden = false;
@@ -611,6 +622,7 @@ function onAvatarFrame(frame: Parameters<typeof reduce>[1]): void {
     if (f.type === "ready") {
       // The server's word is the truth: it falls back to voice when the avatar would not start.
       connectFails = 0;
+      carriedStart = 0;
       faceChanged({ t: "ready", asked: avatarParamAsked, avatar: f.avatar === true });
       if (f.avatar && avatarParamAsked) startAvatar();
       else stopAvatar();
@@ -653,6 +665,7 @@ function safeStorage(): Storage | undefined {
 
 // A page that goes away must not leave a download running.
 window.addEventListener("pagehide", () => {
+  stopReconnecting();
   stopAvatar();
   voice.close();
 });
@@ -729,8 +742,11 @@ const defaultHint = hint.textContent;
 function resetRoom(): void {
   stopAvatar();
   leaving = false;
-  startedAt = 0;
-  window.clearInterval(clockTimer);
+  // An automatic reconnect carries the clock on, ticking, rather than starting it again from the server's figure.
+  if (!carriedStart) {
+    startedAt = 0;
+    window.clearInterval(clockTimer);
+  }
   window.clearTimeout(endTimer);
   window.clearTimeout(drawTimer);
   drawTimer = 0;
@@ -756,7 +772,7 @@ function resetRoom(): void {
   typer.hidden = true;
   typeBtn.setAttribute("aria-expanded", "false");
   closeConfirm();
-  clock.textContent = formatClock(0);
+  if (!carriedStart) clock.textContent = formatClock(0);
   delete app.dataset.ending;
   byId("choices", HTMLFormElement).reset();
   byId("choices-go", HTMLButtonElement).disabled = false;
@@ -765,6 +781,7 @@ function resetRoom(): void {
 
 function enterRoom(typing: boolean): void {
   if (!session) return;
+  rejoined = carriedStart !== 0;
   resetRoom();
   const ask = avatarAsk();
   avatarParamAsked = avatarParam(ask) !== undefined;
@@ -807,13 +824,102 @@ function enterRoom(typing: boolean): void {
 }
 
 function onSocketClosed(): void {
-  if (state.phase === "connecting") {
+  // The socket of a reconnect that closes again before `ready` is another drop, not a first connect failing.
+  const afterReconnect = rc.phase === "done" && state.phase === "connecting";
+  if (state.phase === "connecting" && !afterReconnect) {
     // Never became ready: nothing happened yet. Say so where the person is, with a retry (a person who came
     // by a link never filled in the form, so sending them back to it would be a dead end).
     connectFailed();
     return;
   }
+  // A live call whose line closed with no `ended` (and no Pause, End or switch) reconnects on its own.
+  const step = stepReconnect(rc, { t: "dropped", now: performance.now(), live: state.phase === "live" || afterReconnect });
+  rc = step.state;
+  if (step.action.kind === "ask") {
+    lineDropped();
+    return;
+  }
   dispatch({ kind: "closed", minutes: elapsed() / 60 });
+}
+
+// ---------- a dropped line reconnects on its own ----------
+
+let rc: Reconnect = startReconnect();
+let rcTimer = 0;
+/** The clock's start, carried into the reconnected room (0 when not reconnecting). */
+let carriedStart = 0;
+/** This room came back by itself after a drop (it says "Back on the line", not "Welcome back"). */
+let rejoined = false;
+
+/** The room stays, quiet: "The line dropped. Reconnecting…", her face, the microphone off. */
+function lineDropped(): void {
+  window.clearTimeout(endTimer);
+  // The clock keeps going: to the person it is one conversation.
+  voice.onMicLevel = null;
+  voice.stopMic();
+  voice.flush();
+  stopAvatar();
+  drive(false);
+  dispatch({ kind: "line-dropped" });
+  void askToContinue();
+}
+
+async function askToContinue(): Promise<void> {
+  const r = await post("/api/talk/continue", {});
+  if (!reconnecting(rc)) return; // stopped (End pressed, page going) while the request was out
+  const opened = r?.status === 200 ? readContinued(r.data) : null;
+  const step = stepReconnect(rc, { t: "reply", now: performance.now(), status: r ? (r.status === 200 && !opened ? 500 : r.status) : 0 });
+  rc = step.state;
+  if (step.action.kind === "open" && opened) reopen(opened);
+  else if (step.action.kind === "end") reconnectGaveUp();
+  else rcTimer = window.setTimeout(reconnectTick, RECONNECT_RETRY_MS);
+}
+
+function reconnectTick(): void {
+  const step = stepReconnect(rc, { t: "tick", now: performance.now() });
+  rc = step.state;
+  if (step.action.kind === "ask") void askToContinue();
+  else if (reconnecting(rc)) rcTimer = window.setTimeout(reconnectTick, 500);
+}
+
+/** Back in the room with the continued call: notes, stage and clock carry on; nobody presses anything. */
+function reopen(opened: Opened): void {
+  const typing = textOnly;
+  carriedStart = startedAt;
+  session = {
+    id: opened.id,
+    sections: opened.sections,
+    targetMinutes: opened.targetMinutes,
+    name: opened.name || (session?.name ?? ""),
+    ...(opened.resumed ? { resumed: opened.resumed } : {}),
+  };
+  if (typing) {
+    startRoom(true);
+    return;
+  }
+  // The microphone was allowed a minute ago, so this does not ask again; if it fails, the microphone screen says why.
+  voice.openMic().then(
+    () => {
+      startRoom(false);
+    },
+    () => {
+      void askForMic();
+    },
+  );
+}
+
+/** Reconnecting did not bring it back: the line-dropped end screen, with Continue. */
+function reconnectGaveUp(): void {
+  window.clearTimeout(rcTimer);
+  carriedStart = 0;
+  voice.close();
+  dispatch({ kind: "closed", minutes: elapsed() / 60 });
+}
+
+/** End pressed, or the page going away, while reconnecting: stop asking. */
+function stopReconnecting(): void {
+  window.clearTimeout(rcTimer);
+  rc = stepReconnect(rc, { t: "stop" }).state;
 }
 
 function elapsed(): number {
@@ -867,14 +973,17 @@ function herTurnIsOpen(s: TalkState): boolean {
 }
 
 function statusOf(s: TalkState): [string, string] {
+  // The socket of an automatic reconnect is opening: still the same quiet word.
+  if (s.phase === "connecting" && carriedStart) return ["reconnecting", DROPPED_STATUS];
   if (s.phase === "connecting") return ["connecting", "Connecting"];
   if (s.phase === "ending") return ["ending", s.pausing ? "Saving your place" : "Wrapping up"];
   if (s.phase === "ended") return ["ended", "Finished"];
+  if (s.link === "dropped") return ["reconnecting", DROPPED_STATUS];
   if (s.link === "reconnecting") return ["reconnecting", "Reconnecting, one moment"];
   if (s.link === "resumed" && performance.now() - resumedAt < 4000) return ["resumed", "Back on the line"];
   if (voice.isSpeaking || (s.avatar && herTurnIsOpen(s))) return ["speaking", "Aida is speaking"];
   // A returning conversation: say so until either of you has spoken.
-  if (s.resumed && s.turns.length === 0) return ["resumed", "Welcome back"];
+  if (s.resumed && s.turns.length === 0) return ["resumed", rejoined ? "Back on the line" : "Welcome back"];
   if (textOnly) return ["listening", "Type your answer"];
   if (muted) return ["muted", "You’re muted"];
   return ["listening", "Listening"];
@@ -1001,16 +1110,23 @@ function render(prev: TalkState | null, s: TalkState): void {
   if (changed("link", "phase")) renderStatus();
   if (changed("turns", "error")) renderCaptions(s);
   if ((s.resumed || s.avatar) && changed("turns")) renderStatus();
-  if (!prev && s.resumed) hint.textContent = "Welcome back. She will pick up where you stopped. Talk as you would on a call; you can interrupt her.";
+  if (!prev && s.resumed) {
+    hint.textContent = rejoined
+      ? "Back on the line. She will carry on where you stopped."
+      : "Welcome back. She will pick up where you stopped. Talk as you would on a call; you can interrupt her.";
+  }
   if (changed("notes")) renderNotesLive(prev, s);
   if (changed("idleWarning")) renderIdle(s.idleWarning);
   if (s.finished.length) announce.textContent = s.finished.map((t) => `${t.who === "aida" ? "Aida" : "You"}: ${turnText(t)}`).join(" ");
-  if (!changed("phase")) return;
+  if (!changed("phase", "link")) return;
   const ending = s.phase === "ending" || s.phase === "ended";
+  // While the line is down only End works: there is no socket to pause, type into or mute.
+  const down = s.link === "dropped";
   endBtn.disabled = ending;
-  laterBtn.disabled = s.phase !== "live";
-  typeBtn.disabled = ending;
-  muteBtn.disabled = ending || textOnly;
+  laterBtn.disabled = s.phase !== "live" || down;
+  typeBtn.disabled = ending || down;
+  muteBtn.disabled = ending || textOnly || down;
+  if (down) typer.hidden = true;
   if (ending) {
     closeConfirm();
     typer.hidden = true;
@@ -1188,6 +1304,13 @@ function awaitEnd(): void {
 
 byId("confirm-yes", HTMLButtonElement).addEventListener("click", () => {
   if (state.phase !== "live" && state.phase !== "connecting") return;
+  if (reconnecting(rc)) {
+    // No line to end: stop reconnecting and show the end screen now.
+    stopReconnecting();
+    dispatch({ kind: "end-pressed" });
+    dispatch({ kind: "closed", minutes: elapsed() / 60 });
+    return;
+  }
   voice.end();
   dispatch({ kind: "end-pressed" });
   awaitEnd();
@@ -1290,8 +1413,12 @@ function showEnd(): void {
       endActions.hidden = false;
       endContinue.disabled = false;
       if (endContinueLabel) endContinueLabel.textContent = view.kind === "video" ? "Continue without video" : "Continue";
-      // Switching on purpose carries straight on: the choice was already made.
-      if (view.kind === "video" && view.switching) window.setTimeout(() => { endContinue.click(); }, 0);
+      // Switching on purpose carries straight on: the choice was already made, so no button is shown, only
+      // "one moment" (the button comes back if continuing fails).
+      if (view.kind === "video" && view.switching) {
+        endActions.hidden = true;
+        window.setTimeout(() => { endContinue.click(); }, 0);
+      }
     }
     if (view.kind === "declined") byId("end-meta", HTMLParagraphElement).textContent = "";
     else
@@ -1302,13 +1429,19 @@ function showEnd(): void {
   }
   if (state.summary) {
     readback.innerHTML = `<h2 class="visually-hidden">What Aida heard</h2>${renderSummary(state.summary)}`;
-    lede.textContent = "Here is what Aida heard. The Aida team will read it and be in touch soon.";
+    lede.textContent = "Here is what Aida heard. The Aida team will read it and build your AI and automation strategy.";
   } else {
     readback.innerHTML = `<h2 class="readback-title">Aida’s notes</h2><div class="nb-sheet">${renderNotes(groupNotes(state.notes))}</div>`;
     lede.textContent =
-      reason === "lost"
-        ? "The line dropped before the end. Here are the notes she took. The Aida team will be in touch soon."
-        : "Here are the notes she took. The Aida team will read them and be in touch soon.";
+      reason === "lost" ? DROPPED_LEDE : "Here are the notes she took. The Aida team will read them and build your AI and automation strategy.";
+  }
+  if (view.kind === "dropped") {
+    // The server keeps a dropped call: carry on from here (Continue). It is not over, so no follow-up form yet.
+    title.textContent = "The line dropped";
+    lede.textContent = DROPPED_LEDE;
+    endActions.hidden = false;
+    endContinue.disabled = false;
+    if (endContinueLabel) endContinueLabel.textContent = "Continue";
   }
   if (view.kind === "budget") lede.textContent = BUDGET_LEDE;
   const minutes = state.ended?.minutes ?? elapsed() / 60;
@@ -1316,7 +1449,7 @@ function showEnd(): void {
   byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(minutes))} min.${ceiling}`;
   app.dataset.ending = reason ?? "";
   show("end");
-  if (session) choices.hidden = false;
+  if (session && view.kind !== "dropped") choices.hidden = false;
 }
 
 // ---------- continuing later ----------
@@ -1363,6 +1496,7 @@ againForm.addEventListener("submit", (event) => {
 
 /** Back on the first screen with a plain reason, and the way to a new link open. */
 function backToIntro(message: string, offerRelink: boolean): void {
+  introFor("stranger");
   show("intro", false);
   againSay(message, true);
   againEmail.removeAttribute("aria-invalid");
@@ -1400,6 +1534,7 @@ async function resumeNow(): Promise<void> {
   if (!token || welcomeGo.disabled) return;
   welcomeGo.disabled = true;
   welcomeSay("");
+  micHeading("opening");
   show("mic");
   micText.textContent = "Opening your conversation…";
   micWait.hidden = false;
@@ -1462,7 +1597,9 @@ const knownStatus = byId("known-status", HTMLParagraphElement);
  * link or a cookie has already agreed when they registered, so the consent box is not asked again.
  */
 function introFor(mode: "stranger" | "go" | "known" | "resume"): void {
-  consentForm.hidden = mode === "go" || mode === "known";
+  consentForm.hidden = mode !== "stranger";
+  // "Already started? Continue where you left off" is for a stranger only: a card above already offers it.
+  again.hidden = mode !== "stranger";
 }
 
 function showNotice(message: string): void {
@@ -1473,6 +1610,7 @@ function showNotice(message: string): void {
 }
 
 function showOpening(): void {
+  micHeading("opening");
   show("mic");
   micText.textContent = "Opening your conversation…";
   micWait.hidden = false;
@@ -1548,10 +1686,15 @@ function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
   knownNew.hidden = !me.canStartNew;
   knownNew.textContent = copy.startLabel;
   // A confirmed interview waiting to be started is the one thing to do: Start is the main button.
-  const startOnly = me.startReady === true && !me.canContinue;
+  // With nothing to continue, Start is the one thing to do: the main button.
+  const startOnly = !me.canContinue;
   knownNew.classList.toggle("btn-go", startOnly);
   knownNew.classList.toggle("btn-quiet", !startOnly);
   knownStatus.textContent = copy.limit;
+  // "Already open in another window" never sits beside an active button: both are held until it clears.
+  knownBlocked = copy.busy;
+  knownBusy(false);
+  knownCheck.hidden = !copy.busy;
   knownCard.hidden = false;
   introFor("known");
 }
@@ -1589,10 +1732,22 @@ async function post(url: string, body: unknown): Promise<{ status: number; data:
   }
 }
 
+let knownBlocked = false;
+const knownCheck = byId("known-check", HTMLButtonElement);
+
 function knownBusy(on: boolean): void {
-  knownContinue.disabled = on;
-  knownNew.disabled = on;
+  knownContinue.disabled = on || knownBlocked;
+  knownNew.disabled = on || knownBlocked;
 }
+
+knownCheck.addEventListener("click", () => {
+  knownCheck.disabled = true;
+  knownStatus.textContent = "Checking…";
+  void checkMe().finally(() => {
+    knownCheck.disabled = false;
+    if (knownStatus.textContent === "Checking…") knownStatus.textContent = "";
+  });
+});
 
 async function enterAs(kind: "continue" | "new"): Promise<void> {
   if (knownContinue.disabled) return;
@@ -1652,7 +1807,10 @@ endContinue.addEventListener("click", () => {
       return;
     }
     endContinue.disabled = false;
-    endContinueStatus.textContent = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data).message : NETWORK_TRY_AGAIN;
+    endActions.hidden = false;
+    // After a dropped line, a 409 means the old call has not cleared yet, not another window.
+    if (r?.status === 409 && endView(state).kind === "dropped") endContinueStatus.textContent = DROPPED_STILL_CLOSING;
+    else endContinueStatus.textContent = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data).message : NETWORK_TRY_AGAIN;
   });
 });
 
@@ -1666,6 +1824,7 @@ if (entry.kind === "go") {
 } else if (entry.kind === "resume") {
   pendingToken = entry.token;
   welcomeBack.hidden = false;
+  introFor("resume");
 } else if (entry.kind === "bad-link") {
   backToIntro(EXPIRED_GO, true);
 } else {

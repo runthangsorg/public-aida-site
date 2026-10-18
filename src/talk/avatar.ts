@@ -268,7 +268,8 @@ export function avatarParam(ask: AvatarAsk): '1' | 'lite' | undefined {
 /** What each choice costs a person, said once and plainly. */
 export function dataNote(ask: AvatarAsk): string {
   if (ask === 'off') return '';
-  const mb = ask === 'lite' ? 15 : 60;
+  // Measured on the server's settings (17 Oct): 3 Mbit/s full, 1.5 Mbit/s lite, with the envelope's overhead.
+  const mb = ask === 'lite' ? 15 : 30;
   return `Video uses a lot of data (about ${mb} MB a minute). You can switch to voice only at any time.`;
 }
 
