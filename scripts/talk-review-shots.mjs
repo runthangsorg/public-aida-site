@@ -310,13 +310,15 @@ for (const [w, h] of [[390, 844], [1280, 800]]) {
     await p.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
     await shot(p, 'end-video-stopped', w);
   });
+  // The switch now moves the call in place; the end screen only appears when there is nothing to
+  // carry on (server 404), so route it that way to shoot the screen a person would actually meet.
   await run('end-switching', async (p) => {
     await intoRoom(p, true);
     await talk(p);
     await p.click('#voice-only');
     await p.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
     await shot(p, 'end-switching', w);
-  }, { routes: { '**/api/talk/continue': () => undefined } });
+  }, { routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: 'nothing_to_continue' }, 404)) } });
   if (privacyRoot) {
     await run('privacy', async (p) => {
       await p.goto(`${base}/privacy/`);
