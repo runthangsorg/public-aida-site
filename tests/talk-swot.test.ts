@@ -42,7 +42,7 @@ describe("the SWOT read-back", () => {
 
   it("adds the crux, the needs, the wants and the approach", () => {
     const html = renderSummary(summary);
-    expect(html).toContain("<h3>The crux</h3>");
+    expect(html).toContain("<h3>The crux: the one thing holding you back</h3>");
     expect(html).toContain("<h3>What you need</h3><ul><li>Payroll in a day</li></ul>");
     expect(html).toContain("<h3>What you want</h3><ul><li>One screen for the week</li></ul>");
     expect(html).toContain("<dd>Ready-made, set up for us</dd>");

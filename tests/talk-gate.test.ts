@@ -184,9 +184,9 @@ describe("the resend countdown", () => {
   });
 
   it("labels the button with m:ss while it counts, and plainly once it is ready", () => {
-    expect(resendLabel(120)).toBe("Send it again (2:00)");
-    expect(resendLabel(61)).toBe("Send it again (1:01)");
-    expect(resendLabel(9)).toBe("Send it again (0:09)");
+    expect(resendLabel(120)).toBe("Send it again in 2:00");
+    expect(resendLabel(61)).toBe("Send it again in 1:01");
+    expect(resendLabel(9)).toBe("Send it again in 0:09");
     expect(resendLabel(0)).toBe("Send it again");
   });
 

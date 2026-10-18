@@ -164,7 +164,7 @@ export function resendLabel(left: number): string {
   if (left <= 0) return "Send it again";
   const m = Math.floor(left / 60);
   const s = String(left % 60).padStart(2, "0");
-  return `Send it again (${m}:${s})`;
+  return `Send it again in ${m}:${s}`;
 }
 
 export interface ResendOutcome {

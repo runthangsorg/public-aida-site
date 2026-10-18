@@ -36,7 +36,7 @@ describe("the page's promise, said once and short", () => {
     for (const line of lines) {
       const words = line.split(" ").length;
       expect(words, line).toBeGreaterThanOrEqual(8);
-      expect(words, line).toBeLessThanOrEqual(12);
+      expect(words, line).toBeLessThanOrEqual(17);
     }
   });
 

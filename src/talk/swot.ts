@@ -48,7 +48,7 @@ export function renderSwot(summary: Summary): string {
 
 export function renderSummary(summary: Summary): string {
   const crux = summary.crux
-    ? `<section class="crux"><h3>The crux</h3><p>${escapeHtml(summary.crux)}</p></section>`
+    ? `<section class="crux"><h3>The crux: the one thing holding you back</h3><p>${escapeHtml(summary.crux)}</p></section>`
     : "";
   const { bespokeOrCommodity, kind } = summary.approach;
   const approach =
