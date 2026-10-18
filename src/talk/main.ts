@@ -139,6 +139,8 @@ function show(name: Screen, focus = true): void {
 // Back out of the room asks before hanging up; anywhere else Back simply goes to the previous screen.
 window.addEventListener("popstate", () => {
   if (app.dataset.screen === "room") {
+    // Stay in the room's history entry, so a second Back asks again instead of leaving the site.
+    history.pushState({ screen: "room" }, "");
     controls.hidden = true;
     confirmBox.hidden = false;
     byId("confirm-no", HTMLButtonElement).focus();
@@ -1449,6 +1451,12 @@ typed.addEventListener("input", () => {
 });
 
 typed.addEventListener("keydown", (event) => {
+  // Enter sends, Shift+Enter starts a new line (the answer box grows to about four lines).
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    typed.form?.requestSubmit();
+    return;
+  }
   if (event.key === "Escape" && !textOnly) {
     openTyper(false);
     typeBtn.focus();
@@ -1621,13 +1629,15 @@ function showEnd(): void {
   if (state.summary) {
     readback.innerHTML = `<h2 class="visually-hidden">What Aida heard</h2>${renderSummary(state.summary)}`;
     lede.textContent = "Here is what Aida heard. The Aida team will read it and build your AI and automation strategy.";
-    // The full summary is emailed — say when it arrives, not just that it will (QA round 2 B).
-    more.textContent = "Your full summary is on its way to the email you gave us.";
+    // Only promise what happens: the team gets the report; the person gets a copy only if they ask below.
+    more.textContent = "Want a copy? Choose “Email me this summary” below.";
     more.hidden = false;
   } else {
     readback.innerHTML = `<h2 class="readback-title">Aida’s notes</h2><div class="nb-sheet">${renderNotes(groupNotes(state.notes))}</div>`;
     lede.textContent =
-      reason === "lost" ? DROPPED_LEDE : "Here are the notes she took. The Aida team will read them and build your AI and automation strategy.";
+      reason === "lost"
+        ? DROPPED_LEDE
+        : "Here are the notes she took. The full summary (strengths, weaknesses, opportunities, threats and the crux) comes when a conversation reaches its end; the Aida team will read what you said and build your AI and automation strategy.";
   }
   if (view.kind === "dropped") {
     // The server keeps a dropped call: carry on from here (Continue). It is not over, so no follow-up form yet.
