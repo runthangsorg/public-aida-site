@@ -914,7 +914,9 @@ input[aria-invalid="true"]:hover {
 }
 
 .status[data-state="connecting"] .dot,
-.status[data-state="ending"] .dot {
+.status[data-state="ending"] .dot,
+.status[data-state="switching"] .dot,
+.status[data-state="starting"] .dot {
   background: var(--gold);
   animation: pulse 1.2s ease-in-out infinite;
 }
@@ -975,22 +977,8 @@ input[aria-invalid="true"]:hover {
   display: none;
 }
 
-/* When earlier words have scrolled away, they fade under a band of paper. */
-.line[data-clipped="true"]::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 18px;
-  height: 1.3em;
-  background: linear-gradient(var(--paper), rgb(241 232 212 / 0));
-  pointer-events: none;
-}
-
-.line-aida[data-clipped="true"]::after {
-  font-size: 21px;
-}
-
+/* A caption that has scrolled inside itself is clipped cleanly: no paper band over the first
+   visible line (mobile, 18 Oct: the grey band made the start of a long caption unreadable). */
 .line-aida .said {
   max-height: calc(1.36em * 4);
   font-size: 21px;
@@ -1005,10 +993,8 @@ input[aria-invalid="true"]:hover {
   line-height: 1.42;
 }
 
-.captions[data-last="you"] .line-aida .said {
-  color: var(--muted);
-}
-
+/* Her last answer keeps full strength while you reply: it must stay readable until she starts the
+   next one (skeptic, 18 Oct: her answer greyed out after ~3 s, no transcript to re-read). */
 .captions[data-last="aida"] .line-you .said {
   color: var(--muted);
 }
@@ -1934,11 +1920,14 @@ input[aria-invalid="true"]:hover {
   }
 }
 
-/* Phones and tablets with the height for it: the notebook sits open in the
-   room, under her captions, instead of behind a one-line strip, so the space a
-   smaller Aida frees goes to the notes (owner, 3 Oct). Short screens keep the
-   strip and its sheet. */
-@media (max-width: 999px) and (min-height: 700px) {
+/* Tablets with the height for it: the notebook sits open in the room, under her
+   captions, instead of behind a one-line strip, so the space a smaller Aida
+   frees goes to the notes (owner, 3 Oct). Short screens keep the strip and its
+   sheet. Phones under 480px wide keep the strip and its tap-to-expand sheet even
+   when tall: in the open layout the notes row collapsed to about 110-190px there
+   and cut the notes off (mobile, 18 Oct), and the 80svh sheet reads better than
+   any box that fit. */
+@media (min-width: 481px) and (max-width: 999px) and (min-height: 700px) {
   .screen-room {
     grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   }
@@ -1981,6 +1970,9 @@ input[aria-invalid="true"]:hover {
 
   .nb-head {
     padding: 12px 0 2px;
+    /* Notes scroll under the heading: without a solid background its title was drawn over the group
+       headings (mobile, 18 Oct). */
+    background: var(--paper-hi);
   }
 
   .nb-head h2 {
@@ -2553,6 +2545,11 @@ input[aria-invalid="true"]:hover {
 }
 
 /* ---------- review fixes (17 Oct) ---------- */
+
+/* A clear Start near the top, for a viewport where the consent box is below the fold (18 Oct). */
+.start-top {
+  margin: 16px 0 2px;
+}
 
 /* The data-use sentence is a footnote, not the card's message. */
 .welcome-back .data-note,
