@@ -20,7 +20,7 @@ describe("the page's promise, said once and short", () => {
       "Talk to Aida for up to twenty minutes about how your business really runs. The Aida team then builds you an AI and automation strategy that fits it.",
     );
     expect(text(html)).toContain(
-      "Aida is an AI assistant. We bring decades of strategy and technology experience to what you tell her. We never sell your answers, and you choose what happens next.",
+      "The conversation is free. Aida is an AI assistant. We bring decades of strategy and technology experience to what you tell her. We never sell your answers, and you choose what happens next.",
     );
   });
 
