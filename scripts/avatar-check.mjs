@@ -402,7 +402,7 @@ async function runFailure(label, viewport, switching = false) {
     await page.click('#voice-only');
     await page.waitForFunction(() => window.__sockets.length >= 2, null, { timeout: 15000 });
     const urls = await page.evaluate(() => window.__sockets);
-    check(`[${label}] Switch to voice only pauses, then carries straight on without video`, !/avatar=/.test(urls[1]) && /avatar=/.test(urls[0]));
+    check(`[${label}] Switch to voice only carries the call to a new line without video, on its own`, !/avatar=/.test(urls[1]) && /avatar=/.test(urls[0]));
     check(`[${label}] and remembers it`, (await page.evaluate(() => localStorage.getItem('aida.talk.voice-only'))) === '1');
     await ctx.close();
     return;
@@ -431,8 +431,8 @@ async function runFailure(label, viewport, switching = false) {
   await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: false } }), sections);
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${shotsDir}/avatar-voice-only-room-${label}.png` });
-  const voiceOnly = await page.evaluate(() => ({ video: document.querySelector('#avatar-video').hidden, pill: document.querySelector('#voice-only').hidden }));
-  check(`[${label}] the room is the drawn portrait again, with no video and no switch link`, voiceOnly.video && voiceOnly.pill);
+  const voiceOnly = await page.evaluate(() => ({ video: document.querySelector('#avatar-video').hidden, still: !!document.querySelector('#stage .vera-still'), pill: document.querySelector('#voice-only').hidden }));
+  check(`[${label}] the room is back with Vera's still, no video and no switch link`, voiceOnly.video && voiceOnly.still && voiceOnly.pill);
   await ctx.close();
 }
 
