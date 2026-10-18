@@ -412,3 +412,20 @@ describe("the room's state", () => {
     expect(formatClock(-5)).toBe("0:00");
   });
 });
+
+describe("where the live call runs", () => {
+  it("takes only a secure relay origin, or a local one for a local page, and falls back to this site", async () => {
+    const { setRelayOrigin, socketUrl, validRelay } = await import("../src/talk/protocol");
+    const page = { protocol: "https:", host: "aida.example.org" };
+    expect(validRelay("wss://relay.example.run.app", "aida.example.org")).toBe("wss://relay.example.run.app");
+    expect(validRelay("ws://relay.example.run.app", "aida.example.org")).toBeNull();
+    expect(validRelay("wss://relay.example/run?x=1", "aida.example.org")).toBeNull();
+    expect(validRelay("javascript:alert(1)", "aida.example.org")).toBeNull();
+    expect(validRelay("ws://127.0.0.1:8080", "aida.example.org")).toBeNull();
+    expect(validRelay("ws://127.0.0.1:8080", "127.0.0.1")).toBe("ws://127.0.0.1:8080");
+    setRelayOrigin("wss://relay.example.run.app", "aida.example.org");
+    expect(socketUrl("abc", page, "1")).toBe("wss://relay.example.run.app/api/talk?id=abc&avatar=1");
+    setRelayOrigin(undefined, "aida.example.org");
+    expect(socketUrl("abc", page)).toBe("wss://aida.example.org/api/talk?id=abc");
+  });
+});
