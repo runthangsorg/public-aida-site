@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <!-- The address carries a private token: never repeat it to another host. -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#f1e8d4" />
+    <title>Your AI and automation strategy — Aida</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/anton.woff2" as="font" type="font/woff2" crossorigin />
+  </head>
+  <body>
+    <a class="mark" href="/" aria-label="Aida, home page">Aida</a>
+
+    <div class="app" id="app" data-screen="loading">
+      <section class="screen screen-loading" id="loading" aria-live="polite">
+        <p class="kicker">Your strategy</p>
+        <p class="wait"><span class="spinner" aria-hidden="true"></span> Opening your strategy…</p>
+      </section>
+
+      <section class="screen screen-narrow" id="not-found" aria-labelledby="not-found-title" hidden>
+        <div class="sheet">
+          <p class="kicker">Your strategy</p>
+          <h1 class="display" id="not-found-title">This link is closed</h1>
+          <p class="lede">This link has expired or was withdrawn. Ask the Aida team for a new one.</p>
+          <p class="back"><a href="/">Back to the home page</a></p>
+        </div>
+      </section>
+
+      <section class="screen screen-narrow" id="sign-in" aria-labelledby="signin-title" hidden>
+        <div class="sheet">
+          <p class="kicker">Your strategy</p>
+          <h1 class="display" id="signin-title">Confirm it's you</h1>
+          <p class="lede" id="signin-hint"></p>
+          <p class="notice" id="signin-notice" role="alert" hidden></p>
+          <form class="form" id="signin-form" novalidate>
+            <div class="field">
+              <label for="email">Your email</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                inputmode="email"
+                maxlength="160"
+                required
+                aria-describedby="email-error"
+              />
+              <p class="field-error" id="email-error" hidden></p>
+            </div>
+            <!-- The person check draws nothing here unless a person has to act. -->
+            <div class="ts-host" id="person-check" aria-hidden="true"></div>
+            <button class="btn btn-go" type="submit" id="signin-go">
+              <span class="label">Send me a sign-in link</span>
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <section class="screen screen-narrow" id="sent" aria-labelledby="sent-title" hidden>
+        <div class="sheet">
+          <p class="kicker">Your strategy</p>
+          <h1 class="display" id="sent-title">Check your email</h1>
+          <p class="lede">If that's the address we have, a sign-in link is on its way. It works once, for 30 minutes.</p>
+          <p class="hint" id="sent-hint"></p>
+        </div>
+      </section>
+
+      <section class="screen screen-narrow" id="trouble" aria-labelledby="trouble-title" hidden>
+        <div class="sheet">
+          <p class="kicker">Your strategy</p>
+          <h1 class="display" id="trouble-title">Something went wrong</h1>
+          <p class="lede">We could not load your strategy. Check your connection and try again.</p>
+          <button class="btn btn-go" type="button" id="retry">Try again</button>
+        </div>
+      </section>
+
+      <section class="screen screen-view" id="view" aria-labelledby="strategy-title" hidden>
+        <div id="strategy"></div>
+        <footer class="strategy-foot">
+          <button class="link-btn" type="button" id="signout">Sign out</button>
+          <a href="/privacy/">How we handle your data</a>
+        </footer>
+      </section>
+    </div>
+
+    <p class="visually-hidden" id="announce" role="status" aria-live="polite"></p>
+    <script type="module" src="/src/strategy/main.ts"></script>
+  </body>
+</html>
