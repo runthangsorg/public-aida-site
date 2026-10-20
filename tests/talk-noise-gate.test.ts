@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BRIDGE_MS,
   HOLD_MS,
   MIN_LEVEL,
   OPEN_MS,
@@ -189,6 +190,70 @@ describe("the barge-in gate", () => {
     expect(fresh.held).toEqual([]);
     expect(fresh.open).toBe(false);
     expect(r.gate.held.length).toBe(PREROLL_MS / FRAME_MS);
+  });
+
+  describe("timed in the worklet's 10 ms blocks, not its 100 ms frames", () => {
+    // Timed by whole 100 ms frames, a 150 ms burst could touch three of them and look like 300 ms. In 10 ms
+    // blocks a burst can look at most 20 ms longer than it is (a part-filled block at each end).
+    const BLOCK = 10;
+    /** Frames of ten 10 ms blocks, as the worklet posts them: `at(ms)` is the loudness at each moment. */
+    function framesOf(totalMs: number, at: (ms: number) => number): { level: number; levels: number[] }[] {
+      const out: { level: number; levels: number[] }[] = [];
+      for (let f = 0; f * FRAME_MS < totalMs; f++) {
+        const levels: number[] = [];
+        let sum = 0;
+        for (let b = 0; b < FRAME_MS / BLOCK; b++) {
+          let e = 0;
+          for (let m = 0; m < BLOCK; m++) e += at(f * FRAME_MS + b * BLOCK + m) ** 2;
+          levels.push(Math.sqrt(e / BLOCK));
+          sum += e;
+        }
+        out.push({ level: Math.sqrt(sum / FRAME_MS), levels });
+      }
+      return out;
+    }
+    function runBlocks(frames: { level: number; levels: number[] }[], speaking: boolean): Run {
+      let gate = startGate<number>();
+      const sent: number[] = [];
+      const open: boolean[] = [];
+      frames.forEach((f, i) => {
+        const step = stepGate(gate, { item: i, level: f.level, levels: f.levels, ms: FRAME_MS }, speaking);
+        gate = step.gate;
+        sent.push(...step.send);
+        open.push(gate.open);
+      });
+      return { gate, sent, steps: [], open };
+    }
+
+    it("a 150 ms burst never opens it, wherever it falls across the 100 ms frames (it can touch three)", () => {
+      for (let offset = 0; offset < 100; offset += 5) {
+        const start = 2000 + offset;
+        const r = runBlocks(framesOf(4000, (ms) => (ms >= start && ms < start + 150 ? 0.3 : 0.003)), true);
+        expect(r.sent, `burst at +${offset} ms`).toEqual([]);
+        expect(r.open.some(Boolean), `burst at +${offset} ms`).toBe(false);
+      }
+    });
+
+    it("a 220 ms burst never opens it either; 300 ms always does", () => {
+      for (const [length, opens] of [[220, false], [300, true]] as const) {
+        for (let offset = 0; offset < 100; offset += 10) {
+          const start = 2000 + offset;
+          const r = runBlocks(framesOf(4000, (ms) => (ms >= start && ms < start + length ? 0.3 : 0.003)), true);
+          expect(r.open.some(Boolean), `${length} ms at +${offset}`).toBe(opens);
+        }
+      }
+    });
+
+    it("speech with its short stops (40 ms between syllables) still opens it, after ~250 ms of voice", () => {
+      expect(BRIDGE_MS).toBeGreaterThanOrEqual(40);
+      const talk = (ms: number): number => (ms < 2000 ? 0.003 : (ms - 2000) % 200 < 160 ? 0.1 : 0.004);
+      const r = runBlocks(framesOf(4000, talk), true);
+      const first = r.open.indexOf(true);
+      // 250 ms of voice inside the first 330 ms: opened by the end of the fourth frame of speech.
+      expect(first).toBeGreaterThanOrEqual(22);
+      expect(first).toBeLessThanOrEqual(23);
+      expect(r.sent[0]).toBe(first - 3);
+    });
   });
 
   it("a muted microphone (silence) or a broken level never opens it", () => {

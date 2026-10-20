@@ -19,10 +19,19 @@ class Capture extends AudioWorkletProcessor {
       this.n += take;
       i += take;
       if (this.n === this.size) {
-        // Loudness is measured here, on the audio thread, not on the page's.
+        // Loudness is measured here, on the audio thread, not on the page's: the whole frame's, and each 10 ms
+        // block's (the barge-in gate times a voice by the blocks, so a short burst is not counted as 100 ms).
         let sum = 0;
-        for (let k = 0; k < this.size; k++) sum += this.buf[k] * this.buf[k];
-        this.port.postMessage({ samples: this.buf, level: Math.sqrt(sum / this.size) }, [this.buf.buffer]);
+        const levels = [];
+        for (let b = 0; b < 10; b++) {
+          const from = Math.round((b * this.size) / 10);
+          const to = Math.round(((b + 1) * this.size) / 10);
+          let part = 0;
+          for (let k = from; k < to; k++) part += this.buf[k] * this.buf[k];
+          levels.push(Math.sqrt(part / Math.max(1, to - from)));
+          sum += part;
+        }
+        this.port.postMessage({ samples: this.buf, level: Math.sqrt(sum / this.size), levels }, [this.buf.buffer]);
         this.buf = new Float32Array(this.size);
         this.n = 0;
       }

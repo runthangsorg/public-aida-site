@@ -164,8 +164,8 @@ export class Voice {
     if (ctx.state !== "running") await ctx.resume().catch(() => undefined);
     await ctx.audioWorklet.addModule(CAPTURE_URL);
     const node = new AudioWorkletNode(ctx, "aida-capture");
-    node.port.onmessage = (event: MessageEvent<{ samples: Float32Array; level: number }>) => {
-      this.capture(event.data.samples, event.data.level);
+    node.port.onmessage = (event: MessageEvent<{ samples: Float32Array; level: number; levels?: number[] }>) => {
+      this.capture(event.data.samples, event.data.level, event.data.levels);
     };
     source.connect(node); // never to the speakers: that is a feedback loop
     this.source = source;
@@ -173,12 +173,13 @@ export class Voice {
     this.resampler = new Resampler(ctx.sampleRate, INPUT_RATE);
   }
 
-  private capture(raw: Float32Array, loudness: number): void {
+  private capture(raw: Float32Array, loudness: number, levels?: number[]): void {
     this.micLevel += (Math.min(1, loudness * 5) - this.micLevel) * 0.5;
     this.onMicLevel?.(this.micLevel);
     const rate = this.resampler?.from ?? this.input?.sampleRate ?? INPUT_RATE;
     const was = this.gate.open;
-    const step = stepGate(this.gate, { item: raw, level: loudness, ms: (raw.length / rate) * 1000 }, this.herVoicePlaying);
+    const frame = { item: raw, level: loudness, ms: (raw.length / rate) * 1000, ...(levels ? { levels } : {}) };
+    const step = stepGate(this.gate, frame, this.herVoicePlaying);
     this.gate = step.gate;
     if (step.gate.open !== was) this.onVoice?.(step.gate.open);
     if (!this.streaming || !this.resampler) return;

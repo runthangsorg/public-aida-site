@@ -8,8 +8,9 @@
 //   - an adaptive noise floor, learnt all the time: falls fast to a quieter room, rises slowly to a steady sound
 //     near it (a fan, her echo), and creeps very slowly towards a loud steady one, so a sound that never stops is
 //     learnt in seconds while a sentence, with its breaths, barely moves it;
-//   - the gate opens only after 250 ms continuously above max(floor x 3, 0.02 RMS): a cough, a knock or her
-//     own echo never does;
+//   - the gate opens only after 250 ms continuously above max(floor x 3, 0.02 RMS), timed in the worklet's
+//     10 ms blocks (a dip of up to 60 ms, a stop between syllables, does not break the run, and does not count):
+//     a cough, a knock or her own echo never does;
 //   - when it opens, the last ~300 ms it held back go first (the start of their words), then everything, until
 //     800 ms after the level falls back.
 //
@@ -22,6 +23,8 @@ export const OPEN_MS = 250;
 export const PREROLL_MS = 300;
 /** How long it stays open after the level falls back. */
 export const HOLD_MS = 800;
+/** A dip this short inside a run of voice (a stop consonant) does not break it. */
+export const BRIDGE_MS = 60;
 /** She counts as speaking for this long after her voice stops (her video plays a little behind her words). */
 export const TAIL_MS = 500;
 /** The threshold is this many times the noise floor... */
@@ -42,12 +45,17 @@ export interface GateFrame<T> {
   level: number;
   /** Its length. */
   ms: number;
+  /**
+   * Its loudness in equal short blocks, oldest first (the worklet's 10 ms): the gate is timed by these, so a
+   * short burst that straddles frames is not counted as the frames' whole length. Absent: one block.
+   */
+  levels?: readonly number[];
 }
 
 export interface Gate<T> {
   /** The room's noise floor (RMS); null until the first frame. */
   floor: number | null;
-  /** How long the level has been above the threshold without a break. */
+  /** How long the level has been above the threshold in this run (dips up to BRIDGE_MS do not end it). */
   hotMs: number;
   /** How long since it was last above. */
   coolMs: number;
@@ -100,16 +108,29 @@ function trim<T>(held: GateFrame<T>[]): GateFrame<T>[] {
  * One microphone frame through the gate. `herSpeaking`: her voice is playing now (the PCM queue on a voice
  * call, her open caption on a video call).
  */
+const clean = (n: number): number => (Number.isFinite(n) ? Math.max(0, n) : 0);
+
 export function stepGate<T>(g: Gate<T>, frame: GateFrame<T>, herSpeaking: boolean): GateStep<T> {
-  const level = Number.isFinite(frame.level) ? Math.max(0, frame.level) : 0;
-  const ms = Number.isFinite(frame.ms) ? Math.max(0, frame.ms) : 0;
-  const hot = g.floor !== null && level > thresholdFor(g.floor);
-  const hotMs = hot ? g.hotMs + ms : 0;
-  const coolMs = hot ? 0 : g.coolMs + ms;
-  const open = hotMs >= OPEN_MS || (g.open && coolMs <= HOLD_MS);
+  const ms = clean(frame.ms);
+  const blocks = frame.levels?.length ? frame.levels : [frame.level];
+  const each = ms / blocks.length;
+  let { floor, hotMs, coolMs, open } = g;
+  for (const raw of blocks) {
+    const level = clean(raw);
+    if (floor !== null && level > thresholdFor(floor)) {
+      hotMs += each;
+      coolMs = 0;
+    } else {
+      coolMs += each;
+      if (coolMs > BRIDGE_MS) hotMs = 0;
+    }
+    floor = nextFloor(floor, level, each);
+    if (hotMs >= OPEN_MS) open = true;
+    else if (open && coolMs > HOLD_MS) open = false;
+  }
   const gating = herSpeaking || g.tailMs > 0;
   const next: Gate<T> = {
-    floor: nextFloor(g.floor, level, ms),
+    floor,
     hotMs,
     coolMs,
     open,
@@ -119,9 +140,9 @@ export function stepGate<T>(g: Gate<T>, frame: GateFrame<T>, herSpeaking: boolea
   const held = g.held.map((f) => f.item);
   // She is not speaking: everything goes, as before. Frames held while she spoke go first only if they are
   // the start of words still going on; otherwise they were her echo or the room, and are dropped.
-  if (!gating) return { gate: next, send: hot ? [...held, frame.item] : [frame.item] };
+  if (!gating) return { gate: next, send: hotMs > 0 ? [...held, frame.item] : [frame.item] };
   // A voice over hers: the held frames (only there on the frame that opens it) first, then this one.
   if (open) return { gate: next, send: [...held, frame.item] };
-  next.held = trim([...g.held, { item: frame.item, level, ms }]);
+  next.held = trim([...g.held, { item: frame.item, level: clean(frame.level), ms }]);
   return { gate: next, send: [] };
 }
