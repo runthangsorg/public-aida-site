@@ -181,9 +181,23 @@ export function joinFragment(prev: string, chunk: string, explicit: boolean): st
   return ATTACHES.test(bare) ? prev + bare : `${prev} ${bare}`;
 }
 
-/** The text to show for a turn: whitespace runs collapsed. */
+/**
+ * The speech model sometimes puts a marker ("<no speech>", "<noise>") in place of words. It can arrive
+ * unclosed ("<no speech") or split over two fragments ("<no" then " speech>"), so this works on the
+ * accumulated turn: remove every marker-shaped run, then collapse the spaces it leaves and trim.
+ * A lone "<" before a digit or a space ("a < 3") is ordinary text and is left alone.
+ */
+export function cleanTranscription(text: string): string {
+  return text
+    .replace(/<[A-Za-z][A-Za-z _-]{0,23}>?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The text to show for a turn: any transcription markers removed, whitespace runs collapsed. */
 export function turnText(turn: Turn): string {
-  return turn.text.replace(/\s+/g, " ").trim();
+  // A typed answer is the person's own words, not a transcription: leave its angle brackets alone.
+  return turn.typed ? turn.text.replace(/\s+/g, " ").trim() : cleanTranscription(turn.text);
 }
 
 function closeOpen(s: TalkState, except?: Speaker, interrupted = false): void {
@@ -397,12 +411,15 @@ export function formatClock(seconds: number): string {
   return `${m}:${ss}`;
 }
 
-/** The last turn of each speaker, for the two caption lines. */
+/**
+ * The last turn of each speaker, for the two caption lines. A turn that is only a transcription
+ * marker has no words to show: her caption keeps her previous words instead.
+ */
 export function latestTurns(s: TalkState): { aida?: Turn; you?: Turn; last?: Speaker } {
   const out: { aida?: Turn; you?: Turn; last?: Speaker } = {};
   for (let i = s.turns.length - 1; i >= 0 && !(out.aida && out.you); i--) {
     const t = s.turns[i];
-    if (!t) continue;
+    if (!t || !turnText(t)) continue;
     out.last ??= t.who;
     if (t.who === "aida") out.aida ??= t;
     else out.you ??= t;

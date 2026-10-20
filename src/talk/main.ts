@@ -1342,7 +1342,10 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
     const stamp = document.createElement("time");
     stamp.className = "note-time";
     stamp.textContent = noteStamp(note.at);
-    li.append(stamp, note.text);
+    const words = document.createElement("span");
+    words.className = "note-text";
+    words.textContent = note.text;
+    li.append(stamp, words);
     const fresh = Boolean(prev) && !note.restored;
     if (fresh) li.className = "fresh";
     noteGroup(note.section).append(li);

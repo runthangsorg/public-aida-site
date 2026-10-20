@@ -5,6 +5,7 @@ import {
   TRANSCRIBING_MS,
   chipFor,
   chipWakeAt,
+  cleanTranscription,
   startChip,
   stepChip,
   formatClock,
@@ -218,6 +219,26 @@ describe("the room's state", () => {
     const s = feed(initialState(), ready, said("Hello"), said(" there,"), said(" who"), said(" does"), said(" dis"), said("patch?"));
     expect(s.turns).toHaveLength(1);
     expect(turnText(s.turns[0] ?? ({} as never))).toBe("Hello there, who does dispatch?");
+  });
+
+  it("never shows the speech model's transcription markers, whole, unclosed or split", () => {
+    expect(cleanTranscription("<no speech>")).toBe("");
+    expect(cleanTranscription("<no speech")).toBe("");
+    expect(cleanTranscription(joinFragment("<no", " speech>", true))).toBe("");
+    expect(cleanTranscription("<noise> Hello")).toBe("Hello");
+    expect(cleanTranscription("Hello <noise> there")).toBe("Hello there");
+    expect(cleanTranscription("a < 3 and 2<5")).toBe("a < 3 and 2<5");
+    expect(cleanTranscription("")).toBe("");
+  });
+
+  it("keeps her previous words when the newest turn is only a marker", () => {
+    let s = feed(initialState(), ready, said("Tell me about the week."), { serverContent: { turnComplete: true } });
+    s = feed(s, said("<no"), said(" speech>"));
+    expect(turnText(s.turns[1] ?? ({} as never))).toBe("");
+    const shown = latestTurns(s).aida;
+    expect(shown && turnText(shown)).toBe("Tell me about the week.");
+    s = feed(s, { serverContent: { turnComplete: true } });
+    expect(s.finished).toHaveLength(0);
   });
 
   it("spaces bare words, but not the punctuation after them", () => {
