@@ -794,22 +794,6 @@ const lineAida = byId("line-aida", HTMLDivElement);
 const lineYou = byId("line-you", HTMLDivElement);
 const saidAida = byId("said-aida", HTMLParagraphElement);
 const saidYou = byId("said-you", HTMLParagraphElement);
-const saidMore = byId("said-more", HTMLDetailsElement);
-const saidList = byId("said-list", HTMLOListElement);
-
-saidMore.addEventListener("toggle", () => {
-  if (saidMore.open) renderSaidList();
-});
-
-function renderSaidList(): void {
-  const recent = state.turns.filter((t) => t.who === "aida").slice(-6);
-  saidList.replaceChildren();
-  for (const t of recent) {
-    const li = document.createElement("li");
-    li.textContent = t.text;
-    saidList.append(li);
-  }
-}
 const whoYou = byId("who-you", HTMLParagraphElement);
 const hint = byId("hint", HTMLParagraphElement);
 const announce = byId("announce", HTMLParagraphElement);
@@ -829,6 +813,13 @@ const nbCount = byId("nb-count", HTMLSpanElement);
 const nbLatest = byId("nb-latest", HTMLSpanElement);
 const nbEmpty = byId("nb-empty", HTMLParagraphElement);
 const nbGroups = byId("nb-groups", HTMLDivElement);
+const nbBody = byId("nb-body", HTMLDivElement);
+const nbTabCount = byId("nb-tab-count", HTMLSpanElement);
+const tabs = { notes: byId("tab-notes", HTMLButtonElement), transcript: byId("tab-transcript", HTMLButtonElement) };
+const panels = { notes: byId("nb-notes", HTMLDivElement), transcript: byId("nb-transcript", HTMLDivElement) };
+type Tab = keyof typeof tabs;
+const transcriptEl = byId("transcript", HTMLOListElement);
+const trEmpty = byId("tr-empty", HTMLParagraphElement);
 
 let state: TalkState = initialState();
 let textOnly = false;
@@ -944,9 +935,6 @@ function resetRoom(): void {
   setNotebook(false, false);
   saidAida.textContent = "";
   saidYou.textContent = "";
-  saidMore.open = false;
-  saidMore.hidden = true;
-  saidList.replaceChildren();
   hint.textContent = defaultHint;
   announce.textContent = "";
   typed.value = "";
@@ -965,6 +953,9 @@ function enterRoom(typing: boolean): void {
   if (!session) return;
   rejoined = carriedStart !== 0;
   resetRoom();
+  // A continued conversation (a reconnect, the voice-only switch, Continue after a pause) keeps its transcript.
+  if (session.resumed) trPart++;
+  else clearTranscript();
   const ask = avatarAsk();
   avatarParamAsked = avatarParam(ask) !== undefined;
   textOnly = typing || !voice.hasMic;
@@ -1249,8 +1240,6 @@ function renderCaptions(s: TalkState): void {
     whoYou.textContent = latest.you.typed ? "You, typed" : "You";
   }
   captions.dataset.last = latest.last ?? "";
-  // The list of what she said: only while there is something to read back.
-  saidMore.hidden = !latest.aida && !latest.you;
 }
 
 /** One owner for the hint line, so a stale error or a welcome can never sit beside a newer line state. */
@@ -1300,10 +1289,10 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
       setTimeout(() => {
         li.classList.remove("fresh");
       }, 2600);
-      // Where the notebook is open in the room (desktop, tall phones), bring the
-      // new note into view; a closed sheet is left alone.
-      const body = li.closest<HTMLElement>(".nb-body");
-      if (body && getComputedStyle(body).visibility !== "hidden") {
+      // Where the notes are on show (a phone, a tablet, the desk's side page, an open sheet), bring the new
+      // note into view, unless the person has scrolled up to read something else.
+      if (inView("notes") && follow.notes) {
+        autoScrollAt = performance.now();
         li.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
       }
     }
@@ -1311,6 +1300,7 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
   const count = s.notes.length;
   nbEmpty.hidden = count > 0;
   nbCount.textContent = count === 1 ? "1 note" : count ? `${count} notes` : "Notes";
+  nbTabCount.textContent = count ? String(count) : "";
   const last = s.notes[s.notes.length - 1];
   if (last && last.id !== prev?.notes[prev.notes.length - 1]?.id) {
     nbLatest.textContent = last.text;
@@ -1321,6 +1311,106 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
       });
     }
   }
+}
+
+// ---------- the notebook's two tabs: her notes, and the whole exchange ----------
+
+/** Each panel follows its newest line unless the person has scrolled up in it. */
+const follow: Record<Tab, boolean> = { notes: true, transcript: true };
+/** The page's own scrolling, which must not read as the person scrolling away. */
+let autoScrollAt = 0;
+
+const atBottom = (el: HTMLElement): boolean => el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+
+for (const tab of ["notes", "transcript"] as const) {
+  panels[tab].addEventListener(
+    "scroll",
+    () => {
+      if (performance.now() - autoScrollAt < 800) return;
+      follow[tab] = atBottom(panels[tab]);
+    },
+    { passive: true },
+  );
+}
+
+/** The panel is the open tab and the notebook is on screen (not a closed sheet). */
+function inView(tab: Tab): boolean {
+  return !panels[tab].hidden && getComputedStyle(nbBody).visibility !== "hidden";
+}
+
+function toBottom(tab: Tab): void {
+  autoScrollAt = performance.now();
+  panels[tab].scrollTop = panels[tab].scrollHeight;
+}
+
+function showTab(tab: Tab, focus = false): void {
+  for (const t of ["notes", "transcript"] as const) {
+    const on = t === tab;
+    tabs[t].setAttribute("aria-selected", String(on));
+    tabs[t].tabIndex = on ? 0 : -1;
+    panels[t].hidden = !on;
+  }
+  if (focus) tabs[tab].focus();
+  if (tab === "transcript" && follow.transcript) toBottom("transcript");
+}
+
+tabs.notes.addEventListener("click", () => {
+  showTab("notes");
+});
+tabs.transcript.addEventListener("click", () => {
+  showTab("transcript");
+});
+tabs.notes.parentElement?.addEventListener("keydown", (event) => {
+  // Arrow keys move between the two tabs, as a tab list does.
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const next: Tab = event.key === "Home" ? "notes" : event.key === "End" ? "transcript" : tabs.notes.tabIndex === 0 ? "transcript" : "notes";
+  showTab(next, true);
+});
+
+// The transcript is drawn line by line and never redrawn whole: the open turn's text is updated as it grows.
+// A reconnected, switched or continued call carries on the same list (its turns are numbered afresh, so each
+// part of the call keys its own lines); only a new conversation starts it empty. The room's state keeps the
+// last 60 turns for the captions; the list here keeps the whole exchange.
+const trLines = new Map<string, HTMLLIElement>();
+let trPart = 0;
+
+function clearTranscript(): void {
+  transcriptEl.replaceChildren();
+  trLines.clear();
+  trPart = 0;
+  trEmpty.hidden = false;
+  follow.notes = true;
+  follow.transcript = true;
+  showTab("notes");
+}
+
+function renderTranscript(s: TalkState): void {
+  let grew = false;
+  for (const t of s.turns) {
+    const text = turnText(t) + (t.interrupted ? " …" : "");
+    if (!text) continue;
+    const key = `${trPart}:${t.id}`;
+    let li = trLines.get(key);
+    if (!li) {
+      li = document.createElement("li");
+      li.dataset.who = t.who;
+      const who = document.createElement("span");
+      who.className = "tr-who";
+      who.textContent = t.who === "aida" ? "Aida:" : "You:";
+      li.append(who, " ", document.createElement("span"));
+      transcriptEl.append(li);
+      trLines.set(key, li);
+    }
+    const said = li.lastElementChild;
+    if (said && said.textContent !== text) {
+      said.textContent = text;
+      grew = true;
+    }
+    li.dataset.open = String(t.open);
+  }
+  trEmpty.hidden = trLines.size > 0;
+  if (grew && follow.transcript && inView("transcript")) toBottom("transcript");
 }
 
 function render(prev: TalkState | null, s: TalkState): void {
@@ -1339,6 +1429,7 @@ function render(prev: TalkState | null, s: TalkState): void {
   }
   if (changed("link", "phase", "switching")) renderStatus();
   if (changed("turns", "error")) renderCaptions(s);
+  if (changed("turns")) renderTranscript(s);
   if (changed("turns", "error", "link", "phase", "resumed", "switching")) renderHint(s);
   // Her words, theirs and her notes all move the chip (Transcribing…, Noted, Aida is speaking).
   if (changed("turns", "notes")) renderStatus();

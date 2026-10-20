@@ -283,7 +283,9 @@
             <i class="dot" aria-hidden="true"></i><span id="status-text">Connecting</span>
           </p>
           <button class="stage-pill" type="button" id="avatar-sound" hidden>Tap for sound</button>
-          <button class="stage-pill" type="button" id="voice-only" hidden>Switch to voice only</button>
+          <button class="stage-pill" type="button" id="voice-only" aria-label="Switch to voice only" hidden>
+            <span class="pill-long">Switch to voice only</span><span class="pill-short">Voice only</span>
+          </button>
         </div>
 
         <div class="captions" id="captions">
@@ -296,10 +298,6 @@
             <p class="said" id="said-you"></p>
           </div>
           <p class="hint" id="hint">She will start in a moment — you can interrupt her once she does.</p>
-          <details class="said-more" id="said-more">
-            <summary>Show what she said</summary>
-            <ol id="said-list"></ol>
-          </details>
         </div>
         <p class="visually-hidden" id="announce" aria-live="polite"></p>
         <p class="visually-hidden" id="link-status" role="status"></p>
@@ -324,8 +322,21 @@
                 <svg class="ic" aria-hidden="true"><use href="#i-close" /></svg>
               </button>
             </header>
-            <p class="nb-empty" id="nb-empty">She writes down what she learns as you talk. If she gets something wrong, just tell her.</p>
-            <div class="nb-groups" id="nb-groups" aria-live="polite" aria-relevant="additions"></div>
+            <p class="nb-why">Everything you say is analysed afterwards to build your AI and automation strategy and business plan.</p>
+            <div class="nb-tabs" role="tablist" aria-label="Her notes, or the whole conversation">
+              <button class="nb-tab" type="button" role="tab" id="tab-notes" aria-selected="true" aria-controls="nb-notes">
+                Notes <span class="nb-tab-count" id="nb-tab-count"></span>
+              </button>
+              <button class="nb-tab" type="button" role="tab" id="tab-transcript" aria-selected="false" aria-controls="nb-transcript" tabindex="-1">Transcript</button>
+            </div>
+            <div class="nb-panel" id="nb-notes" role="tabpanel" aria-labelledby="tab-notes" tabindex="0">
+              <p class="nb-empty" id="nb-empty">She writes down what she learns as you talk. If she gets something wrong, just tell her.</p>
+              <div class="nb-groups" id="nb-groups" aria-live="polite" aria-relevant="additions"></div>
+            </div>
+            <div class="nb-panel" id="nb-transcript" role="tabpanel" aria-labelledby="tab-transcript" tabindex="0" hidden>
+              <p class="nb-empty" id="tr-empty">Everything you both say appears here, as it is transcribed.</p>
+              <ol class="transcript" id="transcript"></ol>
+            </div>
           </div>
         </aside>
 

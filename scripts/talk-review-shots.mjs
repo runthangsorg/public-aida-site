@@ -4,7 +4,8 @@
  * stubbed, for a review by eye. Writes .tmp/review/<screen>-<width>.png (git-ignored). Prints nothing to
  * check: the point is to look at the pictures.
  *
- *   node scripts/talk-review-shots.mjs [--privacy <dir with privacy/index.html>]
+ *   node scripts/talk-review-shots.mjs [--privacy <dir with privacy/index.html>] [--only <part of a name>,...]
+ *   [--sizes 390x844,1280x800]
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
@@ -17,6 +18,8 @@ const args = process.argv.slice(2);
 const out = resolve('.tmp/review');
 mkdirSync(out, { recursive: true });
 const privacyRoot = args.includes('--privacy') ? resolve(args[args.indexOf('--privacy') + 1]) : null;
+const only = args.includes('--only') ? (args[args.indexOf('--only') + 1] ?? '').split(',').filter(Boolean) : [];
+const sizes = (args.includes('--sizes') ? args[args.indexOf('--sizes') + 1] : '390x844,1280x800').split(',').map((s) => s.split('x').map(Number));
 const dist = resolve('dist');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.woff2': 'font/woff2', '.png': 'image/png' };
 /** The file to serve: the privacy page from --privacy, everything else from dist/; a directory means its index.html. */
@@ -126,7 +129,10 @@ async function page(b, size, { me = { known: false }, perms = ['microphone'], in
   for (const [pattern, handler] of Object.entries(routes)) await p.route(pattern, handler);
   return { ctx, p };
 }
-const shot = async (p, name, w, full = true) => {
+/** The size in each file name: the width, or width x height for a size other than the usual two. */
+let sizeTag = '';
+const shot = async (p, name, _w, full = true) => {
+  const w = sizeTag;
   await p.waitForTimeout(450);
   await p.screenshot({ path: `${out}/${name}-${w}.png`, fullPage: full });
 };
@@ -146,6 +152,23 @@ async function talk(p) {
     window.__ws.push({ aida: { type: 'note', section: 'tools', text: 'A phone app with GPS, and a kiosk at the depot' } });
   });
 }
+/** A few minutes in: her notes in three sections, and a back-and-forth for the transcript. */
+async function conversation(p) {
+  await talk(p);
+  await p.evaluate(() => {
+    const send = (o) => window.__ws.push(o);
+    const her = (t) => send({ serverContent: { outputTranscription: { text: t } } });
+    const you = (t) => send({ serverContent: { inputTranscription: { text: t } } });
+    const note = (section, text) => send({ aida: { type: 'note', section, text } });
+    you('We use a phone app with GPS for the cleaners, and the supervisors check the hours on a Friday.');
+    note('tools', 'Supervisors check every timesheet by hand on Friday afternoons before payroll');
+    her('So the Friday check is the bottleneck. How long does it take each week, and what goes wrong most often?');
+    you('About four hours between the two of them. Missed clock-outs are the worst, people forget at the end of a shift.');
+    note('workflows', 'The Friday check takes two supervisors about four hours a week between them');
+    note('challenges', 'Missed clock-outs at the end of shifts cause most of the corrections');
+    her('Thank you. If those missed clock-outs were caught on the night, what would that change for the supervisors?');
+  });
+}
 async function endWith(p, frame, avatar = false) {
   await intoRoom(p, avatar);
   await talk(p);
@@ -154,9 +177,12 @@ async function endWith(p, frame, avatar = false) {
   await p.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
 }
 
-for (const [w, h] of [[390, 844], [1280, 800]]) {
+for (const [w, h] of sizes) {
   const size = { width: w, height: h };
+  // Any height but the usual two goes into the name, so a short phone's shots sit beside the tall one's.
+  sizeTag = (w === 390 && h === 844) || (w === 1280 && h === 800) ? String(w) : `${w}x${h}`;
   const run = async (name, fn, opts = {}, b = browser) => {
+    if (only.length && !only.some((o) => name.includes(o))) return;
     const { ctx, p } = await page(b, size, opts);
     try {
       await fn(p);
@@ -239,6 +265,24 @@ for (const [w, h] of [[390, 844], [1280, 800]]) {
     await intoRoom(p, false);
     await talk(p);
     await shot(p, 'room-voice-only', w, false);
+  });
+  await run('room-notes', async (p) => {
+    await intoRoom(p, true);
+    await conversation(p);
+    await shot(p, 'room-notes', w, false);
+  });
+  await run('room-transcript', async (p) => {
+    await intoRoom(p, true);
+    await conversation(p);
+    await p.click('#tab-transcript');
+    await shot(p, 'room-transcript', w, false);
+  });
+  // Where the notebook is a strip with a sheet (a short tablet, a phone on its side): the sheet open.
+  await run('room-sheet', async (p) => {
+    await intoRoom(p, true);
+    await conversation(p);
+    if (await p.isVisible('#nb-toggle')) await p.click('#nb-toggle');
+    await shot(p, 'room-sheet', w, false);
   });
   await run('room-typing', async (p) => {
     await intoRoom(p, false);
