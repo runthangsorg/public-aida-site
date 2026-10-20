@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { audioMessage, endMessage, parseFrame, pauseMessage, socketUrl, switchMessage, textMessage } from "../src/talk/protocol";
 import {
+  NOTED_MS,
+  TRANSCRIBING_MS,
+  chipFor,
+  chipWakeAt,
+  startChip,
+  stepChip,
   formatClock,
   endView,
   groupNotes,
@@ -427,5 +433,58 @@ describe("where the live call runs", () => {
     expect(socketUrl("abc", page, "1")).toBe("wss://relay.example.run.app/api/talk?id=abc&avatar=1");
     setRelayOrigin(undefined, "aida.example.org");
     expect(socketUrl("abc", page)).toBe("wss://aida.example.org/api/talk?id=abc");
+  });
+});
+
+describe("the status chip: Listening, Transcribing…, Noted, Aida is speaking (owner, 20 Oct)", () => {
+  it("goes Listening while they talk, Transcribing… once they stop, Noted when her note lands, then Aida is speaking", () => {
+    let c = startChip();
+    expect(chipFor(c, false, 0)).toBe("listening");
+    c = stepChip(c, { t: "voice", on: true, now: 1000 });
+    expect(chipFor(c, false, 1500)).toBe("listening");
+    c = stepChip(c, { t: "voice", on: false, now: 4000 });
+    expect(chipFor(c, false, 4100)).toBe("transcribing");
+    // Their words, as transcribed, arriving after they stopped keep it there.
+    c = stepChip(c, { t: "you", now: 4300 });
+    expect(chipFor(c, false, 6000)).toBe("transcribing");
+    c = stepChip(c, { t: "note", now: 6500 });
+    expect(chipFor(c, false, 6600)).toBe("noted");
+    expect(chipFor(c, true, 6600)).toBe("noted"); // a brief flash, even as her voice starts
+    expect(chipFor(c, true, 6500 + NOTED_MS)).toBe("speaking");
+    expect(chipFor(c, false, 6500 + NOTED_MS)).toBe("listening");
+  });
+
+  it("her words, with no note, also end Transcribing…", () => {
+    let c = stepChip(stepChip(startChip(), { t: "voice", on: true, now: 0 }), { t: "voice", on: false, now: 2000 });
+    expect(chipFor(c, false, 2500)).toBe("transcribing");
+    c = stepChip(c, { t: "her", now: 3000 });
+    expect(chipFor(c, true, 3000)).toBe("speaking");
+    expect(chipFor(c, false, 5000)).toBe("listening");
+  });
+
+  it("a typed answer waits the same way", () => {
+    const c = stepChip(startChip(), { t: "you", now: 100 });
+    expect(chipFor(c, false, 200)).toBe("transcribing");
+  });
+
+  it("never says Transcribing… for ever: a sound with no answer goes back to Listening", () => {
+    const c = stepChip(stepChip(startChip(), { t: "voice", on: true, now: 0 }), { t: "voice", on: false, now: 1000 });
+    expect(chipFor(c, false, 1000 + TRANSCRIBING_MS - 1)).toBe("transcribing");
+    expect(chipFor(c, false, 1000 + TRANSCRIBING_MS)).toBe("listening");
+  });
+
+  it("while they are talking over her, she is still the one speaking until she stops", () => {
+    const c = stepChip(startChip(), { t: "voice", on: true, now: 0 });
+    expect(chipFor(c, true, 10)).toBe("speaking");
+    expect(chipFor(c, false, 10)).toBe("listening");
+  });
+
+  it("says when it will change by itself, so the page redraws then and only then", () => {
+    expect(chipWakeAt(startChip(), 0)).toBeNull();
+    const noted = stepChip(startChip(), { t: "note", now: 1000 });
+    expect(chipWakeAt(noted, 1100)).toBe(1000 + NOTED_MS);
+    expect(chipWakeAt(noted, 1000 + NOTED_MS)).toBeNull();
+    const waiting = stepChip(startChip(), { t: "you", now: 500 });
+    expect(chipWakeAt(waiting, 600)).toBe(500 + TRANSCRIBING_MS);
   });
 });

@@ -9,9 +9,13 @@
 // everything before that is the room (a radio, a colleague), and the model
 // would answer it as though it were the first thing said. On `interrupted`
 // the queue is flushed at once, so she stops when the person talks over her.
+// While she is speaking, the barge-in gate (noise.ts) holds the microphone
+// back unless the person's own voice is plainly there: noise, a cough or her
+// own echo no longer cuts her off mid-sentence.
 
 import { FFT_SIZE, SMOOTHING, shapeFromSpectrum, type MouthShape } from "./mouth";
 import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, base64ToBytes, encodePcm16, pcm16BytesToFloat, rateOf } from "./pcm";
+import { startGate, stepGate, type Gate } from "./noise";
 import { mediaFromMessage, textFromBinary } from "./avatar";
 import { audioMessage, endMessage, hereMessage, parseFrame, pauseMessage, socketUrl, switchMessage, textMessage, type ServerFrame } from "./protocol";
 
@@ -76,6 +80,14 @@ export class Voice {
   micLevel = 0;
   /** Told the new level 10 times a second while the microphone is open. */
   onMicLevel: ((level: number) => void) | null = null;
+  /** The barge-in gate. It learns the room from the moment the microphone opens, sent or not. */
+  private gate: Gate<Float32Array> = startGate();
+  /** Her voice is playing where this class cannot see it: her video carries its own sound. */
+  speakingElsewhere: (() => boolean) | null = null;
+  /** Told when the gate starts or stops hearing the person's voice (not ten times a second: on the change). */
+  onVoice: ((on: boolean) => void) | null = null;
+  /** Muted: the track sends silence, which the gate must not learn as the room. */
+  private muted = false;
 
   /**
    * Make both audio contexts inside the click that started the interview:
@@ -128,6 +140,7 @@ export class Voice {
       if (name === "NotFoundError" || name === "OverconstrainedError") throw new MicError("missing");
       throw new MicError("failed");
     }
+    this.muted = false; // a new stream's track starts live; a reconnect puts the person's mute back itself
     try {
       await this.attach();
     } catch {
@@ -154,8 +167,8 @@ export class Voice {
     if (ctx.state !== "running") await ctx.resume().catch(() => undefined);
     await ctx.audioWorklet.addModule(CAPTURE_URL);
     const node = new AudioWorkletNode(ctx, "aida-capture");
-    node.port.onmessage = (event: MessageEvent<{ samples: Float32Array; level: number }>) => {
-      this.capture(event.data.samples, event.data.level);
+    node.port.onmessage = (event: MessageEvent<{ samples: Float32Array; level: number; levels?: number[] }>) => {
+      this.capture(event.data.samples, event.data.level, event.data.levels);
     };
     source.connect(node); // never to the speakers: that is a feedback loop
     this.source = source;
@@ -163,16 +176,35 @@ export class Voice {
     this.resampler = new Resampler(ctx.sampleRate, INPUT_RATE);
   }
 
-  private capture(raw: Float32Array, loudness: number): void {
+  private capture(raw: Float32Array, loudness: number, levels?: number[]): void {
     this.micLevel += (Math.min(1, loudness * 5) - this.micLevel) * 0.5;
     this.onMicLevel?.(this.micLevel);
+    const rate = this.resampler?.from ?? this.input?.sampleRate ?? INPUT_RATE;
+    const was = this.gate.open;
+    const frame = { item: raw, level: loudness, ms: (raw.length / rate) * 1000, ...(levels ? { levels } : {}) };
+    const step = stepGate(this.gate, frame, this.herVoicePlaying, !this.muted);
+    this.gate = step.gate;
+    if (step.gate.open !== was) this.onVoice?.(step.gate.open);
     if (!this.streaming || !this.resampler) return;
-    for (const frame of this.chunker.push(this.resampler.push(raw))) this.send(audioMessage(encodePcm16(frame)));
+    if (!step.send.length) {
+      // Held back while she speaks: a half-collected frame must never be finished with audio from later.
+      this.chunker.clear();
+      return;
+    }
+    for (const chunk of step.send) {
+      for (const frame of this.chunker.push(this.resampler.push(chunk))) this.send(audioMessage(encodePcm16(frame)));
+    }
+  }
+
+  /** Her voice is playing: the PCM queue on a voice call, her video on a video call. */
+  private get herVoicePlaying(): boolean {
+    return this.speaking || (this.speakingElsewhere?.() ?? false);
   }
 
   setMuted(muted: boolean): void {
     // A muted track sends silence, so the line stays open and her turn-taking still works.
     for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = !muted;
+    this.muted = muted;
     if (muted) this.micLevel = 0;
   }
 
@@ -180,6 +212,9 @@ export class Voice {
   stopMic(): void {
     this.streaming = false;
     this.chunker.clear();
+    // Nothing held from this stream may reach the next one; what was learnt of the room is kept.
+    if (this.gate.open) this.onVoice?.(false);
+    this.gate = startGate(this.gate.floor);
     if (this.node) {
       this.node.port.onmessage = null;
       this.node.disconnect();

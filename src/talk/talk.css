@@ -935,19 +935,31 @@ input[aria-invalid="true"]:hover {
   animation: pulse 0.7s ease-in-out infinite;
 }
 
-.status[data-state="resumed"] .dot {
+.status[data-state="resumed"] .dot,
+.status[data-state="noted"] .dot {
   background: #2f8f5b;
 }
 
+/* "Transcribing…" from when they stop until her note or her words: the word itself flashes, with its dot. */
+.status[data-state="transcribing"] .dot {
+  background: var(--gold);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.status[data-state="transcribing"] #status-text {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
 /* The lower third: what she is saying now, and what you just said. */
-/* Contained, so a new word re-lays-out and repaints this box and nothing else. */
+/* Contained for paint, but sized by its text: a fixed box clipped her first line under the AIDA label and cut
+   the YOU, TYPED line to a sliver (QA, 18 Oct). Each line keeps its own height (at most four lines of hers,
+   two of yours, scrolled to the newest words), so her latest question is always whole on screen. */
 .captions {
   grid-area: captions;
-  contain: strict;
+  contain: layout paint;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  height: 192px;
   padding: 14px calc(var(--gutter) + 4px) 0;
   overflow: hidden;
 }
@@ -1024,6 +1036,11 @@ input[aria-invalid="true"]:hover {
 }
 
 .typer textarea {
+  /* The whole width of the caption column, not the browser's default twenty columns (~215 px, QA 18 Oct). */
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 17px;
   border-radius: 18px;
   padding-inline: 20px;
   resize: none;
@@ -1117,9 +1134,10 @@ input[aria-invalid="true"]:hover {
   right: 0;
   bottom: 0;
   height: min(80svh, 680px);
+  display: flex;
+  flex-direction: column;
   padding: 0 22px calc(28px + env(safe-area-inset-bottom));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   border-radius: 26px 26px 0 0;
   background: var(--paper-hi);
   box-shadow: 0 -18px 50px -10px rgb(35 44 92 / 0.35);
@@ -2064,9 +2082,9 @@ input[aria-invalid="true"]:hover {
   }
 }
 
-/* A note scrolled into view stops below the notebook's sticky heading. */
-.nb-body li {
-  scroll-margin-top: 64px;
+/* A note scrolled into view stops a little below the top of its panel. */
+.nb-panel li {
+  scroll-margin-top: 8px;
 }
 
 .note-time {
@@ -2618,11 +2636,6 @@ input[aria-invalid="true"]:hover {
   display: none;
 }
 
-/* A note brought into view stays clear of the notebook's sticky heading. */
-.nb-body {
-  scroll-padding-top: 72px;
-}
-
 @media (min-width: 1000px) {
   /* Her captions fill the space the grid gives them (a fixed height ran under the typing box on a laptop). */
   .captions {
@@ -2638,45 +2651,16 @@ input[aria-invalid="true"]:hover {
   font-size: 16px;
 }
 
-/* In the notebook that sits open in the room, notes scroll under the heading with a soft edge, not a cut. */
-.nb-head::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  height: 12px;
-  background: linear-gradient(var(--paper-hi), rgb(251 245 232 / 0));
-  pointer-events: none;
-}
-
 /* A caption line that has less room than its text scrolls inside itself (newest words kept in view)
    rather than being cut at the edge of the captions box. */
 .captions .line {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  flex-shrink: 1;
+  flex-shrink: 0;
 }
 
 .captions .said {
   min-height: 0;
-}
-
-.said-more {
-  color: var(--ink);
-  font-size: 15px;
-}
-
-.said-more summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.said-more ol {
-  margin: 8px 0 0;
-  padding-left: 22px;
 }
 
 @media (min-width: 1000px) and (max-height: 900px) {
@@ -2694,5 +2678,333 @@ input[aria-invalid="true"]:hover {
 @media (max-width: 480px) {
   .again summary {
     font-size: 16px;
+  }
+}
+
+/* ---------- round 3 (20 Oct): the notebook as notes and a transcript, open on a phone ---------- */
+
+/* One quiet line on what happens to what they say, then two tabs: her notes, and the whole exchange. Each tab
+   scrolls by itself, under the line and the tabs, which stay put. */
+.nb-why {
+  flex: none;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.nb-tabs {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1.5px solid var(--rule);
+}
+
+.nb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.nb-tab:hover {
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.nb-tab[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--paper-hi);
+  box-shadow: none;
+}
+
+.nb-tab-count {
+  min-width: 1.5em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.nb-tab-count:empty {
+  display: none;
+}
+
+.nb-panel {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.nb-panel:focus-visible {
+  outline-offset: -3px;
+}
+
+/* The transcript: "Aida:" and "You:", in order, as transcribed. */
+.transcript {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transcript li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 17px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.tr-who {
+  color: var(--pink-ink);
+  font-weight: 800;
+}
+
+.transcript li[data-who="you"] .tr-who {
+  color: var(--muted);
+}
+
+/* Still being spoken: a little lighter until the turn is over. */
+.transcript li[data-open="true"] {
+  color: var(--ink-2);
+}
+
+@media (min-width: 1000px) {
+  /* Her window gives way before the captions do: room for four lines of hers and two of yours, always. */
+  .stage {
+    width: min(100%, 44vh, 420px, calc(100svh - 460px));
+  }
+
+  .nb-body,
+  .notebook[data-open="true"] .nb-body {
+    padding-bottom: 0;
+  }
+
+  .nb-panel {
+    padding-bottom: 28px;
+  }
+}
+
+@media (min-width: 1000px) and (max-height: 900px) {
+  .screen-room:has(.typer:not([hidden])) .stage {
+    width: min(100%, 36vh, 420px, calc(100svh - 525px));
+  }
+}
+
+/* A phone: the notebook sits open under her face and her captions, about 40% of the height, newest at the
+   bottom (owner, 20 Oct: collapsed, it was not obvious she was taking notes). Her window is smaller to make
+   the room; the captions keep their own height. */
+@media (max-width: 480px) {
+  .screen-room {
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  }
+
+  .bar {
+    padding-block: 8px 6px;
+  }
+
+  .stage-now {
+    margin-bottom: 6px;
+  }
+
+  /* 200 px on a tall phone, down to 140 px on a short one (a phone browser's own bars leave ~660-750 px). */
+  .stage {
+    width: min(calc(100% - 2 * var(--gutter)), clamp(140px, calc(60svh - 300px), 200px));
+    border-radius: 20px;
+  }
+
+  .status {
+    top: 6px;
+    left: 6px;
+    gap: 6px;
+    padding: 4px 9px 4px 7px;
+    font-size: 13px;
+  }
+
+  .status .dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .stage-pill {
+    bottom: 6px;
+    min-height: 28px;
+    padding: 3px 10px;
+    font-size: 13px;
+  }
+
+  .clock .t {
+    font-size: 26px;
+  }
+
+  .clock .of {
+    margin-top: 2px;
+    font-size: 13px;
+  }
+
+  .captions {
+    gap: 6px;
+    padding-top: 8px;
+  }
+
+  .line-aida .said {
+    font-size: 19px;
+  }
+
+  .line-you .said {
+    font-size: 16px;
+  }
+
+  .notebook {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 8px var(--gutter) 0;
+    overflow: hidden;
+    border-radius: 18px;
+    background: var(--paper-hi);
+    box-shadow: 0 0 0 1.5px var(--rule);
+  }
+
+  .nb-peek,
+  .nb-close {
+    display: none;
+  }
+
+  .nb-body,
+  .notebook[data-open="true"] .nb-body {
+    position: static;
+    flex: 1;
+    min-height: 0;
+    height: auto;
+    padding: 8px 14px 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    visibility: visible;
+    transition: none;
+  }
+
+  .notebook[data-open="true"]::before {
+    display: none;
+  }
+
+  /* The tabs name the panel; the heading stays for screen readers. */
+  .nb-head {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .nb-why {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  .nb-tabs {
+    margin-top: 6px;
+  }
+
+  .nb-tab {
+    min-height: 36px;
+    padding: 4px 12px;
+  }
+
+  .nb-group h3 {
+    margin-top: 12px;
+  }
+
+  .nb-group li,
+  .transcript li {
+    padding-block: 6px;
+    font-size: 16px;
+  }
+
+  .controls {
+    padding-top: 6px;
+  }
+
+  .ctl {
+    min-width: 66px;
+    gap: 4px;
+    font-size: 14px;
+  }
+
+  .ctl-ic {
+    width: 48px;
+    height: 48px;
+  }
+
+  /* "Continue later" on one line: four buttons fit across a 360 px phone. */
+  .ctl-later .ctl-label {
+    max-width: none;
+    white-space: nowrap;
+  }
+}
+
+/* Her window is small on a phone: the pill says "Voice only" (its name for screen readers stays whole). */
+.pill-short {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .pill-long {
+    display: none;
+  }
+
+  .pill-short {
+    display: inline;
+  }
+}
+
+/* A slow link (QA 18 Oct): one line over the captions, with the one button that switches in place. */
+.slow-offer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 14px;
+  background: var(--paper-hi);
+  box-shadow: 0 0 0 1.5px var(--orange);
+}
+
+.slow-offer p {
+  flex: 1 1 11em;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.slow-offer .btn {
+  min-height: 40px;
+  padding: 6px 16px;
+  font-size: 15px;
+}
+
+@media (max-width: 480px) {
+  .slow-offer p {
+    font-size: 14px;
   }
 }

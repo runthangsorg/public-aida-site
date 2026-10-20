@@ -410,6 +410,67 @@ export function latestTurns(s: TalkState): { aida?: Turn; you?: Turn; last?: Spe
   return out;
 }
 
+// ---------- the status chip ----------
+
+/**
+ * What the chip says about the conversation once the line is up, in the order it happens (owner, 20 Oct: on a
+ * phone it was not obvious she was taking notes): "Listening" while they talk, "Transcribing…" from when they
+ * stop until her next note or her next words, "Noted" as a brief flash when a note arrives, "Aida is speaking".
+ */
+export type Chip = "listening" | "transcribing" | "noted" | "speaking";
+
+export interface ChipClock {
+  /** The microphone's gate hears the person's voice now. */
+  voice: boolean;
+  /** When they stopped talking, typed, or their words arrived, with no note or words of hers since (0: none). */
+  waitingSince: number;
+  /** When her latest note arrived (0: none yet). */
+  notedAt: number;
+}
+
+/** How long "Noted" shows. */
+export const NOTED_MS = 1400;
+/** "Transcribing…" with no note or word from her for this long was a sound, not an answer: back to Listening. */
+export const TRANSCRIBING_MS = 8000;
+
+export type ChipEvent =
+  | { t: "voice"; on: boolean; now: number }
+  /** They typed, or the words they said arrived as text. */
+  | { t: "you"; now: number }
+  /** Her words or her voice arrived. */
+  | { t: "her"; now: number }
+  | { t: "note"; now: number };
+
+export const startChip = (): ChipClock => ({ voice: false, waitingSince: 0, notedAt: 0 });
+
+export function stepChip(c: ChipClock, e: ChipEvent): ChipClock {
+  switch (e.t) {
+    case "voice":
+      return e.on ? { ...c, voice: true } : { ...c, voice: false, waitingSince: e.now };
+    case "you":
+      return { ...c, waitingSince: e.now };
+    case "her":
+      return c.waitingSince ? { ...c, waitingSince: 0 } : c;
+    case "note":
+      return { ...c, waitingSince: 0, notedAt: e.now };
+  }
+}
+
+/** The chip now. `speaking`: her voice is playing (the PCM queue, or her open caption on video). */
+export function chipFor(c: ChipClock, speaking: boolean, now: number): Chip {
+  if (c.notedAt && now - c.notedAt < NOTED_MS) return "noted";
+  if (speaking) return "speaking";
+  if (c.voice) return "listening";
+  if (c.waitingSince && now - c.waitingSince < TRANSCRIBING_MS) return "transcribing";
+  return "listening";
+}
+
+/** When the chip next changes on its own (a flash ending, a wait running out), or null if it will not. */
+export function chipWakeAt(c: ChipClock, now: number): number | null {
+  const times = [c.notedAt && c.notedAt + NOTED_MS, c.waitingSince && c.waitingSince + TRANSCRIBING_MS].filter((t) => t > now);
+  return times.length ? Math.min(...times) : null;
+}
+
 // ---------- how it ended ----------
 
 /**

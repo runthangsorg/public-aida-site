@@ -2,7 +2,7 @@ import "./talk.css";
 import type { Mouth } from "../lipsync";
 import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, limitHint, startBody, type Field } from "./details";
 import { mouthFor, type MouthShape } from "./mouth";
-import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage, setRelayOrigin } from "./protocol";
+import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type ServerFrame, type Stage, setRelayOrigin } from "./protocol";
 import {
   looksLikeEmail,
   pausedCopy,
@@ -41,6 +41,8 @@ import {
   type Opened,
 } from "./gate";
 import {
+  chipFor,
+  chipWakeAt,
   formatClock,
   groupNotes,
   noteStamp,
@@ -50,6 +52,8 @@ import {
   progress,
   reduce,
   stageStatus,
+  startChip,
+  stepChip,
   turnText,
   type TalkEvent,
   type TalkState,
@@ -138,6 +142,17 @@ function show(name: Screen, focus = true): void {
 
 // Back out of the room asks before hanging up; anywhere else Back simply goes to the previous screen.
 window.addEventListener("popstate", () => {
+  // Back from the end screen stays on it: the room behind it is over (QA 18 Oct: Back led to a dead "Finished"
+  // room). Its own buttons and the home-page link are the ways on.
+  if (app.dataset.screen === "end") {
+    history.pushState({ screen: "end" }, "");
+    return;
+  }
+  if (app.dataset.screen === "room" && state.phase === "ended") {
+    // Finished, her last words still playing: the end screen is a moment away. Nothing to hang up.
+    history.pushState({ screen: "room" }, "");
+    return;
+  }
   if (app.dataset.screen === "room") {
     // Stay in the room's history entry, so a second Back asks again instead of leaving the site.
     history.pushState({ screen: "room" }, "");
@@ -247,21 +262,38 @@ function control(field: Field): HTMLElement | null {
     : document.getElementById(`f-${field}`);
 }
 
+/** One field's error line and its aria-invalid, shown or cleared. */
+function markField(field: Field, message: string | undefined): void {
+  const el = document.getElementById(`e-${field}`);
+  if (el) setError(el, message);
+  const input = control(field);
+  const targets = field === "teamSize" ? Array.from(chips.querySelectorAll("input")) : input ? [input] : [];
+  for (const t of targets) {
+    if (message) t.setAttribute("aria-invalid", "true");
+    else t.removeAttribute("aria-invalid");
+  }
+}
+
 function showFieldErrors(errors: Partial<Record<Field | "consent", string>>): void {
   let first: HTMLElement | null = null;
   for (const field of FIELDS) {
     const message = errors[field];
-    const el = document.getElementById(`e-${field}`);
-    if (el) setError(el, message);
-    const input = control(field);
-    const targets = field === "teamSize" ? Array.from(chips.querySelectorAll("input")) : input ? [input] : [];
-    for (const t of targets) {
-      if (message) t.setAttribute("aria-invalid", "true");
-      else t.removeAttribute("aria-invalid");
-    }
-    if (message && !first) first = input;
+    markField(field, message);
+    if (message && !first) first = control(field);
   }
   first?.focus();
+}
+
+/**
+ * A field's error goes as soon as the field is put right, not on the next submit (QA 18 Oct: team size and
+ * email kept their errors after being fixed). Nothing new is said while they type: only a shown error clears.
+ */
+function clearIfFixed(field: Field): void {
+  const el = document.getElementById(`e-${field}`);
+  if (!el || el.hidden) return;
+  const checked = checkDetails(readForm());
+  if (!checked.ok && checked.errors[field]) return;
+  markField(field, undefined);
 }
 
 function readForm(): Partial<Record<Field, string>> {
@@ -304,8 +336,16 @@ function restoreDetails(): void {
 }
 for (const f of FIELDS) {
   const el = document.getElementById(`f-${f}`);
-  if (el instanceof HTMLInputElement) el.addEventListener("input", saveDetails);
+  if (el instanceof HTMLInputElement) {
+    el.addEventListener("input", () => {
+      saveDetails();
+      clearIfFixed(f);
+    });
+  }
 }
+chips.addEventListener("change", () => {
+  clearIfFixed("teamSize");
+});
 consent.addEventListener("change", () => {
   try {
     sessionStorage.setItem(CONSENT_KEY, JSON.stringify({ consent: consent.checked }));
@@ -313,6 +353,21 @@ consent.addEventListener("change", () => {
     /* ignore */
   }
 });
+/** "Not you?": the details and the tick this tab kept are someone else's. Clear them, and the form. */
+function forgetSaved(): void {
+  try {
+    sessionStorage.removeItem(DETAILS_KEY);
+    sessionStorage.removeItem(CONSENT_KEY);
+  } catch {
+    /* storage can be off: nothing was kept */
+  }
+  form.reset();
+  for (const counter of form.querySelectorAll<HTMLElement>(".limit")) counter.hidden = true;
+  showFieldErrors({});
+  consent.checked = false;
+  setError(consentError, undefined);
+  consent.removeAttribute("aria-invalid");
+}
 const savedConsent = loadSaved(CONSENT_KEY) as { consent: boolean } | null;
 if (savedConsent) consent.checked = savedConsent.consent;
 restoreDetails();
@@ -630,6 +685,7 @@ const stageEl = byId("stage", HTMLDivElement);
 const videoEl = byId("avatar-video", HTMLVideoElement);
 const voiceOnlyBtn = byId("voice-only", HTMLButtonElement);
 const soundBtn = byId("avatar-sound", HTMLButtonElement);
+const slowOffer = byId("slow-offer", HTMLDivElement);
 let player: AvatarPlayer | null = null;
 
 function avatarAsk(): AvatarAsk {
@@ -655,6 +711,10 @@ function startAvatar(): void {
     onMuted: () => {
       soundBtn.hidden = false;
     },
+    // More than ~3 s behind live for 10 s: one line offers the in-place switch (once a call).
+    onSlow: () => {
+      if (state.phase === "live" && !state.switching) slowOffer.hidden = false;
+    },
   });
   if (!player.start()) {
     player = null;
@@ -673,6 +733,7 @@ function stopAvatar(): void {
   videoEl.hidden = true;
   voiceOnlyBtn.hidden = true;
   soundBtn.hidden = true;
+  slowOffer.hidden = true;
   delete stageEl.dataset.avatar;
   delete stageEl.dataset.video;
 }
@@ -746,11 +807,15 @@ async function switchToVoiceOnly(): Promise<void> {
   dispatch({ kind: "closed", minutes: elapsed() / 60 });
 }
 
-voiceOnlyBtn.addEventListener("click", () => {
+/** "Switch to voice only", from the pill on her video or the slow-link offer: the same in-place move. */
+function chooseVoiceOnly(): void {
+  slowOffer.hidden = true;
   if (state.switching) return;
   rememberVoiceOnly(safeStorage());
   void switchToVoiceOnly();
-});
+}
+voiceOnlyBtn.addEventListener("click", chooseVoiceOnly);
+byId("slow-switch", HTMLButtonElement).addEventListener("click", chooseVoiceOnly);
 soundBtn.addEventListener("click", () => {
   soundBtn.hidden = true;
   player?.unmute();
@@ -790,22 +855,6 @@ const lineAida = byId("line-aida", HTMLDivElement);
 const lineYou = byId("line-you", HTMLDivElement);
 const saidAida = byId("said-aida", HTMLParagraphElement);
 const saidYou = byId("said-you", HTMLParagraphElement);
-const saidMore = byId("said-more", HTMLDetailsElement);
-const saidList = byId("said-list", HTMLOListElement);
-
-saidMore.addEventListener("toggle", () => {
-  if (saidMore.open) renderSaidList();
-});
-
-function renderSaidList(): void {
-  const recent = state.turns.filter((t) => t.who === "aida").slice(-6);
-  saidList.replaceChildren();
-  for (const t of recent) {
-    const li = document.createElement("li");
-    li.textContent = t.text;
-    saidList.append(li);
-  }
-}
 const whoYou = byId("who-you", HTMLParagraphElement);
 const hint = byId("hint", HTMLParagraphElement);
 const announce = byId("announce", HTMLParagraphElement);
@@ -825,6 +874,13 @@ const nbCount = byId("nb-count", HTMLSpanElement);
 const nbLatest = byId("nb-latest", HTMLSpanElement);
 const nbEmpty = byId("nb-empty", HTMLParagraphElement);
 const nbGroups = byId("nb-groups", HTMLDivElement);
+const nbBody = byId("nb-body", HTMLDivElement);
+const nbTabCount = byId("nb-tab-count", HTMLSpanElement);
+const tabs = { notes: byId("tab-notes", HTMLButtonElement), transcript: byId("tab-transcript", HTMLButtonElement) };
+const panels = { notes: byId("nb-notes", HTMLDivElement), transcript: byId("nb-transcript", HTMLDivElement) };
+type Tab = keyof typeof tabs;
+const transcriptEl = byId("transcript", HTMLOListElement);
+const trEmpty = byId("tr-empty", HTMLParagraphElement);
 
 let state: TalkState = initialState();
 let textOnly = false;
@@ -836,6 +892,30 @@ let endTimer = 0;
 let leaving = false;
 let stagesKey = "";
 let lastLink = "";
+/** The status chip's own clock: the person's voice, what is waiting on her, her latest note. */
+let chip = startChip();
+let chipTimer = 0;
+
+// On a video call her voice comes with the video, not the PCM queue: her open caption says she is speaking,
+// and the microphone's barge-in gate (noise.ts) holds back the room while it is.
+voice.speakingElsewhere = () => state.avatar && herTurnIsOpen(state);
+// The gate's voice detection drives "Listening" (they are talking) and "Transcribing…" (they have stopped).
+voice.onVoice = (on) => {
+  chip = stepChip(chip, { t: "voice", on, now: performance.now() });
+  renderStatus();
+};
+
+/** What a frame from the server means for the chip: her note, her words, or theirs arriving as text. */
+function chipFrame(frame: ServerFrame): void {
+  const now = performance.now();
+  if (frame.kind === "aida") {
+    if (frame.frame.type === "note") chip = stepChip(chip, { t: "note", now });
+    return;
+  }
+  const c = frame.content;
+  if (c.output || c.audio.length) chip = stepChip(chip, { t: "her", now });
+  else if (c.input && !herSpeaking(state)) chip = stepChip(chip, { t: "you", now });
+}
 
 // A small "78/80" once a capped field is within two characters of its limit — a silent cut is a bug
 // to the person it happens to (QA round 2, breaker). Details fields, the typed answer and the note.
@@ -907,6 +987,8 @@ function resetRoom(): void {
   muteLabel.textContent = muted ? "Unmute" : "Mute";
   muteBtn.dataset.hearing = "false";
   hearing = false;
+  chip = startChip();
+  window.clearTimeout(chipTimer);
   nbGroups.replaceChildren();
   groupEls.clear();
   nbToggle.classList.remove("pulse");
@@ -914,9 +996,6 @@ function resetRoom(): void {
   setNotebook(false, false);
   saidAida.textContent = "";
   saidYou.textContent = "";
-  saidMore.open = false;
-  saidMore.hidden = true;
-  saidList.replaceChildren();
   hint.textContent = defaultHint;
   announce.textContent = "";
   typed.value = "";
@@ -935,6 +1014,9 @@ function enterRoom(typing: boolean): void {
   if (!session) return;
   rejoined = carriedStart !== 0;
   resetRoom();
+  // A continued conversation (a reconnect, the voice-only switch, Continue after a pause) keeps its transcript.
+  if (session.resumed) trPart++;
+  else clearTranscript();
   const ask = avatarAsk();
   avatarParamAsked = avatarParam(ask) !== undefined;
   textOnly = typing || !voice.hasMic;
@@ -954,6 +1036,7 @@ function enterRoom(typing: boolean): void {
     {
       onFrame: (frame) => {
         onAvatarFrame(frame);
+        chipFrame(frame);
         dispatch(frame.kind === "aida" && frame.frame.type === "note" ? { ...frame, frame: { ...frame.frame, at: elapsed() } } : frame);
       },
       onClose: () => {
@@ -1128,6 +1211,11 @@ function herTurnIsOpen(s: TalkState): boolean {
   return last?.who === "aida" && last.open;
 }
 
+/** Her voice is playing now: the PCM queue on a voice call, her open caption on a video call. */
+function herSpeaking(s: TalkState): boolean {
+  return voice.isSpeaking || (s.avatar && herTurnIsOpen(s));
+}
+
 function statusOf(s: TalkState): [string, string] {
   if (s.phase === "ending") return ["ending", s.pausing ? "Saving your place" : "Wrapping up"];
   if (s.phase === "ended") return ["ended", "Finished"];
@@ -1140,12 +1228,16 @@ function statusOf(s: TalkState): [string, string] {
   if (s.link === "dropped") return ["reconnecting", DROPPED_STATUS];
   if (s.link === "reconnecting") return ["reconnecting", "Reconnecting, one moment"];
   if (s.link === "resumed" && performance.now() - resumedAt < 4000) return ["resumed", "Back on the line"];
-  if (voice.isSpeaking || (s.avatar && herTurnIsOpen(s))) return ["speaking", "Aida is speaking"];
+  // Listening → Transcribing… → Noted → Aida is speaking (owner, 20 Oct): what she is doing with what you said.
+  const now = chipFor(chip, herSpeaking(s), performance.now());
+  if (now === "noted") return ["noted", "Noted"];
+  if (now === "speaking") return ["speaking", "Aida is speaking"];
   // A returning conversation: say so until either of you has spoken.
   if (s.resumed && s.turns.length === 0) return ["resumed", rejoined ? "Back on the line" : "Welcome back"];
   // Before her first word the page must not invite anyone in (all three personas, 18 Oct: "Listening"
   // was read as an invitation, and the person talked over the welcome).
   if (!s.turns.some((t) => t.who === "aida")) return ["starting", "Aida is about to speak"];
+  if (now === "transcribing") return ["transcribing", "Transcribing…"];
   if (textOnly) return ["listening", "Type your answer"];
   if (muted) return ["muted", "You’re muted"];
   return ["listening", "Listening"];
@@ -1168,11 +1260,16 @@ function hintFor(s: TalkState): string {
 
 function renderStatus(): void {
   const [key, text] = statusOf(state);
-  if (statusEl.dataset.state !== key) {
-    statusEl.dataset.state = key;
-    stageEl.dataset.speaking = String(key === "speaking");
-  }
+  if (statusEl.dataset.state !== key) statusEl.dataset.state = key;
+  // The speaking ring follows her voice, not the chip: a "Noted" flash while she talks must not put it out.
+  const speaking = String(state.phase === "live" && herSpeaking(state));
+  if (stageEl.dataset.speaking !== speaking) stageEl.dataset.speaking = speaking;
   if (statusText.textContent !== text) statusText.textContent = text;
+  // "Noted" ends, and a "Transcribing…" with no answer gives up, by themselves: redraw then, and only then.
+  window.clearTimeout(chipTimer);
+  const now = performance.now();
+  const wake = chipWakeAt(chip, now);
+  chipTimer = wake === null ? 0 : window.setTimeout(renderStatus, wake - now + 20);
   // Only changes to the line itself are announced; speaking and listening are visible, not read aloud.
   const linkKey = ["connecting", "reconnecting", "resumed", "ending", "switching"].includes(key) ? key : "live";
   if (linkKey !== lastLink) {
@@ -1204,8 +1301,6 @@ function renderCaptions(s: TalkState): void {
     whoYou.textContent = latest.you.typed ? "You, typed" : "You";
   }
   captions.dataset.last = latest.last ?? "";
-  // The list of what she said: only while there is something to read back.
-  saidMore.hidden = !latest.aida && !latest.you;
 }
 
 /** One owner for the hint line, so a stale error or a welcome can never sit beside a newer line state. */
@@ -1255,10 +1350,10 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
       setTimeout(() => {
         li.classList.remove("fresh");
       }, 2600);
-      // Where the notebook is open in the room (desktop, tall phones), bring the
-      // new note into view; a closed sheet is left alone.
-      const body = li.closest<HTMLElement>(".nb-body");
-      if (body && getComputedStyle(body).visibility !== "hidden") {
+      // Where the notes are on show (a phone, a tablet, the desk's side page, an open sheet), bring the new
+      // note into view, unless the person has scrolled up to read something else.
+      if (inView("notes") && follow.notes) {
+        autoScrollAt = performance.now();
         li.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
       }
     }
@@ -1266,6 +1361,7 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
   const count = s.notes.length;
   nbEmpty.hidden = count > 0;
   nbCount.textContent = count === 1 ? "1 note" : count ? `${count} notes` : "Notes";
+  nbTabCount.textContent = count ? String(count) : "";
   const last = s.notes[s.notes.length - 1];
   if (last && last.id !== prev?.notes[prev.notes.length - 1]?.id) {
     nbLatest.textContent = last.text;
@@ -1276,6 +1372,106 @@ function renderNotesLive(prev: TalkState | null, s: TalkState): void {
       });
     }
   }
+}
+
+// ---------- the notebook's two tabs: her notes, and the whole exchange ----------
+
+/** Each panel follows its newest line unless the person has scrolled up in it. */
+const follow: Record<Tab, boolean> = { notes: true, transcript: true };
+/** The page's own scrolling, which must not read as the person scrolling away. */
+let autoScrollAt = 0;
+
+const atBottom = (el: HTMLElement): boolean => el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+
+for (const tab of ["notes", "transcript"] as const) {
+  panels[tab].addEventListener(
+    "scroll",
+    () => {
+      if (performance.now() - autoScrollAt < 800) return;
+      follow[tab] = atBottom(panels[tab]);
+    },
+    { passive: true },
+  );
+}
+
+/** The panel is the open tab and the notebook is on screen (not a closed sheet). */
+function inView(tab: Tab): boolean {
+  return !panels[tab].hidden && getComputedStyle(nbBody).visibility !== "hidden";
+}
+
+function toBottom(tab: Tab): void {
+  autoScrollAt = performance.now();
+  panels[tab].scrollTop = panels[tab].scrollHeight;
+}
+
+function showTab(tab: Tab, focus = false): void {
+  for (const t of ["notes", "transcript"] as const) {
+    const on = t === tab;
+    tabs[t].setAttribute("aria-selected", String(on));
+    tabs[t].tabIndex = on ? 0 : -1;
+    panels[t].hidden = !on;
+  }
+  if (focus) tabs[tab].focus();
+  if (tab === "transcript" && follow.transcript) toBottom("transcript");
+}
+
+tabs.notes.addEventListener("click", () => {
+  showTab("notes");
+});
+tabs.transcript.addEventListener("click", () => {
+  showTab("transcript");
+});
+tabs.notes.parentElement?.addEventListener("keydown", (event) => {
+  // Arrow keys move between the two tabs, as a tab list does.
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const next: Tab = event.key === "Home" ? "notes" : event.key === "End" ? "transcript" : tabs.notes.tabIndex === 0 ? "transcript" : "notes";
+  showTab(next, true);
+});
+
+// The transcript is drawn line by line and never redrawn whole: the open turn's text is updated as it grows.
+// A reconnected, switched or continued call carries on the same list (its turns are numbered afresh, so each
+// part of the call keys its own lines); only a new conversation starts it empty. The room's state keeps the
+// last 60 turns for the captions; the list here keeps the whole exchange.
+const trLines = new Map<string, HTMLLIElement>();
+let trPart = 0;
+
+function clearTranscript(): void {
+  transcriptEl.replaceChildren();
+  trLines.clear();
+  trPart = 0;
+  trEmpty.hidden = false;
+  follow.notes = true;
+  follow.transcript = true;
+  showTab("notes");
+}
+
+function renderTranscript(s: TalkState): void {
+  let grew = false;
+  for (const t of s.turns) {
+    const text = turnText(t) + (t.interrupted ? " …" : "");
+    if (!text) continue;
+    const key = `${trPart}:${t.id}`;
+    let li = trLines.get(key);
+    if (!li) {
+      li = document.createElement("li");
+      li.dataset.who = t.who;
+      const who = document.createElement("span");
+      who.className = "tr-who";
+      who.textContent = t.who === "aida" ? "Aida:" : "You:";
+      li.append(who, " ", document.createElement("span"));
+      transcriptEl.append(li);
+      trLines.set(key, li);
+    }
+    const said = li.lastElementChild;
+    if (said && said.textContent !== text) {
+      said.textContent = text;
+      grew = true;
+    }
+    li.dataset.open = String(t.open);
+  }
+  trEmpty.hidden = trLines.size > 0;
+  if (grew && follow.transcript && inView("transcript")) toBottom("transcript");
 }
 
 function render(prev: TalkState | null, s: TalkState): void {
@@ -1294,8 +1490,10 @@ function render(prev: TalkState | null, s: TalkState): void {
   }
   if (changed("link", "phase", "switching")) renderStatus();
   if (changed("turns", "error")) renderCaptions(s);
+  if (changed("turns")) renderTranscript(s);
   if (changed("turns", "error", "link", "phase", "resumed", "switching")) renderHint(s);
-  if ((s.resumed || s.avatar) && changed("turns")) renderStatus();
+  // Her words, theirs and her notes all move the chip (Transcribing…, Noted, Aida is speaking).
+  if (changed("turns", "notes")) renderStatus();
   if (changed("notes")) renderNotesLive(prev, s);
   if (changed("idleWarning")) renderIdle(s.idleWarning);
   if (s.finished.length) announce.textContent = s.finished.map((t) => `${t.who === "aida" ? "Aida" : "You"}: ${turnText(t)}`).join(" ");
@@ -1426,7 +1624,12 @@ function openTyper(open: boolean): void {
   if (open) typed.focus();
 }
 
+// A double click must not open the box and shut it again (QA 18 Oct): a second click within 400 ms is ignored.
+let typeToggledAt = -Infinity;
 typeBtn.addEventListener("click", () => {
+  const now = performance.now();
+  if (now - typeToggledAt < 400) return;
+  typeToggledAt = now;
   openTyper(typer.hidden);
 });
 
@@ -1440,6 +1643,7 @@ typer.addEventListener("submit", (event) => {
   if (now - last < 400) return;
   (typed as HTMLTextAreaElement & { _last?: number })._last = now;
   voice.sendText(text);
+  chip = stepChip(chip, { t: "you", now });
   dispatch({ kind: "typed", text });
   typed.value = "";
   typed.style.height = "auto";
@@ -1816,8 +2020,9 @@ function introFor(mode: "stranger" | "go" | "known" | "resume"): void {
 // (impatient on a laptop, mobile, 18 Oct): it scrolls to the box and puts the cursor in it.
 const startTop = byId("start-top", HTMLButtonElement);
 startTop.addEventListener("click", () => {
-  consentForm.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
-  consent.focus({ preventScroll: true });
+  // The same press as the Start under the box: without the tick, the same "Please tick the box…" (QA 18 Oct).
+  consentForm.requestSubmit();
+  if (app.dataset.screen === "intro") consentForm.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
 });
 
 function showNotice(message: string): void {
@@ -2013,7 +2218,17 @@ knownVoice.addEventListener("click", () => {
 });
 byId("known-forget", HTMLButtonElement).addEventListener("click", () => {
   void post("/api/talk/forget", {});
-  hideKnown();
+  // Someone else's details and tick must not be waiting in the form (QA 18 Oct): forget what this tab kept.
+  forgetSaved();
+  knownCard.hidden = true;
+  if (pendingGo) {
+    // They came by a confirmation link while this browser knew someone: that link is theirs to use now.
+    goCard.hidden = false;
+    introFor("go");
+    goBtn.focus({ preventScroll: true });
+    return;
+  }
+  introFor("stranger");
   consent.focus({ preventScroll: true });
 });
 
@@ -2044,8 +2259,13 @@ endContinue.addEventListener("click", () => {
 const entry = entryFor(takeLanding(location, history));
 if (entry.kind === "go") {
   pendingGo = entry.token;
-  goCard.hidden = false;
+  // A used link, or the same link opened in a second tab, in a browser that already holds a session: welcome
+  // back, not "One click to begin" (QA 18 Oct). So /me is asked first; the card shows only for a stranger
+  // (or when /me cannot be reached). The consent box is not asked again either way.
   introFor("go");
+  void checkMe().then((me) => {
+    if (!me && pendingGo && app.dataset.screen === "intro") goCard.hidden = false;
+  });
 } else if (entry.kind === "resume") {
   pendingToken = entry.token;
   welcomeBack.hidden = false;
