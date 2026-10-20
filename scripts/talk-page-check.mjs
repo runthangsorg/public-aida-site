@@ -15,7 +15,7 @@
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
-/* global window, document, getComputedStyle, innerHeight, location */
+/* global window, document, getComputedStyle, innerHeight, location, matchMedia */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -57,8 +57,8 @@ const chrome = (extra = []) =>
   chromium.launch({ channel: 'chrome', args: ['--disable-features=FontationsFontBackend', ...extra], ignoreDefaultArgs: ['--disable-dev-shm-usage'] });
 
 /** A page with the stubbed server. `ws`: how the socket behaves ('ok' | 'throw' | 'close'). */
-async function open(browser, { size, perms = [], init = '', ws = 'ok', me = { known: false }, goto = '/talk/', routes = {} }) {
-  const ctx = await browser.newContext({ viewport: size, permissions: perms });
+async function open(browser, { size, perms = [], init = '', ws = 'ok', me = { known: false }, goto = '/talk/', routes = {}, hasTouch = false }) {
+  const ctx = await browser.newContext({ viewport: size, permissions: perms, ...(hasTouch ? { hasTouch: true } : {}) });
   const page = await ctx.newPage();
   const requests = [];
   const errors = [];
@@ -698,6 +698,110 @@ if (want('5')) {
     const back2 = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, end: !document.querySelector('#end-screen').hidden, confirm: !document.querySelector('#confirm').hidden }));
     check(`[${tag}] Back after the end screen stays on the end screen, never a dead "Finished" room`, back1.screen === 'end' && back1.end && back2.screen === 'end' && back2.end && !back2.confirm, JSON.stringify({ back1, back2 }));
     await ctx.close();
+  }
+  await browser.close();
+}
+
+// ---------- 6. round 4: transcription markers, the note highlight, the tabs ----------
+if (want('6')) {
+  const browser = await chrome(FAKE_MIC);
+  const phone = { width: 390, height: 844 };
+  const desk = { width: 1280, height: 800 };
+  const intoRoom = async (page, avatar = false) => {
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await page.evaluate(([s, a]) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: a } }), [sections, avatar]);
+    await page.waitForTimeout(300);
+  };
+  for (const [size, tag] of [[phone, 'phone'], [desk, 'desktop']]) {
+    // A marker, unclosed, and split across two fragments: none may reach a caption, the transcript or the live region.
+    {
+      const { ctx, page, errors } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}` });
+      await intoRoom(page);
+      await page.evaluate(() => {
+        const send = (o) => window.__ws.push({ serverContent: o });
+        send({ outputTranscription: { text: 'Tell me about the week.' } });
+        send({ turnComplete: true });
+        send({ outputTranscription: { text: '<no' } });
+        send({ outputTranscription: { text: ' speech>' } });
+        send({ turnComplete: true });
+        send({ inputTranscription: { text: '<noise> We use a kiosk' } });
+        send({ turnComplete: true });
+      });
+      await page.waitForTimeout(500);
+      const seen = await page.evaluate(() => ({
+        caption: document.querySelector('#said-aida').textContent,
+        you: document.querySelector('#said-you').textContent,
+        announce: document.querySelector('#announce').textContent,
+        lines: [...document.querySelectorAll('#transcript li')].map((li) => li.textContent.replace(/\s+/g, ' ').trim()),
+      }));
+      check(
+        `[${tag}] transcription markers never reach a caption, the transcript or the live region (${seen.lines.length} transcript lines)`,
+        seen.caption === 'Tell me about the week.' && seen.you === 'We use a kiosk' && seen.lines.length === 2 && !seen.lines.some((l) => l.includes('<')) && !seen.announce.includes('<'),
+        JSON.stringify(seen),
+      );
+      check(`[${tag}] no page errors while the markers are filtered`, errors.length === 0, errors.join('; '));
+      await ctx.close();
+    }
+    // A fresh note's highlight is its own text span, covering every line and nothing else.
+    {
+      const note = 'Supervisors check every timesheet by hand on Friday afternoons before payroll, and missed clock-outs are the worst';
+      const { ctx, page } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}` });
+      await intoRoom(page);
+      await page.evaluate((text) => window.__ws.push({ aida: { type: 'note', section: 'workflows', text } }), note);
+      await page.waitForTimeout(250);
+      const hl = await page.evaluate(() => {
+        const li = document.querySelector('#nb-groups li.fresh');
+        const span = li?.querySelector('.note-text');
+        const stamp = li?.querySelector('.note-time');
+        if (!li || !span || !stamp) return { found: false };
+        const lr = li.getBoundingClientRect();
+        const cs = getComputedStyle(li);
+        const lines = [...span.getClientRects()];
+        const range = document.createRange();
+        range.selectNodeContents(span);
+        const text = [...range.getClientRects()];
+        return {
+          found: true,
+          after: getComputedStyle(li, '::after').content,
+          lines: lines.length,
+          firstTop: lines[0].top,
+          lastBottom: lines.at(-1).bottom,
+          textTop: text[0].top,
+          textBottom: text.at(-1).bottom,
+          left: lines[0].left,
+          stampRight: stamp.getBoundingClientRect().right,
+          topGap: lines[0].top - (lr.top + parseFloat(cs.paddingTop)),
+          bottomGap: lr.bottom - parseFloat(cs.paddingBottom) - lines.at(-1).bottom,
+        };
+      });
+      const ok =
+        hl.found &&
+        hl.after === 'none' &&
+        Math.abs(hl.firstTop - hl.textTop) < 1 &&
+        Math.abs(hl.lastBottom - hl.textBottom) < 1 &&
+        hl.left >= hl.stampRight - 1 &&
+        hl.topGap < 12 &&
+        hl.bottomGap < 12;
+      check(`[${tag}] a fresh note's highlight is its text span (${hl.lines} line${hl.lines === 1 ? '' : 's'}), not a box below it`, ok, JSON.stringify(hl));
+      await page.screenshot({ path: `${shots}/r4-note-fresh-${tag}.png` });
+      await ctx.close();
+    }
+    // A fingertip: both tabs at least 44 px, on a coarse pointer at either width.
+    {
+      const { ctx, page } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}`, hasTouch: true });
+      await intoRoom(page);
+      const tabs = await page.evaluate(() => {
+        const h = (id) => document.querySelector(id).getBoundingClientRect().height;
+        return { coarse: matchMedia('(pointer: coarse)').matches, notes: h('#tab-notes'), transcript: h('#tab-transcript') };
+      });
+      check(
+        `[${tag} touch] Notes and Transcript are at least 44 px tall (${Math.round(tabs.notes)} / ${Math.round(tabs.transcript)} px)`,
+        tabs.coarse && tabs.notes >= 44 && tabs.transcript >= 44 && tabs.notes <= 46 && tabs.transcript <= 46,
+        JSON.stringify(tabs),
+      );
+      await ctx.close();
+    }
   }
   await browser.close();
 }
