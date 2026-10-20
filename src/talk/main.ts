@@ -2,7 +2,7 @@ import "./talk.css";
 import type { Mouth } from "../lipsync";
 import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, limitHint, startBody, type Field } from "./details";
 import { mouthFor, type MouthShape } from "./mouth";
-import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type Stage, setRelayOrigin } from "./protocol";
+import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type ServerFrame, type Stage, setRelayOrigin } from "./protocol";
 import {
   looksLikeEmail,
   pausedCopy,
@@ -41,6 +41,8 @@ import {
   type Opened,
 } from "./gate";
 import {
+  chipFor,
+  chipWakeAt,
   formatClock,
   groupNotes,
   noteStamp,
@@ -50,6 +52,8 @@ import {
   progress,
   reduce,
   stageStatus,
+  startChip,
+  stepChip,
   turnText,
   type TalkEvent,
   type TalkState,
@@ -836,6 +840,30 @@ let endTimer = 0;
 let leaving = false;
 let stagesKey = "";
 let lastLink = "";
+/** The status chip's own clock: the person's voice, what is waiting on her, her latest note. */
+let chip = startChip();
+let chipTimer = 0;
+
+// On a video call her voice comes with the video, not the PCM queue: her open caption says she is speaking,
+// and the microphone's barge-in gate (noise.ts) holds back the room while it is.
+voice.speakingElsewhere = () => state.avatar && herTurnIsOpen(state);
+// The gate's voice detection drives "Listening" (they are talking) and "Transcribing…" (they have stopped).
+voice.onVoice = (on) => {
+  chip = stepChip(chip, { t: "voice", on, now: performance.now() });
+  renderStatus();
+};
+
+/** What a frame from the server means for the chip: her note, her words, or theirs arriving as text. */
+function chipFrame(frame: ServerFrame): void {
+  const now = performance.now();
+  if (frame.kind === "aida") {
+    if (frame.frame.type === "note") chip = stepChip(chip, { t: "note", now });
+    return;
+  }
+  const c = frame.content;
+  if (c.output || c.audio.length) chip = stepChip(chip, { t: "her", now });
+  else if (c.input && !herSpeaking(state)) chip = stepChip(chip, { t: "you", now });
+}
 
 // A small "78/80" once a capped field is within two characters of its limit — a silent cut is a bug
 // to the person it happens to (QA round 2, breaker). Details fields, the typed answer and the note.
@@ -907,6 +935,8 @@ function resetRoom(): void {
   muteLabel.textContent = muted ? "Unmute" : "Mute";
   muteBtn.dataset.hearing = "false";
   hearing = false;
+  chip = startChip();
+  window.clearTimeout(chipTimer);
   nbGroups.replaceChildren();
   groupEls.clear();
   nbToggle.classList.remove("pulse");
@@ -954,6 +984,7 @@ function enterRoom(typing: boolean): void {
     {
       onFrame: (frame) => {
         onAvatarFrame(frame);
+        chipFrame(frame);
         dispatch(frame.kind === "aida" && frame.frame.type === "note" ? { ...frame, frame: { ...frame.frame, at: elapsed() } } : frame);
       },
       onClose: () => {
@@ -1128,6 +1159,11 @@ function herTurnIsOpen(s: TalkState): boolean {
   return last?.who === "aida" && last.open;
 }
 
+/** Her voice is playing now: the PCM queue on a voice call, her open caption on a video call. */
+function herSpeaking(s: TalkState): boolean {
+  return voice.isSpeaking || (s.avatar && herTurnIsOpen(s));
+}
+
 function statusOf(s: TalkState): [string, string] {
   if (s.phase === "ending") return ["ending", s.pausing ? "Saving your place" : "Wrapping up"];
   if (s.phase === "ended") return ["ended", "Finished"];
@@ -1140,12 +1176,16 @@ function statusOf(s: TalkState): [string, string] {
   if (s.link === "dropped") return ["reconnecting", DROPPED_STATUS];
   if (s.link === "reconnecting") return ["reconnecting", "Reconnecting, one moment"];
   if (s.link === "resumed" && performance.now() - resumedAt < 4000) return ["resumed", "Back on the line"];
-  if (voice.isSpeaking || (s.avatar && herTurnIsOpen(s))) return ["speaking", "Aida is speaking"];
+  // Listening → Transcribing… → Noted → Aida is speaking (owner, 20 Oct): what she is doing with what you said.
+  const now = chipFor(chip, herSpeaking(s), performance.now());
+  if (now === "noted") return ["noted", "Noted"];
+  if (now === "speaking") return ["speaking", "Aida is speaking"];
   // A returning conversation: say so until either of you has spoken.
   if (s.resumed && s.turns.length === 0) return ["resumed", rejoined ? "Back on the line" : "Welcome back"];
   // Before her first word the page must not invite anyone in (all three personas, 18 Oct: "Listening"
   // was read as an invitation, and the person talked over the welcome).
   if (!s.turns.some((t) => t.who === "aida")) return ["starting", "Aida is about to speak"];
+  if (now === "transcribing") return ["transcribing", "Transcribing…"];
   if (textOnly) return ["listening", "Type your answer"];
   if (muted) return ["muted", "You’re muted"];
   return ["listening", "Listening"];
@@ -1168,11 +1208,16 @@ function hintFor(s: TalkState): string {
 
 function renderStatus(): void {
   const [key, text] = statusOf(state);
-  if (statusEl.dataset.state !== key) {
-    statusEl.dataset.state = key;
-    stageEl.dataset.speaking = String(key === "speaking");
-  }
+  if (statusEl.dataset.state !== key) statusEl.dataset.state = key;
+  // The speaking ring follows her voice, not the chip: a "Noted" flash while she talks must not put it out.
+  const speaking = String(state.phase === "live" && herSpeaking(state));
+  if (stageEl.dataset.speaking !== speaking) stageEl.dataset.speaking = speaking;
   if (statusText.textContent !== text) statusText.textContent = text;
+  // "Noted" ends, and a "Transcribing…" with no answer gives up, by themselves: redraw then, and only then.
+  window.clearTimeout(chipTimer);
+  const now = performance.now();
+  const wake = chipWakeAt(chip, now);
+  chipTimer = wake === null ? 0 : window.setTimeout(renderStatus, wake - now + 20);
   // Only changes to the line itself are announced; speaking and listening are visible, not read aloud.
   const linkKey = ["connecting", "reconnecting", "resumed", "ending", "switching"].includes(key) ? key : "live";
   if (linkKey !== lastLink) {
@@ -1295,7 +1340,8 @@ function render(prev: TalkState | null, s: TalkState): void {
   if (changed("link", "phase", "switching")) renderStatus();
   if (changed("turns", "error")) renderCaptions(s);
   if (changed("turns", "error", "link", "phase", "resumed", "switching")) renderHint(s);
-  if ((s.resumed || s.avatar) && changed("turns")) renderStatus();
+  // Her words, theirs and her notes all move the chip (Transcribing…, Noted, Aida is speaking).
+  if (changed("turns", "notes")) renderStatus();
   if (changed("notes")) renderNotesLive(prev, s);
   if (changed("idleWarning")) renderIdle(s.idleWarning);
   if (s.finished.length) announce.textContent = s.finished.map((t) => `${t.who === "aida" ? "Aida" : "You"}: ${turnText(t)}`).join(" ");
@@ -1440,6 +1486,7 @@ typer.addEventListener("submit", (event) => {
   if (now - last < 400) return;
   (typed as HTMLTextAreaElement & { _last?: number })._last = now;
   voice.sendText(text);
+  chip = stepChip(chip, { t: "you", now });
   dispatch({ kind: "typed", text });
   typed.value = "";
   typed.style.height = "auto";

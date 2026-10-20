@@ -935,8 +935,19 @@ input[aria-invalid="true"]:hover {
   animation: pulse 0.7s ease-in-out infinite;
 }
 
-.status[data-state="resumed"] .dot {
+.status[data-state="resumed"] .dot,
+.status[data-state="noted"] .dot {
   background: #2f8f5b;
+}
+
+/* "Transcribing…" from when they stop until her note or her words: the word itself flashes, with its dot. */
+.status[data-state="transcribing"] .dot {
+  background: var(--gold);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.status[data-state="transcribing"] #status-text {
+  animation: pulse 1.2s ease-in-out infinite;
 }
 
 /* The lower third: what she is saying now, and what you just said. */
