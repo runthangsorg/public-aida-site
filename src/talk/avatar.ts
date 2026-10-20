@@ -475,6 +475,43 @@ export function nextHealth(h: Health, e: HealthEvent): Health {
   }
 }
 
+// ---------- a slow link: the video falling behind live ----------
+
+/** More than this far behind live... */
+export const SLOW_BEHIND_S = 3;
+/** ...for this long, and the page offers to go on by voice only (QA 18 Oct). */
+export const SLOW_FOR_MS = 10_000;
+
+export interface SlowLink {
+  /** Wall-clock ms minus media ms arrived, at its lowest so far: the best the link has kept up. Null at first. */
+  best: number | null;
+  /** Since when it has been more than SLOW_BEHIND_S behind (0: it is not). */
+  behindSince: number;
+  /** Offered already: once a call. */
+  offered: boolean;
+}
+
+export const startSlowLink = (): SlowLink => ({ best: null, behindSince: 0, offered: false });
+
+export type SlowLinkEvent = { t: 'look'; now: number; media: number } | { t: 'reset' };
+
+/**
+ * The stream is paced at real time and runs continuously, silences included, so on a link that keeps up the
+ * media arrives as fast as the clock runs. `media` is the end of what has arrived (seconds of the stream), `now`
+ * the wall clock (ms). How far behind live it is: how much further the clock has run than the media since the
+ * moment the link kept up best. (The playhead is no measure: the player jumps it to the end of what has
+ * arrived.) `reset` starts the reckoning again: a new stream after a connection swap (its ~3.7 s gap is
+ * expected), or a page coming back from the background.
+ */
+export function stepSlowLink(s: SlowLink, e: SlowLinkEvent): { state: SlowLink; offer: boolean } {
+  if (e.t === 'reset') return { state: { ...s, best: null, behindSince: 0 }, offer: false };
+  const offset = e.now - e.media * 1000;
+  const best = s.best === null ? offset : Math.min(s.best, offset);
+  const behindSince = offset - best > SLOW_BEHIND_S * 1000 ? s.behindSince || e.now : 0;
+  const offer = !s.offered && behindSince > 0 && e.now - behindSince >= SLOW_FOR_MS;
+  return { state: { best, behindSince, offered: s.offered || offer }, offer };
+}
+
 // ---------- the player ----------
 
 export interface PlayerHooks {
@@ -484,6 +521,8 @@ export interface PlayerHooks {
   onVisible(visible: boolean): void;
   /** The browser would not play her sound without a tap: it is playing muted. */
   onMuted?(): void;
+  /** The video has been more than ~3 s behind live for 10 s: offer voice only (once a call). */
+  onSlow?(): void;
 }
 
 interface MseApi {
@@ -521,6 +560,8 @@ export class AvatarPlayer {
   private lastTime = 0;
   /** Since when the element has had too little data to show a frame (0 when it has enough). */
   private starvedSince = 0;
+  /** How far behind live the stream is running. */
+  private slow = startSlowLink();
   private readonly onVideoError = (): void => {
     this.fail({ t: 'player-error' });
   };
@@ -533,6 +574,7 @@ export class AvatarPlayer {
     this.stop();
     this.done = false;
     this.health = startHealth(performance.now());
+    this.slow = startSlowLink();
     this.progressAt = performance.now();
     this.lastTime = 0;
     const ms = new Mse();
@@ -611,6 +653,21 @@ export class AvatarPlayer {
     if (this.fail({ t: 'tick', now, reconnecting: this.reconnecting, sinceProgress: now - this.progressAt })) return;
     this.pump();
     this.maintain();
+    this.watchLink(now);
+  }
+
+  /** Is the video falling behind live? A connection swap or a hidden page is not counted. */
+  private watchLink(now: number): void {
+    if (this.reconnecting || document.hidden) {
+      this.slow = stepSlowLink(this.slow, { t: 'reset' }).state;
+      return;
+    }
+    const ranges = bufferedRanges(this.video.buffered);
+    const end = ranges[ranges.length - 1]?.end;
+    if (!this.playing || end === undefined) return;
+    const step = stepSlowLink(this.slow, { t: 'look', now, media: end });
+    this.slow = step.state;
+    if (step.offer) this.hooks.onSlow?.();
   }
 
   private pump(): void {
@@ -650,6 +707,8 @@ export class AvatarPlayer {
         this.fail({ t: 'codec-unsupported' });
         return;
       }
+      // A new stream (the start, or after a connection swap): its gap is not a slow link.
+      this.slow = stepSlowLink(this.slow, { t: 'reset' }).state;
       // Where the new stream starts in presentation time: its first 0.4 s are kept out of sight.
       const ranges = bufferedRanges(this.video.buffered);
       this.hidden.push(hideRangeFor(ranges[ranges.length - 1]?.end ?? 0));

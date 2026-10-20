@@ -3,7 +3,9 @@
  * Plays a recorded avatar stream through the real talk page in real Chrome, at real-time pace, with no
  * API cost, and asserts what the spec promises: the first 0.4 s is never shown, the buffer stays under a
  * second, a second init segment (a connection swap) plays on, an `interrupted` frame jumps to the live
- * edge, and the teardown leaves no object URL and no element source. It takes screenshots too.
+ * edge, and the teardown leaves no object URL and no element source. A link that keeps up (swap gap and all)
+ * never offers voice only; a link carrying 60% of real time offers it once, after ~3 s behind for 10 s, and
+ * its button moves the call in place. It takes screenshots too.
  *
  *   node scripts/avatar-check.mjs <source.mp4> [--shots .tmp/shots]
  *
@@ -238,7 +240,7 @@ async function run(label, viewport, shotAt) {
       for (let k = 0; k < v.buffered.length; k++) {
         if (v.currentTime >= v.buffered.start(k) - 0.05 && v.currentTime <= v.buffered.end(k) + 0.05) lead = v.buffered.end(k) - v.currentTime;
       }
-      window.__samples.push({ t: (performance.now() - t0) / 1000, ct: v.currentTime, lead, rs: v.readyState, paused: v.paused, shown: stage.dataset.video === 'on', muted: v.muted, hasSrc: v.hasAttribute('src') });
+      window.__samples.push({ t: (performance.now() - t0) / 1000, ct: v.currentTime, lead, rs: v.readyState, paused: v.paused, shown: stage.dataset.video === 'on', muted: v.muted, hasSrc: v.hasAttribute('src'), slow: !document.querySelector('#slow-offer').hidden });
     }, 100);
   });
   const endAtS = schedule[schedule.length - 1].t / 1000;
@@ -308,6 +310,7 @@ async function run(label, viewport, shotAt) {
   const reshown = samples.find((s) => s.t > resumeS && s.shown);
   check(`[${label}] the first 0.4 s of the new stream is not shown either (back on screen ${reshown ? (reshown.t - resumeS).toFixed(2) : '?'} s after its init)`, !!reshown && reshown.t - resumeS > 0.9, reshown ? (reshown.t - resumeS).toFixed(2) : undefined);
   check(`[${label}] she is audible: the video is not muted after a click`, samples.every((s) => !s.muted));
+  check(`[${label}] a link that keeps up, swap gap and all, never offers voice only`, samples.every((s) => !s.slow));
   // Teardown after the call ends.
   check(`[${label}] teardown: the call ended, the page left the room`, state.screen === 'end', state.screen);
   check(`[${label}] teardown: no object URL left`, state.urls === 0, state.urls);
@@ -436,11 +439,100 @@ async function runFailure(label, viewport, switching = false) {
   await ctx.close();
 }
 
+/** A link that carries only 60% of real time: the video falls ~0.4 s further behind every second. */
+async function runSlow(label, viewport) {
+  const PACE = 0.6;
+  const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    window.__sockets = [];
+    class FakeWS {
+      constructor(url) {
+        this.url = url;
+        this.readyState = 1;
+        window.__ws = this;
+        window.__sockets.push(url);
+      }
+      send(m) {
+        if (typeof m === 'string' && m.includes('"switch"')) setTimeout(() => this.push({ aida: { type: 'ended', reason: 'switch', minutes: 1, resumable: true, emailed: false } }), 150);
+      }
+      close() {
+        this.readyState = 3;
+      }
+      push(x) {
+        this.onmessage?.({ data: JSON.stringify(x) });
+      }
+      pushBinary(ab) {
+        this.onmessage?.({ data: ab });
+      }
+    }
+    FakeWS.OPEN = 1;
+    FakeWS.CONNECTING = 0;
+    FakeWS.CLOSING = 2;
+    FakeWS.CLOSED = 3;
+    window.WebSocket = FakeWS;
+  });
+  const parts = [envelope(init), ...frames.map(envelope)];
+  const body = Buffer.concat(parts);
+  const offs = [];
+  let o = 0;
+  for (const b of parts) {
+    offs.push([o, b.length]);
+    o += b.length;
+  }
+  await page.route('**/api/talk/me', (r) => r.fulfill(json({ known: false })));
+  await page.route('**/api/talk/confirm', (r) => r.fulfill(json({ id: 's1', targetMinutes: 5, sections, name: 'Sam Example' })));
+  await page.route('**/api/talk/continue', (r) =>
+    r.fulfill(json({ id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 1, stage: 'welcome', hasSummary: false, notes: [] } })),
+  );
+  await page.route('**/__fx/slow.bin', (r) => r.fulfill({ status: 200, contentType: 'application/octet-stream', body }));
+  await page.goto(`${base}/talk/?go=${GO}`);
+  await page.click('#go-go');
+  await page.waitForFunction(() => window.__ws);
+  await page.evaluate((s) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: true } }), sections);
+  await page.evaluate(
+    async ([offsets, dt]) => {
+      const buf = await (await fetch('/__fx/slow.bin')).arrayBuffer();
+      const t0 = performance.now();
+      window.__offerAt = null;
+      let i = 0;
+      setInterval(() => {
+        const el = performance.now() - t0;
+        while (i < offsets.length && (i === 0 ? 0 : (i - 1) * dt) <= el) {
+          window.__ws.pushBinary(buf.slice(offsets[i][0], offsets[i][0] + offsets[i][1]));
+          i++;
+        }
+        if (window.__offerAt === null && !document.querySelector('#slow-offer').hidden) window.__offerAt = el / 1000;
+      }, 4);
+    },
+    [offs, DT / PACE],
+  );
+  await page.waitForTimeout(9000);
+  const early = await page.evaluate(() => window.__offerAt);
+  check(`[${label}] a slow link: no offer in the first 9 s (the video is not yet 3 s behind for 10 s)`, early === null, early);
+  await page.waitForFunction(() => window.__offerAt !== null, null, { timeout: 20000 }).catch(() => undefined);
+  const at = await page.evaluate(() => window.__offerAt);
+  check(`[${label}] ...then one line offers voice only (after ${at === null ? 'never' : `${at.toFixed(1)} s`}: ~0.5 s to start, ~7.5 s to fall 3 s behind, 10 s more)`, at !== null && at > 15 && at < 22, at);
+  const words = await page.evaluate(() => document.querySelector('#slow-offer').textContent.replace(/\s+/g, ' ').trim());
+  check(`[${label}] in the brief's words, with one button`, words === 'The video is slow on this connection. Switch to voice only? Yes, switch', words);
+  await page.screenshot({ path: `${shotsDir}/avatar-slow-offer-${label}.png` });
+  await page.click('#slow-switch');
+  await page.waitForFunction(() => window.__sockets.length >= 2, null, { timeout: 15000 });
+  const urls = await page.evaluate(() => window.__sockets);
+  const after = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, offer: document.querySelector('#slow-offer').hidden, saved: localStorage.getItem('aida.talk.voice-only') }));
+  check(`[${label}] Yes, switch moves the call in place to a line without video, and remembers it`, !/avatar=/.test(urls[1]) && /avatar=/.test(urls[0]) && after.screen === 'room' && after.offer && after.saved === '1', JSON.stringify({ ...after, urls: urls.length }));
+  check(`[${label}] no page errors on the slow link`, errors.length === 0, errors.join('; '));
+  await ctx.close();
+}
+
 const SHOTS = { poster: 0.7, playing: 3.8, swapgap: 10.2, playing2: 15 };
 await run('phone', { width: 390, height: 844 }, SHOTS);
 await run('desktop', { width: 1280, height: 800 }, SHOTS);
 await runFailure('phone', { width: 390, height: 844 });
 await runFailure('switch', { width: 390, height: 844 }, true);
+await runSlow('slow', { width: 390, height: 844 });
 await browser.close();
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');

@@ -8,6 +8,8 @@ import {
   PROBE_MIME,
   SQUINT_SECONDS,
   START_BUFFER,
+  SLOW_BEHIND_S,
+  SLOW_FOR_MS,
   SWAP_NO_MEDIA_MS,
   VOICE_ONLY_KEY,
   avatarParam,
@@ -31,12 +33,15 @@ import {
   rememberVoiceOnly,
   sniffCodecs,
   startHealth,
+  startSlowLink,
+  stepSlowLink,
   takeBatch,
   textFromBinary,
   walkBoxes,
   type Capability,
   type Health,
   type MseWindow,
+  type SlowLink,
 } from "../src/talk/avatar";
 import { parseFrame, socketUrl } from "../src/talk/protocol";
 import { endView, initialState, reduce, type TalkState } from "../src/talk/state";
@@ -496,5 +501,67 @@ describe("video that stops, or is switched off, mid-call", () => {
     expect(reduce(ended, { kind: "video-stopped", switching: false })).toBe(ended);
     const ending = reduce(live(), { kind: "end-pressed" });
     expect(reduce(ending, { kind: "video-stopped", switching: false })).toBe(ending);
+  });
+});
+
+describe("a slow link: the offer to go on by voice (QA 18 Oct)", () => {
+  /**
+   * Look at the stream every 150 ms (the player's own tick) for `seconds`. `arrived(t)` is how many seconds of
+   * media have arrived by wall-clock second `t`. Returns when the offer was made (seconds), or null.
+   */
+  function watch(seconds: number, arrived: (t: number) => number, from: SlowLink = startSlowLink(), resetAt: number[] = []): { offers: number[]; state: SlowLink } {
+    let state = from;
+    const offers: number[] = [];
+    for (let ms = 0; ms <= seconds * 1000; ms += 150) {
+      const t = ms / 1000;
+      if (resetAt.some((r) => Math.abs(r - t) < 0.075)) state = stepSlowLink(state, { t: "reset" }).state;
+      const step = stepSlowLink(state, { t: "look", now: 50_000 + ms, media: arrived(t) });
+      state = step.state;
+      if (step.offer) offers.push(t);
+    }
+    return { offers, state };
+  }
+  /** A real-time stream with a little jitter in when fragments land (never more than 0.3 s late). */
+  const onTime = (t: number): number => Math.max(0, t - 0.15 - 0.15 * Math.sin(t * 7));
+
+  it("offers when the video has been more than ~3 s behind live for 10 s", () => {
+    expect(SLOW_BEHIND_S).toBe(3);
+    expect(SLOW_FOR_MS).toBe(10_000);
+    // The link carries 70% of real time: 3 s behind after 10 s, then 10 s more before the offer.
+    const { offers } = watch(40, (t) => t * 0.7);
+    expect(offers).toHaveLength(1);
+    expect(offers[0]).toBeGreaterThan(19.5);
+    expect(offers[0]).toBeLessThan(21);
+  });
+
+  it("never offers on a link that keeps up, jitter and all, for a whole call", () => {
+    expect(watch(600, onTime).offers).toEqual([]);
+  });
+
+  it("a hiccup it recovers from is not slow: nothing for 5 s, then it all lands at once", () => {
+    const stall = (t: number): number => (t < 10 ? t : t < 15 ? 10 : t);
+    expect(watch(60, stall).offers).toEqual([]);
+  });
+
+  it("offers once a call, not again and again", () => {
+    expect(watch(120, (t) => t * 0.5).offers).toHaveLength(1);
+  });
+
+  it("a connection swap's gap (3.7 s, then a new stream) is not a slow link: the reckoning starts again", () => {
+    // Media stops for 3.7 s at 20 s and the new stream continues from there; the page resets at the new stream.
+    const swap = (t: number): number => (t < 20 ? t : t < 23.7 ? 20 : 20 + (t - 23.7));
+    expect(watch(60, swap, startSlowLink(), [23.7]).offers).toEqual([]);
+    // Without the reset it would have been read as 3.7 s behind for good.
+    expect(watch(60, swap).offers).toHaveLength(1);
+  });
+
+  it("a slow link that clears before 10 s starts the 10 s again next time", () => {
+    // A 4 s stall at 10 s, 4 s behind until a catch-up at 18 s (over 3 s behind for ~5 s only); then the same
+    // from 30 s, staying behind: the 10 s count starts again at ~33 s, so the offer comes at ~43 s.
+    const twice = (t: number): number => (t < 10 ? t : t < 14 ? 10 : t < 18 ? t - 4 : t < 30 ? t : t < 34 ? 30 : t - 4);
+    const { offers } = watch(60, twice);
+    expect(offers).toHaveLength(1);
+    expect(offers[0]).toBeGreaterThan(42.5);
+    expect(offers[0]).toBeLessThan(44);
   });
 });

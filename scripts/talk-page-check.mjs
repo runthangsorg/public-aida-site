@@ -6,12 +6,16 @@
  *      character), decided once at load and never fetched as the other art.
  *   2. The Start press is never a silent dead end: microphone denied, a microphone question nobody answers,
  *      a socket that throws or closes before `ready`, and a confirmed-but-never-started interview.
+ *   5. Round 3 (20 Oct): the barge-in gate in a real browser (a synthetic microphone of known loudness: a quiet
+ *      room and a cough are held back while she speaks, a voice is sent), the status chip's Listening,
+ *      Transcribing…, Noted, the notebook open on a phone with its transcript, and the QA findings of 18 Oct.
  *
- *   node scripts/talk-page-check.mjs [--shots .tmp/shots]
+ *   node scripts/talk-page-check.mjs [--shots .tmp/shots] [--only 1,5]   (sections: 1 face, 1b room, 2 start,
+ *                                                                     3 reconnect, 4 busy card, 5 round 3)
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
-/* global window, document */
+/* global window, document, getComputedStyle, innerHeight, location */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -19,6 +23,9 @@ import { resolve } from 'node:path';
 const args = process.argv.slice(2);
 const shots = resolve(args.includes('--shots') ? (args[args.indexOf('--shots') + 1] ?? '.tmp/shots') : '.tmp/shots');
 mkdirSync(shots, { recursive: true });
+const only = args.includes('--only') ? (args[args.indexOf('--only') + 1] ?? '').split(',') : null;
+/** Run this section? All of them unless --only names some. */
+const want = (section) => !only || only.includes(section);
 const dist = resolve('dist');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.woff2': 'font/woff2' };
 const server = createServer((req, res) => {
@@ -127,7 +134,7 @@ const DRAWN = /\/aida\/(aida(-640)?|mouth-[a-z]+|blink)\.webp$/;
 const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
 
 // ---------- 1. the face ----------
-{
+if (want('1')) {
   const browser = await chrome();
   for (const [w, h, tag] of [[390, 844, 'phone'], [1280, 800, 'desktop']]) {
     const size = { width: w, height: h };
@@ -161,7 +168,7 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
 }
 
 // ---------- 1b. the room, the pending and welcome-back screens ----------
-{
+if (want('1b')) {
   const browser = await chrome(FAKE_MIC);
   for (const [w, h, tag] of [[390, 844, 'phone'], [1280, 800, 'desktop']]) {
     const size = { width: w, height: h };
@@ -225,7 +232,7 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
 }
 
 // ---------- 2. the Start press ----------
-{
+if (want('2')) {
   // microphone permission denied: no flag, no permission
   const denied = await chrome();
   {
@@ -310,7 +317,7 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
 }
 
 // ---------- 3. a dropped line reconnects on its own ----------
-{
+if (want('3')) {
   const browser = await chrome(FAKE_MIC);
   const resumedBody = { id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [{ section: 'org', text: 'Forty staff on two sites', at: 40 }] } };
   let roomAt = 0;
@@ -412,7 +419,7 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
 }
 
 // ---------- 4. the busy card: never "already open" beside an active button ----------
-{
+if (want('4')) {
   const browser = await chrome();
   for (const [w, h, tag] of [[390, 844, 'phone'], [1280, 800, 'desktop']]) {
     let calls = 0;
@@ -442,6 +449,254 @@ const FAKE_MIC = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media
     await page.waitForTimeout(700);
     const hidden = await page.evaluate(() => document.querySelector('#again').hidden);
     check(`"Already started? Continue where you left off" is ${want ? 'hidden for a known visitor' : 'shown to a stranger'}`, hidden === want);
+    await ctx.close();
+  }
+  await browser.close();
+}
+
+// ---------- 5. round 3 (20 Oct) ----------
+if (want('5')) {
+  const browser = await chrome([...FAKE_MIC, '--autoplay-policy=no-user-gesture-required']);
+  const phone = { width: 390, height: 844 };
+  const desk = { width: 1280, height: 800 };
+  // A microphone whose loudness the check sets: white noise (RMS 1) through a gain, window.__mic.gain.value.
+  const SYNTH_MIC = `navigator.mediaDevices.getUserMedia = async () => {
+    const ctx = new AudioContext();
+    await ctx.resume().catch(() => undefined);
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.sqrt(3);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.004;
+    const dest = ctx.createMediaStreamDestination();
+    src.connect(gain).connect(dest);
+    src.start();
+    window.__mic = gain;
+    window.__micCtx = ctx;
+    return dest.stream;
+  };`;
+  const NO_TURNSTILE = "window.turnstile = { render: (c, o) => { window.__o = o; return 'w'; }, execute: () => setTimeout(() => window.__o.callback('t'), 20), reset: () => {} };";
+  const status = (page) => page.evaluate(() => document.querySelector('#status-text').textContent);
+  const intoRoom = async (page, avatar = false) => {
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await page.evaluate(([s, a]) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: a } }), [sections, avatar]);
+    await page.waitForTimeout(300);
+  };
+
+  // The barge-in gate, end to end: worklet level -> gate -> socket.
+  {
+    const { ctx, page, errors } = await open(browser, { size: phone, perms: ['microphone'], goto: `/talk/?go=${GO}`, init: SYNTH_MIC });
+    await intoRoom(page);
+    const sent = () => page.evaluate(() => window.__sent.filter((m) => m.includes('realtimeInput')).length);
+    const gain = (v) => page.evaluate((x) => { window.__mic.gain.value = x; }, v);
+    await page.waitForTimeout(1500);
+    const before = await sent();
+    check('gate: while she is not speaking, the microphone is sent as before (a quiet room included)', before >= 8, before);
+    // Her voice: 6 s of a soft tone on the PCM queue, and her words.
+    await page.evaluate(() => {
+      const n = 24000 * 6;
+      const bytes = new Uint8Array(n * 2);
+      const view = new DataView(bytes.buffer);
+      for (let i = 0; i < n; i++) view.setInt16(i * 2, Math.round(Math.sin((i / 24000) * 2 * Math.PI * 220) * 3000), true);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      window.__ws.push({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: btoa(bin) } }] } } });
+      window.__ws.push({ serverContent: { outputTranscription: { text: 'Tell me about the hours your team works, and who checks them.' } } });
+    });
+    await page.waitForTimeout(300);
+    const s0 = await sent();
+    await page.waitForTimeout(1800);
+    const s1 = await sent();
+    const speaking = await status(page);
+    check(`gate: while she speaks, a quiet room is held back (${s1 - s0} frames sent in 1.8 s; chip "${speaking}")`, s1 - s0 === 0 && speaking === 'Aida is speaking', s1 - s0);
+    // A cough: exactly 150 ms, loud, timed on the microphone's own audio clock.
+    await page.evaluate(() => {
+      const t = window.__micCtx.currentTime + 0.05;
+      window.__mic.gain.setValueAtTime(0.3, t);
+      window.__mic.gain.setValueAtTime(0.004, t + 0.15);
+    });
+    await page.waitForTimeout(800);
+    const s2 = await sent();
+    check(`gate: a 150 ms cough while she speaks is held back too (${s2 - s1} frames)`, s2 - s1 === 0, s2 - s1);
+    // Their voice: loud and lasting.
+    await gain(0.12);
+    await page.waitForTimeout(1000);
+    const s3 = await sent();
+    check(`gate: their voice over hers opens it: the held ~300 ms first, then everything (${s3 - s2} frames in 1 s)`, s3 - s2 >= 9, s3 - s2);
+    await gain(0.004);
+    await page.waitForTimeout(1300);
+    const s4 = await sent();
+    await page.waitForTimeout(400);
+    const s5 = await sent();
+    check(`gate: ...and shuts ~800 ms after they stop, while she is still speaking (${s5 - s4} frames in the last 0.4 s)`, s5 - s4 === 0, s5 - s4);
+    // After her voice ends: the chip says Transcribing… (they spoke, she has not answered yet), then Noted.
+    await page.waitForFunction(() => document.querySelector('#status-text').textContent !== 'Aida is speaking', null, { timeout: 5000 });
+    const t1 = await status(page);
+    check(`chip: once she stops, "${t1}" (they spoke; nothing from her yet)`, t1 === 'Transcribing…', t1);
+    const pulsing = await page.evaluate(() => getComputedStyle(document.querySelector('#status-text')).animationName);
+    check('chip: the word Transcribing… pulses', pulsing === 'pulse', pulsing);
+    await page.screenshot({ path: `${shots}/r3-chip-transcribing-phone.png` });
+    await page.evaluate(() => window.__ws.push({ aida: { type: 'note', section: 'workflows', text: 'Hours are checked by two supervisors every Friday afternoon' } }));
+    await page.waitForTimeout(250);
+    const t2 = await status(page);
+    await page.screenshot({ path: `${shots}/r3-chip-noted-phone.png` });
+    await page.waitForTimeout(1600);
+    const t3 = await status(page);
+    check(`chip: a note flashes "${t2}", then "${t3}"`, t2 === 'Noted' && t3 === 'Listening', `${t2} -> ${t3}`);
+    await gain(0.12);
+    await page.waitForTimeout(600);
+    const t4 = await status(page);
+    await gain(0.004);
+    await page.waitForTimeout(1300);
+    const t5 = await status(page);
+    check(`chip: "${t4}" while they talk, "${t5}" once they stop`, t4 === 'Listening' && t5 === 'Transcribing…', `${t4} -> ${t5}`);
+    check('gate: no page errors', errors.length === 0, errors.join('; '));
+    await ctx.close();
+  }
+
+  // The notebook: open on a phone, the side page on a desk; Notes and Transcript.
+  for (const [size, tag] of [[phone, 'phone'], [desk, 'desktop']]) {
+    const { ctx, page, errors } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}` });
+    await intoRoom(page, true);
+    await page.evaluate(() => {
+      const her = (t) => window.__ws.push({ serverContent: { outputTranscription: { text: t } } });
+      const you = (t) => window.__ws.push({ serverContent: { inputTranscription: { text: t } } });
+      her('Which tools do you use to track the hours your cleaners work?');
+      you('A phone app with GPS, and a kiosk at the depot.');
+      window.__ws.push({ aida: { type: 'note', section: 'tools', text: 'A phone app with GPS, and a kiosk at the depot' } });
+      her('Who checks them?');
+    });
+    await page.waitForTimeout(500);
+    const nb = await page.evaluate(() => {
+      const body = document.querySelector('#nb-body');
+      const r = document.querySelector('#notebook').getBoundingClientRect();
+      return {
+        visible: getComputedStyle(body).visibility === 'visible' && r.height > 0,
+        peek: getComputedStyle(document.querySelector('#nb-toggle')).display,
+        share: r.height / innerHeight,
+        why: document.querySelector('.nb-why').textContent,
+        selected: document.querySelector('[role=tab][aria-selected=true]').id,
+        oldLink: document.querySelector('#said-more'),
+        note: document.querySelector('#nb-groups li')?.textContent ?? '',
+      };
+    });
+    check(`[${tag}] the notebook is open without a tap (${Math.round(nb.share * 100)}% of the height), Notes first, the old "Show what she said" gone`, nb.visible && nb.peek === 'none' && nb.selected === 'tab-notes' && nb.oldLink === null && /kiosk at the depot/.test(nb.note) && (tag === 'desktop' || (nb.share > 0.3 && nb.share < 0.5)), JSON.stringify({ ...nb, why: undefined }));
+    check(`[${tag}] its quiet line says what happens to what they say`, nb.why === 'Everything you say is analysed afterwards to build your AI and automation strategy and business plan.', nb.why);
+    await page.click('#tab-transcript');
+    await page.waitForTimeout(200);
+    const lines = await page.evaluate(() => [...document.querySelectorAll('#transcript li')].map((li) => li.textContent.replace(/\s+/g, ' ').trim()));
+    check(`[${tag}] Transcript: the whole exchange in order, "Aida:" and "You:"`, lines.join(' | ') === 'Aida: Which tools do you use to track the hours your cleaners work? | You: A phone app with GPS, and a kiosk at the depot. | Aida: Who checks them?', lines.join(' | '));
+    if (tag === 'phone') {
+      // Many turns: it follows the newest; scrolled up, it stays where the person is reading.
+      await page.evaluate(() => {
+        for (let i = 0; i < 12; i++) {
+          window.__ws.push({ serverContent: { outputTranscription: { text: `Question ${i}: and how does that part of the week go for your team?` } } });
+          window.__ws.push({ serverContent: { inputTranscription: { text: `Answer ${i}: it mostly goes fine, apart from the Friday check.` } } });
+        }
+      });
+      await page.waitForTimeout(500);
+      const atEnd = await page.evaluate(() => { const p = document.querySelector('#nb-transcript'); return p.scrollHeight - p.scrollTop - p.clientHeight; });
+      await page.screenshot({ path: `${shots}/r3-transcript-phone.png` });
+      await page.waitForTimeout(900);
+      await page.evaluate(() => { document.querySelector('#nb-transcript').scrollTop = 0; });
+      await page.waitForTimeout(200);
+      await page.evaluate(() => window.__ws.push({ serverContent: { outputTranscription: { text: 'One more question for you.' } } }));
+      await page.waitForTimeout(500);
+      const kept = await page.evaluate(() => document.querySelector('#nb-transcript').scrollTop);
+      check(`[${tag}] the transcript follows the newest line (${Math.round(atEnd)} px from the end), and stays put once they scroll up (${kept} px)`, atEnd < 24 && kept < 5, `${atEnd} / ${kept}`);
+    }
+    check(`[${tag}] no page errors in the notebook`, errors.length === 0, errors.join('; '));
+    await ctx.close();
+  }
+
+  // A used or second-tab email link in a browser with a session: welcome back, not "One click to begin".
+  {
+    const known = { known: true, name: 'Sam Example', canContinue: true, minutesSoFar: 3, canStartNew: true };
+    const { ctx, page } = await open(browser, { size: phone, goto: `/talk/?go=${GO}`, me: known });
+    await page.waitForSelector('#known-card:not([hidden])');
+    await page.waitForTimeout(300);
+    const s = await page.evaluate(() => ({ go: document.querySelector('#go-card').hidden, consent: document.querySelector('#consent-form').hidden, title: document.querySelector('#known-title').textContent, address: location.search }));
+    check('?go= in a browser with a session: the welcome-back card, no "One click to begin", the token out of the address bar', s.go && s.consent && s.title === 'Welcome back, Sam' && s.address === '', JSON.stringify(s));
+    await page.click('#known-forget');
+    await page.waitForTimeout(200);
+    const after = await page.evaluate(() => ({ go: !document.querySelector('#go-card').hidden, known: document.querySelector('#known-card').hidden }));
+    check('...and "Not you?" then offers that link\'s own one-click card', after.go && after.known, JSON.stringify(after));
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await open(browser, { size: phone, goto: `/talk/?go=${GO}` });
+    await page.waitForSelector('#go-card:not([hidden])', { timeout: 5000 });
+    check('?go= with no session: "One click to begin", as before', await page.isVisible('#go-go'));
+    await ctx.close();
+  }
+
+  // "Not you? Use a different email" clears what this tab kept.
+  {
+    const seed = `sessionStorage.setItem('aida:details', JSON.stringify({ name: 'Sam Example', role: 'Owner', company: 'Acme Cleaning', industry: 'Cleaning', email: '', phone: '', teamSize: '' })); sessionStorage.setItem('aida:consent', JSON.stringify({ consent: true }));`;
+    const { ctx, page } = await open(browser, { size: phone, init: seed, me: { known: true, name: 'Sam Example', canContinue: true, canStartNew: true } });
+    await page.waitForSelector('#known-card:not([hidden])');
+    const was = await page.evaluate(() => ({ name: document.querySelector('#f-name').value, consent: document.querySelector('#consent').checked }));
+    await page.click('#known-forget');
+    await page.waitForTimeout(200);
+    const now = await page.evaluate(() => ({ details: sessionStorage.getItem('aida:details'), consent: sessionStorage.getItem('aida:consent'), name: document.querySelector('#f-name').value, ticked: document.querySelector('#consent').checked, form: !document.querySelector('#consent-form').hidden }));
+    check('"Not you?" clears the saved details and consent, and the form', was.name === 'Sam Example' && was.consent && now.details === null && now.consent === null && now.name === '' && !now.ticked && now.form, JSON.stringify({ was, now }));
+    await ctx.close();
+  }
+
+  // The top Start without the tick, and field errors that clear when put right.
+  for (const [size, tag] of [[phone, 'phone'], [desk, 'desktop']]) {
+    const { ctx, page } = await open(browser, { size, init: NO_TURNSTILE });
+    await page.click('#start-top');
+    await page.waitForTimeout(300);
+    const top = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, error: document.querySelector('#consent-error').hidden ? '' : document.querySelector('#consent-error').textContent }));
+    check(`[${tag}] the top Start without the tick says what the bottom one says`, top.screen === 'intro' && top.error === 'Please tick the box to agree before you start.', JSON.stringify(top));
+    await page.screenshot({ path: `${shots}/r3-top-start-${tag}.png` });
+    await page.click('.check .box');
+    await page.click('#start-top');
+    await page.waitForSelector('#details:not([hidden])');
+    check(`[${tag}] ...and with the tick, goes on to the form`, true);
+    await page.click('#details-go');
+    const shown = (f) => page.evaluate((x) => !document.querySelector(`#e-${x}`).hidden, f);
+    const all = { team: await shown('teamSize'), email: await shown('email'), name: await shown('name') };
+    await page.click('#team-sizes label:nth-child(2)');
+    const team = await shown('teamSize');
+    await page.fill('#f-email', 'sam@');
+    const half = await shown('email');
+    await page.fill('#f-email', ['sam', 'acme.example'].join('@'));
+    const email = await shown('email');
+    const name = await shown('name');
+    check(`[${tag}] field errors clear as soon as the field is put right (team size, email), not before, and not the others`, all.team && all.email && all.name && !team && half && !email && name, JSON.stringify({ all, team, half, email, name }));
+    await ctx.close();
+  }
+
+  // In the room: a double click on Type, and Back after the end screen.
+  for (const [size, tag] of [[phone, 'phone'], [desk, 'desktop']]) {
+    const { ctx, page } = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}` });
+    await intoRoom(page);
+    await page.evaluate(() => window.__ws.push({ serverContent: { outputTranscription: { text: 'Hello, and thank you for your time.' } } }));
+    await page.dblclick('#type');
+    await page.waitForTimeout(250);
+    const open1 = await page.evaluate(() => !document.querySelector('#typer').hidden);
+    const width = await page.evaluate(() => ({ box: document.querySelector('#typed').getBoundingClientRect().width, column: document.querySelector('#captions').getBoundingClientRect().width }));
+    await page.waitForTimeout(450);
+    await page.click('#type');
+    await page.waitForTimeout(150);
+    const closed = await page.evaluate(() => document.querySelector('#typer').hidden);
+    check(`[${tag}] a double click on Type opens the box and leaves it open; a later click closes it`, open1 && closed, JSON.stringify({ open1, closed }));
+    check(`[${tag}] the answer box takes the caption column (${Math.round(width.box)} px of ${Math.round(width.column)} px)`, width.box > width.column * 0.75, JSON.stringify(width));
+    await page.evaluate(() => window.__ws.push({ aida: { type: 'ended', reason: 'complete', minutes: 4 } }));
+    await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+    await page.goBack();
+    await page.waitForTimeout(500);
+    const back1 = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, end: !document.querySelector('#end-screen').hidden }));
+    await page.goBack();
+    await page.waitForTimeout(500);
+    const back2 = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, end: !document.querySelector('#end-screen').hidden, confirm: !document.querySelector('#confirm').hidden }));
+    check(`[${tag}] Back after the end screen stays on the end screen, never a dead "Finished" room`, back1.screen === 'end' && back1.end && back2.screen === 'end' && back2.end && !back2.confirm, JSON.stringify({ back1, back2 }));
     await ctx.close();
   }
   await browser.close();

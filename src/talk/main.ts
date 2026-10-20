@@ -142,6 +142,17 @@ function show(name: Screen, focus = true): void {
 
 // Back out of the room asks before hanging up; anywhere else Back simply goes to the previous screen.
 window.addEventListener("popstate", () => {
+  // Back from the end screen stays on it: the room behind it is over (QA 18 Oct: Back led to a dead "Finished"
+  // room). Its own buttons and the home-page link are the ways on.
+  if (app.dataset.screen === "end") {
+    history.pushState({ screen: "end" }, "");
+    return;
+  }
+  if (app.dataset.screen === "room" && state.phase === "ended") {
+    // Finished, her last words still playing: the end screen is a moment away. Nothing to hang up.
+    history.pushState({ screen: "room" }, "");
+    return;
+  }
   if (app.dataset.screen === "room") {
     // Stay in the room's history entry, so a second Back asks again instead of leaving the site.
     history.pushState({ screen: "room" }, "");
@@ -251,21 +262,38 @@ function control(field: Field): HTMLElement | null {
     : document.getElementById(`f-${field}`);
 }
 
+/** One field's error line and its aria-invalid, shown or cleared. */
+function markField(field: Field, message: string | undefined): void {
+  const el = document.getElementById(`e-${field}`);
+  if (el) setError(el, message);
+  const input = control(field);
+  const targets = field === "teamSize" ? Array.from(chips.querySelectorAll("input")) : input ? [input] : [];
+  for (const t of targets) {
+    if (message) t.setAttribute("aria-invalid", "true");
+    else t.removeAttribute("aria-invalid");
+  }
+}
+
 function showFieldErrors(errors: Partial<Record<Field | "consent", string>>): void {
   let first: HTMLElement | null = null;
   for (const field of FIELDS) {
     const message = errors[field];
-    const el = document.getElementById(`e-${field}`);
-    if (el) setError(el, message);
-    const input = control(field);
-    const targets = field === "teamSize" ? Array.from(chips.querySelectorAll("input")) : input ? [input] : [];
-    for (const t of targets) {
-      if (message) t.setAttribute("aria-invalid", "true");
-      else t.removeAttribute("aria-invalid");
-    }
-    if (message && !first) first = input;
+    markField(field, message);
+    if (message && !first) first = control(field);
   }
   first?.focus();
+}
+
+/**
+ * A field's error goes as soon as the field is put right, not on the next submit (QA 18 Oct: team size and
+ * email kept their errors after being fixed). Nothing new is said while they type: only a shown error clears.
+ */
+function clearIfFixed(field: Field): void {
+  const el = document.getElementById(`e-${field}`);
+  if (!el || el.hidden) return;
+  const checked = checkDetails(readForm());
+  if (!checked.ok && checked.errors[field]) return;
+  markField(field, undefined);
 }
 
 function readForm(): Partial<Record<Field, string>> {
@@ -308,8 +336,16 @@ function restoreDetails(): void {
 }
 for (const f of FIELDS) {
   const el = document.getElementById(`f-${f}`);
-  if (el instanceof HTMLInputElement) el.addEventListener("input", saveDetails);
+  if (el instanceof HTMLInputElement) {
+    el.addEventListener("input", () => {
+      saveDetails();
+      clearIfFixed(f);
+    });
+  }
 }
+chips.addEventListener("change", () => {
+  clearIfFixed("teamSize");
+});
 consent.addEventListener("change", () => {
   try {
     sessionStorage.setItem(CONSENT_KEY, JSON.stringify({ consent: consent.checked }));
@@ -317,6 +353,21 @@ consent.addEventListener("change", () => {
     /* ignore */
   }
 });
+/** "Not you?": the details and the tick this tab kept are someone else's. Clear them, and the form. */
+function forgetSaved(): void {
+  try {
+    sessionStorage.removeItem(DETAILS_KEY);
+    sessionStorage.removeItem(CONSENT_KEY);
+  } catch {
+    /* storage can be off: nothing was kept */
+  }
+  form.reset();
+  for (const counter of form.querySelectorAll<HTMLElement>(".limit")) counter.hidden = true;
+  showFieldErrors({});
+  consent.checked = false;
+  setError(consentError, undefined);
+  consent.removeAttribute("aria-invalid");
+}
 const savedConsent = loadSaved(CONSENT_KEY) as { consent: boolean } | null;
 if (savedConsent) consent.checked = savedConsent.consent;
 restoreDetails();
@@ -634,6 +685,7 @@ const stageEl = byId("stage", HTMLDivElement);
 const videoEl = byId("avatar-video", HTMLVideoElement);
 const voiceOnlyBtn = byId("voice-only", HTMLButtonElement);
 const soundBtn = byId("avatar-sound", HTMLButtonElement);
+const slowOffer = byId("slow-offer", HTMLDivElement);
 let player: AvatarPlayer | null = null;
 
 function avatarAsk(): AvatarAsk {
@@ -659,6 +711,10 @@ function startAvatar(): void {
     onMuted: () => {
       soundBtn.hidden = false;
     },
+    // More than ~3 s behind live for 10 s: one line offers the in-place switch (once a call).
+    onSlow: () => {
+      if (state.phase === "live" && !state.switching) slowOffer.hidden = false;
+    },
   });
   if (!player.start()) {
     player = null;
@@ -677,6 +733,7 @@ function stopAvatar(): void {
   videoEl.hidden = true;
   voiceOnlyBtn.hidden = true;
   soundBtn.hidden = true;
+  slowOffer.hidden = true;
   delete stageEl.dataset.avatar;
   delete stageEl.dataset.video;
 }
@@ -750,11 +807,15 @@ async function switchToVoiceOnly(): Promise<void> {
   dispatch({ kind: "closed", minutes: elapsed() / 60 });
 }
 
-voiceOnlyBtn.addEventListener("click", () => {
+/** "Switch to voice only", from the pill on her video or the slow-link offer: the same in-place move. */
+function chooseVoiceOnly(): void {
+  slowOffer.hidden = true;
   if (state.switching) return;
   rememberVoiceOnly(safeStorage());
   void switchToVoiceOnly();
-});
+}
+voiceOnlyBtn.addEventListener("click", chooseVoiceOnly);
+byId("slow-switch", HTMLButtonElement).addEventListener("click", chooseVoiceOnly);
 soundBtn.addEventListener("click", () => {
   soundBtn.hidden = true;
   player?.unmute();
@@ -1563,7 +1624,12 @@ function openTyper(open: boolean): void {
   if (open) typed.focus();
 }
 
+// A double click must not open the box and shut it again (QA 18 Oct): a second click within 400 ms is ignored.
+let typeToggledAt = -Infinity;
 typeBtn.addEventListener("click", () => {
+  const now = performance.now();
+  if (now - typeToggledAt < 400) return;
+  typeToggledAt = now;
   openTyper(typer.hidden);
 });
 
@@ -1954,8 +2020,9 @@ function introFor(mode: "stranger" | "go" | "known" | "resume"): void {
 // (impatient on a laptop, mobile, 18 Oct): it scrolls to the box and puts the cursor in it.
 const startTop = byId("start-top", HTMLButtonElement);
 startTop.addEventListener("click", () => {
-  consentForm.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
-  consent.focus({ preventScroll: true });
+  // The same press as the Start under the box: without the tick, the same "Please tick the box…" (QA 18 Oct).
+  consentForm.requestSubmit();
+  if (app.dataset.screen === "intro") consentForm.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
 });
 
 function showNotice(message: string): void {
@@ -2151,7 +2218,17 @@ knownVoice.addEventListener("click", () => {
 });
 byId("known-forget", HTMLButtonElement).addEventListener("click", () => {
   void post("/api/talk/forget", {});
-  hideKnown();
+  // Someone else's details and tick must not be waiting in the form (QA 18 Oct): forget what this tab kept.
+  forgetSaved();
+  knownCard.hidden = true;
+  if (pendingGo) {
+    // They came by a confirmation link while this browser knew someone: that link is theirs to use now.
+    goCard.hidden = false;
+    introFor("go");
+    goBtn.focus({ preventScroll: true });
+    return;
+  }
+  introFor("stranger");
   consent.focus({ preventScroll: true });
 });
 
@@ -2182,8 +2259,13 @@ endContinue.addEventListener("click", () => {
 const entry = entryFor(takeLanding(location, history));
 if (entry.kind === "go") {
   pendingGo = entry.token;
-  goCard.hidden = false;
+  // A used link, or the same link opened in a second tab, in a browser that already holds a session: welcome
+  // back, not "One click to begin" (QA 18 Oct). So /me is asked first; the card shows only for a stranger
+  // (or when /me cannot be reached). The consent box is not asked again either way.
   introFor("go");
+  void checkMe().then((me) => {
+    if (!me && pendingGo && app.dataset.screen === "intro") goCard.hidden = false;
+  });
 } else if (entry.kind === "resume") {
   pendingToken = entry.token;
   welcomeBack.hidden = false;
