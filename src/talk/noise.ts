@@ -104,13 +104,14 @@ function trim<T>(held: GateFrame<T>[]): GateFrame<T>[] {
   return drop ? held.slice(drop) : held;
 }
 
-/**
- * One microphone frame through the gate. `herSpeaking`: her voice is playing now (the PCM queue on a voice
- * call, her open caption on a video call).
- */
 const clean = (n: number): number => (Number.isFinite(n) ? Math.max(0, n) : 0);
 
-export function stepGate<T>(g: Gate<T>, frame: GateFrame<T>, herSpeaking: boolean): GateStep<T> {
+/**
+ * One microphone frame through the gate. `herSpeaking`: her voice is playing now (the PCM queue on a voice
+ * call, her open caption on a video call). `learn`: false while the microphone is muted (its silence is not the
+ * room, and must not drop the floor the room's noise is measured against).
+ */
+export function stepGate<T>(g: Gate<T>, frame: GateFrame<T>, herSpeaking: boolean, learn = true): GateStep<T> {
   const ms = clean(frame.ms);
   const blocks = frame.levels?.length ? frame.levels : [frame.level];
   const each = ms / blocks.length;
@@ -124,7 +125,7 @@ export function stepGate<T>(g: Gate<T>, frame: GateFrame<T>, herSpeaking: boolea
       coolMs += each;
       if (coolMs > BRIDGE_MS) hotMs = 0;
     }
-    floor = nextFloor(floor, level, each);
+    if (learn) floor = nextFloor(floor, level, each);
     if (hotMs >= OPEN_MS) open = true;
     else if (open && coolMs > HOLD_MS) open = false;
   }

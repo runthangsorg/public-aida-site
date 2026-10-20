@@ -86,6 +86,8 @@ export class Voice {
   speakingElsewhere: (() => boolean) | null = null;
   /** Told when the gate starts or stops hearing the person's voice (not ten times a second: on the change). */
   onVoice: ((on: boolean) => void) | null = null;
+  /** Muted: the track sends silence, which the gate must not learn as the room. */
+  private muted = false;
 
   /**
    * Make both audio contexts inside the click that started the interview:
@@ -138,6 +140,7 @@ export class Voice {
       if (name === "NotFoundError" || name === "OverconstrainedError") throw new MicError("missing");
       throw new MicError("failed");
     }
+    this.muted = false; // a new stream's track starts live; a reconnect puts the person's mute back itself
     try {
       await this.attach();
     } catch {
@@ -179,7 +182,7 @@ export class Voice {
     const rate = this.resampler?.from ?? this.input?.sampleRate ?? INPUT_RATE;
     const was = this.gate.open;
     const frame = { item: raw, level: loudness, ms: (raw.length / rate) * 1000, ...(levels ? { levels } : {}) };
-    const step = stepGate(this.gate, frame, this.herVoicePlaying);
+    const step = stepGate(this.gate, frame, this.herVoicePlaying, !this.muted);
     this.gate = step.gate;
     if (step.gate.open !== was) this.onVoice?.(step.gate.open);
     if (!this.streaming || !this.resampler) return;
@@ -201,6 +204,7 @@ export class Voice {
   setMuted(muted: boolean): void {
     // A muted track sends silence, so the line stays open and her turn-taking still works.
     for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = !muted;
+    this.muted = muted;
     if (muted) this.micLevel = 0;
   }
 

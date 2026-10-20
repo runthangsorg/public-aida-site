@@ -256,6 +256,25 @@ describe("the barge-in gate", () => {
     });
   });
 
+  it("a muted spell (silence) does not unlearn the room: after unmuting, the same steady noise stays shut out", () => {
+    const noisy = steady(0.05, 5000, 0.004, 13);
+    const muted = steady(0, 10_000);
+    const again = steady(0.05, 5000, 0.004, 17);
+    const go = (learnWhileMuted: boolean): boolean => {
+      let gate = startGate<number>();
+      let opened = false;
+      [...noisy, ...muted, ...again].forEach((level, i) => {
+        const isMuted = i >= noisy.length && i < noisy.length + muted.length;
+        gate = stepGate(gate, { item: i, level, ms: FRAME_MS }, true, learnWhileMuted || !isMuted).gate;
+        if (i >= noisy.length + muted.length) opened ||= gate.open;
+      });
+      return opened;
+    };
+    expect(go(false)).toBe(false);
+    // Learning from the muted silence would have dropped the floor, and the room's noise would open it.
+    expect(go(true)).toBe(true);
+  });
+
   it("a muted microphone (silence) or a broken level never opens it", () => {
     expect(run(steady(0, 5000), true).sent).toEqual([]);
     expect(run([Number.NaN, Number.POSITIVE_INFINITY, -1, ...steady(0.003, 1000)], true).open.some(Boolean)).toBe(false);
