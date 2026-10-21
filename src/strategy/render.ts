@@ -37,6 +37,8 @@ function numbered(doc: Document, items: readonly string[]): HTMLElement {
   return ol;
 }
 
+const PLAIN_ADDRESS = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+
 const QUADRANTS = [
   ["strengths", "Strengths", "s"],
   ["weaknesses", "Weaknesses", "w"],
@@ -119,7 +121,9 @@ export function renderStrategy(doc: Document, view: StrategyView): HTMLElement {
   const next = section(doc, "Next step", "block next-step");
   next.append(el(doc, "p", "body", deck.nextStep), el(doc, "p", "reply", "Reply to the team's email"));
   const contact = view.contact?.trim();
-  if (contact) {
+  // The server only sends an address it has checked; the page checks again, so a link can never carry more than
+  // one plain address.
+  if (contact && PLAIN_ADDRESS.test(contact)) {
     const link = el(doc, "a", "contact", "Email the Aida team");
     link.setAttribute("href", `mailto:${contact}`);
     next.append(link);

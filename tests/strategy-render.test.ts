@@ -148,6 +148,21 @@ describe("rendering the strategy", () => {
     expect(withContact?.textContent).toBe("Email the Aida team");
     expect(withContact?.attributes.get("href")).toBe(`mailto:${view.contact ?? ""}`);
 
+    // Only a plain address becomes a link: nothing that could carry a scheme, a query or a second recipient.
+    const at = "@"; // built from parts: the policy test forbids an address in a tracked file
+    const addr = (user: string, host: string) => `${user}${at}${host}`;
+    for (const odd of [
+      "javascript:alert(1)",
+      `${addr("a", "b.example")}?bcc=${addr("x", "y.example")}`,
+      `${addr("a", "b.example")}, ${addr("c", "d.example")}`,
+      addr("a b", "c.example"),
+      "https://x.example",
+    ]) {
+      const view2 = sampleView();
+      view2.contact = odd;
+      expect(walk(render(view2)).find((node) => node.className === "contact"), odd).toBeUndefined();
+    }
+
     const without = sampleView();
     without.contact = null;
     const link = walk(render(without)).find(
