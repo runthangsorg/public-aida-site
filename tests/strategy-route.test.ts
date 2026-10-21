@@ -8,6 +8,12 @@ describe("the strategy address", () => {
     expect(readRoute(`https://aida.example/strategy/${TOKEN}?c=${CODE}`)).toEqual({ token: TOKEN, code: CODE });
   });
 
+  it("needs no host of its own to read an address", () => {
+    expect(readRoute(`/strategy/${TOKEN}?c=${CODE}`)).toEqual({ token: TOKEN, code: CODE });
+    expect(readRoute(`//aida.example/strategy/${TOKEN}`).token).toBeNull();
+    expect(readRoute(`strategy/${TOKEN}`).token).toBe(TOKEN);
+  });
+
   it("accepts a trailing slash and a relative address", () => {
     expect(readRoute(`/strategy/${TOKEN}/`).token).toBe(TOKEN);
     expect(readRoute(`/strategy/${TOKEN}?c=${CODE}&utm=x#top`).code).toBe(CODE);

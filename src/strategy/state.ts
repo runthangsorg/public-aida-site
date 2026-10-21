@@ -71,7 +71,7 @@ export type ScreenState =
 export type StrategyEvent =
   | { type: "view"; status: number; body: unknown }
   | { type: "signin"; status: number; body: unknown }
-  | { type: "verify"; status: number }
+  | { type: "verify"; status: number; body?: unknown }
   | { type: "signout" };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -192,13 +192,20 @@ export function readView(value: unknown): StrategyView | null {
   };
 }
 
-/** The token and one-time code in the address bar, if they are well formed. */
+/**
+ * The token and one-time code in an address, if they are well formed. Read by hand rather than with `new URL`,
+ * which would need a host of its own for a relative address: only the path and the query matter here.
+ */
 export function readRoute(href: string): { token: string | null; code: string | null } {
-  const url = new URL(href, "https://aida.invalid");
-  const parts = url.pathname.split("/").filter(Boolean);
-  const raw = parts[0] === "strategy" && parts.length === 2 ? parts[1] : undefined;
+  const noFragment = href.split("#")[0] ?? "";
+  const q = noFragment.indexOf("?");
+  const rawPath = q < 0 ? noFragment : noFragment.slice(0, q);
+  const query = q < 0 ? "" : noFragment.slice(q + 1);
+  const path = rawPath.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
+  const parts = path.split("/").filter(Boolean);
+  const raw = parts[0] === "strategy" && parts.length === 2 && !path.startsWith("//") ? parts[1] : undefined;
   const token = raw && CODE_RE.test(raw) ? raw : null;
-  const rawCode = url.searchParams.get("c");
+  const rawCode = new URLSearchParams(query).get("c");
   const code = rawCode && CODE_RE.test(rawCode) ? rawCode : null;
   return { token, code };
 }
@@ -259,10 +266,10 @@ export function reduce(state: ScreenState, event: StrategyEvent): ScreenState {
     }
     case "verify": {
       if (event.status === 200) return { screen: "loading" };
-      if (event.status === 400) {
-        return signIn(state.screen === "sign-in" ? state.hint : "your email", EXPIRED_CODE_COPY);
-      }
-      return signIn(state.screen === "sign-in" ? state.hint : "your email", LOAD_FAILED_COPY);
+      const hint = state.screen === "sign-in" ? state.hint : "your email";
+      if (event.status === 400) return signIn(hint, EXPIRED_CODE_COPY);
+      if (event.status === 429) return signIn(hint, waitCopy(retryFrom(event.body)));
+      return signIn(hint, LOAD_FAILED_COPY);
     }
     case "signout":
       return { screen: "loading" };

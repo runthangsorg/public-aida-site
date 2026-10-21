@@ -130,12 +130,12 @@ async function page(size, { viewStatus, signin = true }) {
     if (msg.type() === "error") console.log(`console error: ${msg.text()}`);
   });
   await p.addInitScript(() => {
-    window.turnstile = {
+    globalThis.turnstile = {
       render: (container, options) => {
-        window.__turnstile = options;
+        globalThis.__turnstile = options;
         return "widget";
       },
-      execute: () => setTimeout(() => window.__turnstile?.callback("token"), 10),
+      execute: () => setTimeout(() => globalThis.__turnstile?.callback("token"), 10),
       reset: () => {},
     };
   });

@@ -118,6 +118,28 @@ describe("rendering the strategy", () => {
     ]);
   });
 
+  it("shows the deck's own headline under the company, as text", () => {
+    const view = sampleView();
+    const dek = walk(render(view)).find((node) => node.className === "dek");
+    expect(dek?.textContent).toBe(view.deck.title);
+
+    view.deck.title = SCRIPT;
+    const hostile = walk(render(view));
+    expect(hostile.some((node) => node.tagName === "script")).toBe(false);
+    expect(hostile.find((node) => node.className === "dek")?.textContent).toBe(SCRIPT);
+
+    view.deck.title = "";
+    expect(walk(render(view)).find((node) => node.className === "dek")).toBeUndefined();
+  });
+
+  it("signs a quote only when there is someone to sign it", () => {
+    const view = sampleView();
+    view.deck.speaker = "";
+    const article = render(view);
+    expect(article.textContent).not.toContain("— ");
+    expect(walk(article).filter((node) => node.tagName === "blockquote")).toHaveLength(view.deck.plays.length);
+  });
+
   it("offers a mailto link only when the view carries a contact", () => {
     const view = sampleView();
     const withContact = walk(render(view)).find(

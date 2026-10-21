@@ -104,6 +104,14 @@ describe("what the page shows for POST /api/strategy/verify", () => {
     });
   });
 
+  it("says how long to wait when the server rate-limits the sign-in link", () => {
+    expect(reduce(signIn, { type: "verify", status: 429, body: { error: "rate_limited", retryAfter: 125 } })).toEqual({
+      screen: "sign-in",
+      hint: HINT,
+      notice: waitCopy(125),
+    });
+  });
+
   it("returns to the form with a connection message on anything else", () => {
     expect(reduce(signIn, { type: "verify", status: 0 })).toEqual({
       screen: "sign-in",

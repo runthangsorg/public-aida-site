@@ -56,8 +56,10 @@ export function renderStrategy(doc: Document, view: StrategyView): HTMLElement {
     el(doc, "p", "kicker", "Your strategy"),
     title,
     el(doc, "p", "company", view.company),
-    el(doc, "p", "prepared", `Prepared by the Aida team · ${deck.dateLabel}`),
   );
+  // The deck's own headline, the outcome in the client's terms, under the company name.
+  if (deck.title.trim()) head.append(el(doc, "p", "dek", deck.title));
+  head.append(el(doc, "p", "prepared", `Prepared by the Aida team · ${deck.dateLabel}`));
   article.append(head);
 
   const heard = section(doc, "What we heard");
@@ -97,7 +99,8 @@ export function renderStrategy(doc: Document, view: StrategyView): HTMLElement {
     }
     card.append(terms);
     const quote = el(doc, "blockquote", "quote");
-    quote.append(el(doc, "p", undefined, play.evidence), el(doc, "footer", undefined, `— ${deck.speaker}`));
+    quote.append(el(doc, "p", undefined, play.evidence));
+    if (deck.speaker.trim()) quote.append(el(doc, "footer", undefined, `— ${deck.speaker}`));
     card.append(quote);
     start.append(card);
   }

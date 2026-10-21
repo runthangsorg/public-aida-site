@@ -368,6 +368,16 @@ a:hover {
   max-width: 15ch;
 }
 
+.dek {
+  margin: 12px 0 0;
+  max-width: 34em;
+  font-size: clamp(17px, 2.4vw, 21px);
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
 .company {
   margin: 20px 0 0;
   font-family: var(--display);

@@ -139,7 +139,7 @@ async function boot(): Promise<void> {
     });
     dropCode();
     if (verified.status !== 200) {
-      show(reduce(awaiting, { type: "verify", status: verified.status }));
+      show(reduce(awaiting, { type: "verify", status: verified.status, body: verified.body }));
       return;
     }
     show(reduce(state, { type: "verify", status: 200 }));
