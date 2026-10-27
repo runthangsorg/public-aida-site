@@ -12,7 +12,7 @@ export default defineConfig({
     cssCodeSplit: true,
     sourcemap: false,
     reportCompressedSize: true,
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: resolve(import.meta.dirname, "index.html"),
         talk: resolve(import.meta.dirname, "talk/index.html"),
