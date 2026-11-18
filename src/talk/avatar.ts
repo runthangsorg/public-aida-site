@@ -328,14 +328,6 @@ export function capabilityOf(win: MseWindow): Capability {
   };
 }
 
-// ---------- which face she wears ----------
-
-/** `vera`: her still. `drawn` exists for other pages; in the room she always wears Vera. */
-export type Face = 'vera' | 'drawn';
-
-/** The face, decided once at load. Voice only keeps Vera's still (owner, 18 Oct: never the drawn character). */
-export const faceFor = (): Face => 'vera';
-
 // ---------- the append queue ----------
 
 export function concat(parts: Uint8Array[]): Uint8Array {
@@ -416,7 +408,7 @@ export function canStart(ranges: Range[], currentTime: number): boolean {
 
 /**
  * The squint hides: the first 0.4 s after every new stream starts (the very start, and after each
- * connection swap) are kept behind the drawn portrait while the sound carries on.
+ * connection swap) are kept behind her still while the sound carries on.
  */
 export function hideRangeFor(boundary: number): Range {
   return { start: boundary, end: boundary + SQUINT_SECONDS };
@@ -515,7 +507,7 @@ export function stepSlowLink(s: SlowLink, e: SlowLinkEvent): { state: SlowLink; 
 export interface PlayerHooks {
   /** Video has failed for this reason; the player has already stopped itself. */
   onFail(reason: FailReason): void;
-  /** The video should be on show (true) or the drawn portrait should (false). */
+  /** The video should be on show (true) or her still should (false). */
   onVisible(visible: boolean): void;
   /** The browser would not play her sound without a tap: it is playing muted. */
   onMuted?(): void;

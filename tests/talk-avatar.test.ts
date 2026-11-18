@@ -21,7 +21,6 @@ import {
   decodeBase64Bytes,
   edgeAction,
   evictRange,
-  faceFor,
   hideRangeFor,
   interruptTarget,
   isInitSegment,
@@ -437,14 +436,6 @@ describe("when video fails", () => {
     const failed = nextHealth(live(), { t: "player-error" });
     expect(nextHealth(failed, { t: "media", now: 10 })).toBe(failed);
     expect(nextHealth(failed, { t: "append-ok" })).toBe(failed);
-  });
-});
-
-// ---------- which face she wears ----------
-
-describe("which face she wears", () => {
-  it("Vera's still everywhere, including voice only (owner, 18 Oct: no drawn character swap)", () => {
-    expect(faceFor()).toBe("vera");
   });
 });
 

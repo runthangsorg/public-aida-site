@@ -3,7 +3,7 @@
 //   mic → AudioContext (16 kHz if the browser allows it) → inline AudioWorklet
 //       → Float32 → resample to 16 kHz → 64 ms PCM16 frames → base64 → socket
 //   socket → base64 PCM16 at 24 kHz → AudioBuffer → a gapless playback queue
-//          → an analyser (her mouth) → speakers
+//          → speakers
 //
 // Microphone audio is dropped, not buffered, until the server says `ready`:
 // everything before that is the room (a radio, a colleague), and the model
@@ -13,7 +13,6 @@
 // back unless the person's own voice is plainly there: noise, a cough or her
 // own echo no longer cuts her off mid-sentence.
 
-import { FFT_SIZE, SMOOTHING, shapeFromSpectrum, type MouthShape } from "./mouth";
 import { FrameChunker, INPUT_RATE, OUTPUT_RATE, Resampler, base64ToBytes, encodePcm16, pcm16BytesToFloat, rateOf } from "./pcm";
 import { startGate, stepGate, type Gate } from "./noise";
 import { mediaFromMessage, textFromBinary } from "./avatar";
@@ -55,14 +54,8 @@ function newContext(rate: number): AudioContext {
 }
 
 export class Voice {
-  /** Low power: no analyser (no moving mouth to feed), her voice goes straight to the speakers. */
-  constructor(private readonly lite = false) {}
-
   private input: AudioContext | null = null;
   private output: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
-  private wave: Float32Array<ArrayBuffer> | null = null;
-  private freq: Float32Array<ArrayBuffer> | null = null;
   private stream: MediaStream | null = null;
   private node: AudioWorkletNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
@@ -96,15 +89,6 @@ export class Voice {
    */
   wake(): void {
     this.output ??= newContext(OUTPUT_RATE);
-    if (!this.lite && !this.analyser) {
-      const analyser = this.output.createAnalyser();
-      analyser.fftSize = FFT_SIZE;
-      analyser.smoothingTimeConstant = SMOOTHING;
-      analyser.connect(this.output.destination);
-      this.analyser = analyser;
-      this.wave = new Float32Array(new ArrayBuffer(analyser.fftSize * 4));
-      this.freq = new Float32Array(new ArrayBuffer(analyser.frequencyBinCount * 4));
-    }
     this.input ??= newContext(INPUT_RATE);
     for (const ctx of [this.output, this.input]) {
       if (ctx.state !== "running") void ctx.resume().catch(() => undefined);
@@ -311,7 +295,7 @@ export class Voice {
     pcm16BytesToFloat(bytes, buffer.getChannelData(0));
     const node = ctx.createBufferSource();
     node.buffer = buffer;
-    node.connect(this.analyser ?? ctx.destination);
+    node.connect(ctx.destination);
     const now = ctx.currentTime;
     this.playing = this.playing.filter((p) => p.end > now);
     // A new burst starts 100 ms ahead, so chunks that arrive a little late
@@ -364,18 +348,6 @@ export class Voice {
     return this.output ? Math.max(0, this.nextAt - this.output.currentTime) : 0;
   }
 
-  /** Her mouth right now, written into `out`. Closed when she is silent. */
-  readMouth(out: MouthShape): MouthShape {
-    if (!this.analyser || !this.wave || !this.freq || !this.output || this.queued <= 0) {
-      out.open = 0;
-      out.spread = 0.5;
-      return out;
-    }
-    this.analyser.getFloatTimeDomainData(this.wave);
-    this.analyser.getFloatFrequencyData(this.freq);
-    return shapeFromSpectrum(this.freq, this.wave, this.output.sampleRate, out);
-  }
-
   /** Close everything: socket, microphone, both contexts. */
   close(): void {
     this.flush();
@@ -389,6 +361,5 @@ export class Voice {
     for (const ctx of [this.input, this.output]) void ctx?.close().catch(() => undefined);
     this.input = null;
     this.output = null;
-    this.analyser = null;
   }
 }

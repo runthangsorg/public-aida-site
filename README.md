@@ -18,8 +18,8 @@ The server half is not in this repository; both pages talk only to their own sit
   `resume.ts`, `reconnect.ts`, `noise.ts`, `avatar.ts`; `src/strategy/state.ts` and `render.ts`.
 - Light on a weak laptop: nothing animates while the room is quiet; the microphone worklet and the
   socket move 100 ms frames, not one message per render quantum; the paper grain is a 2 KB tile.
-  Four cores or fewer, 4 GB of memory or less, or reduced motion: a still face and a "speaking"
-  ring instead.
+  Four cores or fewer, 4 GB of memory or less, or reduced motion: a plain "speaking" light and
+  no live microphone level.
 - Budget: 60 KB gzipped JS + CSS, enforced in CI.
 
 ## Develop
