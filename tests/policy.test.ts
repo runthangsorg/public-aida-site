@@ -1,8 +1,9 @@
 // Repository policy: this repository is public. Every tracked file is scanned
 // for things that must never be published, and the CI workflow is held to a
-// read-only, pinned, secret-free shape. The forbidden words are assembled
-// from fragments so that this file does not itself contain them.
+// read-only, pinned, secret-free shape. The forbidden words are listed only
+// as SHA-256 hashes of whole lower-case words, so this file does not reveal them.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -22,18 +23,16 @@ const BINARY =
 const textFiles = tracked.filter((path) => !BINARY.test(path));
 const read = (path: string): string => readFileSync(resolve(ROOT, path), "utf8");
 
-const forbiddenWords = [
-  ["chow", "dhree"],
-  ["jib", "ble"],
-  ["proj", "ect-"],
-].map((parts) => parts.join(""));
+// SHA-256 of each forbidden word (lower case). A file fails if any of its words,
+// split on anything that is not a letter or digit, hashes to one of these.
+const forbiddenWordHashes = new Set([
+  "89279772ac128e05836725491f0c1f2787aa665b57aedf01085c94398930c36c",
+  "cc4761dedafa7b29e0fc56f0345c5a456f51a13aaeaa89dd82d1b32c24355d55",
+]);
+const sha256 = (word: string): string => createHash("sha256").update(word).digest("hex");
 
-// Known-safe tokens that happen to contain a forbidden word. They are removed
-// from the text before scanning, so they never mask anything around them.
-const allowedTokens = ["proj" + "ect-service"];
-
-const scrub = (text: string): string =>
-  allowedTokens.reduce((acc, token) => acc.split(token).join(""), text);
+// A cloud project id of the generated "project-<hex>-…" shape.
+const PROJECT_ID = /\bproject-[0-9a-f]{8}-[0-9a-f]{4}/i;
 
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}/i;
 
@@ -71,10 +70,12 @@ describe("tracked files", () => {
   it("contain none of the forbidden words", () => {
     const hits: string[] = [];
     for (const path of textFiles) {
-      const lower = scrub(read(path)).toLowerCase();
-      for (const word of forbiddenWords) {
-        if (lower.includes(word)) hits.push(`${path}: ${word}`);
+      const text = read(path);
+      const words = new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+      for (const word of words) {
+        if (forbiddenWordHashes.has(sha256(word))) hits.push(`${path}: a forbidden word`);
       }
+      if (PROJECT_ID.test(text)) hits.push(`${path}: a project id`);
     }
     expect(hits).toEqual([]);
   });

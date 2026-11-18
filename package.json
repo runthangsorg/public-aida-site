@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Aida's coming-soon page: a static, lightweight animated introduction.",
+  "description": "The browser half of Aida's interview page (/talk/) and the client strategy page (/strategy/).",
   "license": "MIT",
   "engines": {
     "node": ">=22"

@@ -1,7 +1,5 @@
 import "./talk.css";
-import type { Mouth } from "../lipsync";
 import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, limitHint, startBody, type Field } from "./details";
-import { mouthFor, type MouthShape } from "./mouth";
 import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type ServerFrame, type Stage, setRelayOrigin } from "./protocol";
 import {
   looksLikeEmail,
@@ -71,8 +69,6 @@ import {
 import {
   AvatarPlayer,
   avatarParam,
-  faceFor,
-  type Face,
   capabilityOf,
   dataNote,
   decideAvatar,
@@ -95,9 +91,9 @@ void fetch("/talk/relay.json", { cache: "no-store" })
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// A weak machine gets a still face and a plain "speaking" light instead of a
-// moving mouth: four cores or fewer, 4 GB of memory or less, or a visitor who
-// asked for less motion.
+// A weak machine gets a plain "speaking" light and no live microphone level:
+// four cores or fewer, 4 GB of memory or less, or a visitor who asked for less
+// motion.
 const nav = navigator as Navigator & { deviceMemory?: number };
 const lowPower =
   still ||
@@ -168,45 +164,19 @@ window.addEventListener("popstate", () => {
 
 // ---------- her face, wherever the page shows her ----------
 
-// Which face she wears is decided once, here, before anything is drawn: Vera's still everywhere, voice-only
-// calls included (owner, 18 Oct: never the drawn character). faceFor is the single decision point.
-const templates = { drawn: byId("face", HTMLTemplateElement), vera: byId("face-vera", HTMLTemplateElement) };
-const face: Face = faceFor();
-let roomHead: HTMLElement | null = null;
+// Vera's still everywhere she appears, voice-only calls included (owner, 18 Oct).
+const faceTemplate = byId("face-vera", HTMLTemplateElement);
 
 function drawFaces(): void {
   for (const host of document.querySelectorAll<HTMLElement>("[data-face]")) {
-    for (const old of host.querySelectorAll(".head, .vera-still")) old.remove();
-    const el = templates[face].content.firstElementChild?.cloneNode(true);
+    for (const old of host.querySelectorAll(".vera-still")) old.remove();
+    const el = faceTemplate.content.firstElementChild?.cloneNode(true);
     if (!(el instanceof HTMLElement)) continue;
-    // Only the room's drawn face speaks; the others keep just her portrait and the blink.
-    if (face === "drawn" && host.id !== "stage") for (const m of el.querySelectorAll(".mouth")) m.remove();
-    host.dataset.faceKind = face;
+    host.dataset.faceKind = "vera";
     host.append(el);
   }
-  roomHead = byId("stage", HTMLDivElement).querySelector<HTMLElement>(".head");
 }
 drawFaces();
-
-// She blinks every few seconds: one class on the faces of the screen in view,
-// nothing measured, nothing running in between.
-function blinkLater(): void {
-  setTimeout(
-    () => {
-      if (!document.hidden) {
-        const name = app.dataset.screen as Screen | undefined;
-        const visible = name ? Array.from(screens[name].querySelectorAll<HTMLElement>(".head")) : [];
-        for (const h of visible) h.classList.add("is-blinking");
-        setTimeout(() => {
-          for (const h of visible) h.classList.remove("is-blinking");
-        }, 120);
-      }
-      blinkLater();
-    },
-    2400 + Math.random() * 3400,
-  );
-}
-if (!lowPower) blinkLater();
 
 // ---------- 1. consent ----------
 
@@ -393,7 +363,7 @@ interface Session {
 }
 
 let session: Session | null = null;
-const voice = new Voice(lowPower);
+const voice = new Voice();
 
 // The invisible person check. Its script is not requested until the details form is first shown.
 const check = new HumanCheck({
@@ -1043,9 +1013,8 @@ function enterRoom(typing: boolean): void {
         stopAvatar();
         onSocketClosed();
       },
-      onSpeaking: (on) => {
+      onSpeaking: () => {
         renderStatus();
-        drive(on);
       },
       onMedia: (bytes) => {
         player?.push(bytes);
@@ -1096,7 +1065,6 @@ function lineDropped(): void {
   voice.stopMic();
   voice.flush();
   stopAvatar();
-  drive(false);
   dispatch({ kind: "line-dropped" });
   void askToContinue();
 }
@@ -1544,59 +1512,6 @@ byId("idle-here", HTMLButtonElement).addEventListener("click", () => {
   dispatch({ kind: "here-pressed" });
 });
 
-// Her mouth follows her voice: 12 times a second (drawn animation's "on
-// twos"), read from the playback analyser, and only while she is actually
-// speaking. When she stops, the timer stops; nothing runs while the room is
-// quiet. A change touches the opacity of two small images, each on its own
-// compositor layer, and nothing else. A low-power machine keeps a still face
-// and a ring says she is speaking.
-const shape: MouthShape = { open: 0, spread: 0.5 };
-let mouth: Mouth = "closed";
-let mouthTimer = 0;
-const mouthImages = new Map<Mouth, HTMLElement>();
-function bindMouths(): void {
-  mouthImages.clear();
-  mouth = "closed";
-  for (const m of ["small", "mid", "wide", "round", "pucker"] as const) {
-    const img = roomHead?.querySelector<HTMLElement>(`.m-${m}`);
-    if (img) mouthImages.set(m, img);
-  }
-}
-bindMouths();
-
-let mouthSince = 0;
-
-function setMouth(next: Mouth, force = false): void {
-  if (next === mouth) return;
-  // Each drawing is held for 110 ms at least: long enough to read as a shape,
-  // short enough to follow syllables (200 ms lagged a word behind); closing is
-  // immediate.
-  const now = performance.now();
-  if (!force && next !== "closed" && now - mouthSince < 110) return;
-  mouthSince = now;
-  const before = mouthImages.get(mouth);
-  if (before) before.style.opacity = "0";
-  const after = mouthImages.get(next);
-  if (after) after.style.opacity = "1";
-  mouth = next;
-}
-
-function stepMouth(): void {
-  if (document.hidden) return;
-  setMouth(mouthFor(voice.readMouth(shape)));
-}
-
-function drive(speaking: boolean): void {
-  if (lowPower) return;
-  if (speaking && !mouthTimer) {
-    mouthTimer = window.setInterval(stepMouth, 83);
-  } else if (!speaking && mouthTimer) {
-    window.clearInterval(mouthTimer);
-    mouthTimer = 0;
-    setMouth("closed", true);
-  }
-}
-
 // The ring on the microphone button lights while she can hear you. It is a
 // state, not a meter: it lights when your voice rises above one level and
 // goes out only after 700 ms below a lower one, so a sentence costs two
@@ -1774,7 +1689,6 @@ function leave(): void {
   // Let her last words play out (up to a few seconds), then close the line.
   const wait = Math.min(8000, voice.queued * 1000 + 600);
   setTimeout(() => {
-    drive(false);
     voice.close();
     showEnd();
   }, wait);

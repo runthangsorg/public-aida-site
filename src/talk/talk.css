@@ -1,6 +1,5 @@
-/* Talk to Aida: a twenty-minute conversation. The same riso print as the home
-   page (cream stock, navy ink, a pink second colour, Anton for the big words)
-   but quieter: she is on air in a window, her words run underneath like a
+/* Talk to Aida: a twenty-minute conversation. A riso print (cream stock, navy
+   ink, a pink second colour, Anton for the big words), quiet: she is on air in a window, her words run underneath like a
    lower third, and her notes fill a notebook beside her. Phone first. */
 
 @font-face {
@@ -157,62 +156,6 @@ a:hover {
   display: none;
 }
 
-/* ---------- her face ---------- */
-
-.head {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-}
-
-.head img {
-  position: absolute;
-  display: block;
-  user-select: none;
-  pointer-events: none;
-}
-
-.fig {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* A second impression of her in pink, a little off register: the riso print. */
-.shadow {
-  position: absolute;
-  inset: 0;
-  background: var(--pink);
-  mask: url("/aida/aida-640.webp") center / 100% 100% no-repeat;
-  translate: 1.4% 0.9%;
-  opacity: 0.9;
-}
-
-.mouth {
-  left: 41.504%;
-  top: 43.457%;
-  width: 18.066%;
-  height: 15.137%;
-  opacity: 0;
-}
-
-.blink {
-  left: 32.227%;
-  top: 29.297%;
-  width: 36.133%;
-  height: 13.672%;
-  opacity: 0;
-}
-
-.head[data-mouth="small"] .m-small,
-.head[data-mouth="mid"] .m-mid,
-.head[data-mouth="wide"] .m-wide,
-.head[data-mouth="round"] .m-round,
-.head[data-mouth="pucker"] .m-pucker,
-.head.is-blinking .blink {
-  opacity: 1;
-}
-
 /* The print behind her: soft rays, and halftone dots that thicken towards the edge. */
 .rays {
   position: absolute;
@@ -244,17 +187,6 @@ a:hover {
     radial-gradient(circle, rgb(35 44 92 / 0.18) 1px, transparent 1.6px) 0 0 / 6px 6px,
     var(--tint-w);
   box-shadow: 0 0 0 2px var(--ink);
-}
-
-.avatar .head {
-  position: absolute;
-  width: 190%;
-  left: -45%;
-  top: -22%;
-}
-
-.avatar .shadow {
-  display: none;
 }
 
 .avatar-lg {
@@ -421,14 +353,6 @@ input[aria-invalid="true"]:hover {
   box-shadow:
     0 0 0 2px var(--ink),
     0 24px 48px -28px rgb(35 44 92 / 0.55);
-}
-
-.portrait .head {
-  position: absolute;
-  left: 50%;
-  top: 5%;
-  width: 104%;
-  translate: -50% 0;
 }
 
 .copy {
@@ -853,13 +777,6 @@ input[aria-invalid="true"]:hover {
   isolation: isolate;
 }
 
-/* Each drawn mouth on its own small layer: switching mouths is an opacity
-   change the compositor does alone, with nothing repainted behind it. */
-.stage .mouth,
-.stage .blink {
-  will-change: opacity;
-}
-
 .stage .halo {
   position: absolute;
   left: 50%;
@@ -869,16 +786,6 @@ input[aria-invalid="true"]:hover {
   border-radius: 50%;
   background: radial-gradient(circle, rgb(251 245 232 / 0.95) 0 36%, rgb(251 245 232 / 0) 70%);
   translate: -50% -50%;
-}
-
-/* Sized so she always runs off the bottom of the window, like the home page. */
-.stage .head {
-  position: absolute;
-  z-index: 1;
-  left: 50%;
-  top: 3cqh;
-  width: max(min(122cqw, 128cqh), 108cqh);
-  translate: -50% 0;
 }
 
 /* The on-air tag in the corner of her window, printed in ink. */
@@ -1777,11 +1684,6 @@ input[aria-invalid="true"]:hover {
     top: 72px;
   }
 
-  .portrait .head {
-    top: 7%;
-    width: 112%;
-  }
-
   .screen-intro .display {
     font-size: clamp(56px, 5.4vw, 88px);
   }
@@ -2011,16 +1913,6 @@ input[aria-invalid="true"]:hover {
 
 /* ---------- motion ---------- */
 
-@media (prefers-reduced-motion: no-preference) {
-  .screen-intro .portrait .head {
-    animation: rise 1s var(--out) both 120ms;
-  }
-
-  .low-power .screen-intro .portrait .head {
-    animation: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2028,15 +1920,6 @@ input[aria-invalid="true"]:hover {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-}
-
-@keyframes rise {
-  from {
-    transform: translateY(9%) rotate(-3deg);
-  }
-  to {
-    transform: none;
   }
 }
 
@@ -2463,8 +2346,8 @@ input[aria-invalid="true"]:hover {
 
 /* ---------- her video ---------- */
 
-/* Her video fills the same frame as the drawn portrait (9:16 cropped to the window, face a little above
-   centre) and fades over it once the squint of the first frame has passed. The portrait stays underneath:
+/* Her video fills the same frame as her still (9:16 cropped to the window, face a little above
+   centre) and fades over it once the first frame has passed. The still stays underneath:
    it is the poster before the first frame, while a connection swap is under way, and if video stops. */
 .avatar-video {
   position: absolute;
@@ -2488,11 +2371,6 @@ input[aria-invalid="true"]:hover {
   .avatar-video {
     transition: none;
   }
-}
-
-/* On video the drawn mouth and the speaking ring are not used. */
-.stage[data-avatar="on"] .mouth {
-  display: none;
 }
 
 .stage-pill {

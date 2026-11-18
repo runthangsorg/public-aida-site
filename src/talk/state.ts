@@ -62,7 +62,7 @@ export interface TalkState {
   turns: Turn[];
   summary: Summary | null;
   ended: Ended | null;
-  /** The server says her video is on this call (ready.avatar); false means voice and the drawn portrait. */
+  /** The server says her video is on this call (ready.avatar); false means voice and her still. */
   avatar: boolean;
   /** Video gave out (or the person switched it off): the call was paused so it can go on by voice. */
   videoStopped: { switching: boolean } | null;

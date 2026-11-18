@@ -3,7 +3,6 @@ import type { Summary } from "../src/talk/protocol";
 import { groupNotes } from "../src/talk/state";
 import { escapeHtml, renderNotes, renderSummary, renderSwot } from "../src/talk/swot";
 import { checkDetails, refusal, startBody } from "../src/talk/details";
-import { mouthFor, shapeFromSpectrum } from "../src/talk/mouth";
 
 const summary: Summary = {
   strengths: ["A loyal team", "Clear pricing"],
@@ -110,57 +109,5 @@ describe("the details form", () => {
     expect(refusal(403, {}).message).toMatch(/check that you are a person/);
     expect(refusal(403, {}).gate).toBe(true);
     expect(refusal(500, {}).message).toMatch(/went wrong/);
-  });
-});
-
-describe("her mouth in a live conversation", () => {
-  const RATE = 24_000;
-  const BINS = 512; // FFT_SIZE 1024
-  /** A dB spectrum with a quiet floor and peaks at the given frequencies. */
-  const spectrum = (peaks: [number, number][]): Float32Array => {
-    const db = new Float32Array(BINS).fill(-110);
-    const binHz = RATE / (2 * BINS);
-    for (const [hz, level] of peaks) {
-      const c = Math.round(hz / binHz);
-      for (let d = -2; d <= 2; d++) if (c + d > 0 && c + d < BINS) db[c + d] = level - Math.abs(d) * 6;
-    }
-    return db;
-  };
-  const wave = (amp: number): Float32Array => Float32Array.from({ length: 1024 }, (_, i) => amp * Math.sin((2 * Math.PI * 220 * i) / RATE));
-  const read = (peaks: [number, number][], amp = 0.3) => {
-    const out = { open: 0, spread: 0.5, peak: 0.3 };
-    shapeFromSpectrum(spectrum(peaks), wave(amp), RATE, out);
-    return out;
-  };
-
-  it("is closed and neutral in silence", () => {
-    const out = shapeFromSpectrum(spectrum([]), new Float32Array(1024), RATE, { open: 1, spread: 0 });
-    expect([out.open, out.spread]).toEqual([0, 0.5]);
-    expect(mouthFor(out)).toBe("closed");
-  });
-
-  it("tells vowels apart by their formants (owner, 3 Oct: the shapes did not match the words)", () => {
-    expect(mouthFor(read([[750, -20], [1200, -24]]))).toBe("wide"); // "ah": jaw open
-    expect(mouthFor(read([[500, -20], [900, -24]]))).toBe("round"); // "oh": rounded, half open
-    expect(mouthFor(read([[320, -20], [800, -24]]))).toBe("pucker"); // "oo": rounded, nearly closed
-    expect(mouthFor(read([[300, -20], [2300, -24]]))).toBe("small"); // "ee": spread, jaw closed
-  });
-
-  it("gives the small mouth for hiss", () => {
-    expect(mouthFor(read([[6000, -15], [7000, -15], [500, -60]]))).toBe("small"); // "s"
-  });
-
-  it("scales opening to her own recent loudness, so a quiet voice still moves the mouth", () => {
-    const quiet = { open: 0, spread: 0.5, peak: 0.05 };
-    shapeFromSpectrum(spectrum([[750, -20], [1200, -24]]), wave(0.04), RATE, quiet);
-    expect(quiet.open).toBeGreaterThan(0.5);
-  });
-
-  it("picks each of the drawn mouths somewhere in its range", () => {
-    expect(mouthFor({ open: 0.6, spread: 0.1 })).toBe("round");
-    expect(mouthFor({ open: 0.6, spread: 0.8 })).toBe("wide");
-    expect(mouthFor({ open: 0.35, spread: 0.6 })).toBe("mid");
-    expect(mouthFor({ open: 0.2, spread: 0.1 })).toBe("pucker");
-    expect(mouthFor({ open: 0.2, spread: 0.6 })).toBe("small");
   });
 });

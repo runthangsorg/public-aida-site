@@ -83,7 +83,7 @@ const rawFrames = frames.map((f) => Buffer.from(f)); // as ffmpeg wrote them: Ch
     n++;
   }
 }
-/** Google's envelope: pretty-printed, one base64 part, a trailing newline. */
+/** The server's envelope: pretty-printed, one base64 part, a trailing newline. */
 const envelope = (bytes) =>
   Buffer.from(JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'video/mp4', data: bytes.toString('base64') } }] } } }, null, 2) + '\n');
 const DT = 19333 / frames.length; // ms between messages: the stream is real-time paced
