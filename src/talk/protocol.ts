@@ -62,7 +62,7 @@ export interface AudioPart {
   mimeType: string;
 }
 
-/** The model's own frame, forwarded as-is. Any subset of these per frame. */
+/** Her speech: audio, captions both ways and turn markers. Any subset of these per frame. */
 export interface ServerContent {
   audio: AudioPart[];
   input?: string;

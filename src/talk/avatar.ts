@@ -1,8 +1,6 @@
 // Vera on video: her muxed fragmented MP4 (H.264 + AAC), played through Media Source
-// Extensions at the live edge. What is known of the stream, and why the player is shaped
-// like this, is in the aida repository's docs/research/2026-10-17/avatar-lab/INTEGRATION.md
-// (measured: one frame per fragment, ~47 fragments a second, a fresh init segment and a
-// timeline restarting at 0 after every connection swap, a squint in the first frame).
+// Extensions at the live edge. The stream carries one frame per fragment, starts a fresh
+// init segment and timeline after every connection swap, and its first frame is never shown.
 //
 // Everything that can be a pure function is one (box walking and the codec sniff, frame
 // decoding, the capability decision, the append batching, the live-edge maths, the health

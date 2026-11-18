@@ -108,7 +108,7 @@ describe("reading the init segment", () => {
 // ---------- the frames ----------
 
 const b64 = (b: Uint8Array): string => btoa(String.fromCharCode(...b));
-/** Google's envelope: pretty-printed, a trailing newline. */
+/** The server's envelope: pretty-printed, a trailing newline. */
 const envelope = (b: Uint8Array): string =>
   JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: "video/mp4", data: b64(b) } }] } } }, null, 2) + "\n";
 

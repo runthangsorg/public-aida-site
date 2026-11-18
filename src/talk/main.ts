@@ -1,7 +1,6 @@
 import "./talk.css";
-import type { Mouth } from "../lipsync";
 import { FIELDS, MAX_LENGTH, TEAM_SIZES, checkDetails, limitHint, startBody, type Field } from "./details";
-import { mouthFor, type MouthShape } from "./mouth";
+import { mouthFor, type Mouth, type MouthShape } from "./mouth";
 import { NOTE_SECTIONS, noteLabel, type NoteSection, type Resumed, type ServerFrame, type Stage, setRelayOrigin } from "./protocol";
 import {
   looksLikeEmail,

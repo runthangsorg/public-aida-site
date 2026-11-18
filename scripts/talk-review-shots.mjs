@@ -43,7 +43,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
 const GO = '0f'.repeat(32);
-// The labels the server sends (functions/api/_interview.ts STAGES), so the stage bar is reviewed as it ships.
+// The stage labels the server sends, so the stage bar is reviewed as it ships.
 const sections = [
   ['welcome', 'Welcome'],
   ['org', 'Your organisation'],

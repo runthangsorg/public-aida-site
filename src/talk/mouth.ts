@@ -16,7 +16,8 @@
 // the mouth moved but the shapes were wrong (owner, 3 Oct). The band edges and
 // gains are a heuristic from textbook formant ranges, not fitted to her voice.
 
-import type { Mouth } from "../lipsync";
+/** The drawn mouths: closed, and the five open shapes, each an image over her face. */
+export type Mouth = "closed" | "small" | "mid" | "wide" | "round" | "pucker";
 
 export interface MouthShape {
   /** 0 closed, 1 fully open. */
