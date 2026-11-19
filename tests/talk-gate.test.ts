@@ -322,6 +322,15 @@ describe("a returning visitor", () => {
     expect(entryRefusal(500, null).message).toBe(COULD_NOT_OPEN);
   });
 
+  it("only a 404 nothing_to_continue hides Continue: any other 404 (switched off for now) keeps it and says try again", () => {
+    // The server's /api/talk/continue answers 404 { error: "closed" } while conversations are switched off, and
+    // 404 { error: "nothing_to_continue" } when no call is saved. Only the second says anything about the call.
+    expect(entryRefusal(404, { error: "closed" })).toEqual({ message: COULD_NOT_OPEN, outcome: "retry" });
+    expect(entryRefusal(404, null)).toEqual({ message: COULD_NOT_OPEN, outcome: "retry" });
+    expect(entryRefusal(404, "not found").outcome).toBe("retry");
+    expect(entryRefusal(404, { error: "nothing_to_continue" }).outcome).toBe("nothing");
+  });
+
   it("reads a refusal's error code, so a 404 can be told apart from a 404 (nothing saved, or switched off)", () => {
     expect(errorCode({ error: "nothing_to_continue" })).toBe("nothing_to_continue");
     expect(errorCode({ error: "closed" })).toBe("closed");

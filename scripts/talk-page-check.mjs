@@ -500,6 +500,24 @@ if (want('4')) {
     check(`[${tag}] Check again re-reads /me: once it clears, Continue is live and the note goes`, !after.cont && !after.check && !/already open/.test(after.detail), JSON.stringify(after));
     await ctx.close();
   }
+  // Continue on the welcome-back card answered 404 (review, 19 Nov): only nothing_to_continue means nothing is
+  // saved and hides it. A 404 for another reason (conversations switched off for now) keeps Continue and says
+  // to try again, as the end screen does.
+  for (const [code, kept] of [['closed', true], ['nothing_to_continue', false]]) {
+    const { ctx, page } = await open(browser, {
+      size: { width: 390, height: 844 },
+      me: { known: true, name: 'Sam', canContinue: true, minutesSoFar: 3, canStartNew: true },
+      routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: code }, 404)) },
+    });
+    await page.waitForSelector('#known-card:not([hidden])');
+    await page.click('#known-continue');
+    await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'intro' && !document.querySelector('#known-continue').disabled, null, { timeout: 8000 });
+    await page.waitForTimeout(200);
+    const m = await page.evaluate(() => ({ cont: !document.querySelector('#known-continue').hidden, start: !document.querySelector('#known-new').hidden, status: document.querySelector('#known-status').textContent }));
+    const ok = kept ? m.cont && m.start && m.status === 'We could not open it just now. Please try again in a moment.' : !m.cont && m.start && m.status === '';
+    check(`welcome-back Continue answered 404 ${code}: ${kept ? 'Continue stays, with "try again in a moment"' : 'Continue goes, Start a new conversation stays'}`, ok, JSON.stringify(m));
+    await ctx.close();
+  }
   // a stranger sees the bottom link; a known visitor does not
   for (const [me, want] of [[{ known: false }, false], [{ known: true, name: 'Sam', canContinue: true, canStartNew: true }, true]]) {
     const { ctx, page } = await open(browser, { size: { width: 390, height: 844 }, me });

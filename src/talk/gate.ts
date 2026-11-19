@@ -315,9 +315,12 @@ export const COULD_NOT_OPEN = "We could not open it just now. Please try again i
 export function entryRefusal(status: number, data: unknown): EntryRefusal {
   const c = code(data);
   if (status === 401 || c === "no_session") return { message: USE_EMAILED_LINK, outcome: "login" };
-  if (status === 404 || c === "nothing_to_continue") {
+  if (c === "nothing_to_continue") {
     return { message: "There is nothing to continue. Start a new conversation.", outcome: "nothing" };
   }
+  // Any other 404 ({ error: "closed" } while conversations are switched off) says nothing about the saved call:
+  // Continue stays, as on the end screen (review, 19 Nov: the welcome-back card hid it for good).
+  if (status === 404) return { message: COULD_NOT_OPEN, outcome: "retry" };
   if (c === "daily_limit") return { message: DAILY_LIMIT, outcome: "stop" };
   if (status === 409 || c === "busy") return { message: BUSY_OTHER_WINDOW, outcome: "stop" };
   if (status === 429) return { message: waitMessage(isBag(data) ? data.retryAfter : undefined), outcome: "retry" };
