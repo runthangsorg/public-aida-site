@@ -70,6 +70,11 @@ export interface TalkState {
   switching: boolean;
   /** The server warned the line has gone quiet and will pause; null when nothing is pending. */
   idleWarning: { secondsLeft: number } | null;
+  /**
+   * The person's next turn while all it holds is markers ("<noise>", or "<no" waiting for " speech>"): no turn is
+   * started for it, so it cannot cut off hers. Null when nothing is held.
+   */
+  heldInput: { text: string; explicit: boolean } | null;
   /** The person asked to continue later; the server's `ended` (paused) is awaited. */
   pausing: boolean;
   /** A returning conversation: the minutes already spent, and whether a summary exists. */
@@ -133,6 +138,7 @@ export function initialState(stages: Stage[] = [], targetMinutes = 20, resumed?:
     ended: null,
     pausing: false,
     idleWarning: null,
+    heldInput: null,
     avatar: false,
     videoStopped: null,
     switching: false,
@@ -202,6 +208,8 @@ export function turnText(turn: Turn): string {
 }
 
 function closeOpen(s: TalkState, except?: Speaker, interrupted = false): void {
+  // Whatever ends the person's turn also ends the markers held for it.
+  if (except !== "you") s.heldInput = null;
   const last = s.turns[s.turns.length - 1];
   if (!last?.open || last.who === except) return;
   const closed: Turn = { ...last, open: false };
@@ -215,24 +223,34 @@ function pushTurn(s: TalkState, turn: Omit<Turn, "id">): void {
   s.turns = next.length > MAX_TURNS ? next.slice(-MAX_TURNS) : next;
 }
 
-function addFragment(s: TalkState, who: Speaker, chunk: string): void {
+/** Grow the speaker's open turn, or start their next one. True when it added words that show. */
+function addFragment(s: TalkState, who: Speaker, chunk: string): boolean {
   const last = s.turns[s.turns.length - 1];
   if (last?.open && last.who === who) {
     const explicit = last.explicit || LEADING_SPACE.test(chunk);
-    s.turns = [...s.turns.slice(0, -1), { ...last, text: joinFragment(last.text, chunk, explicit), explicit }];
-    return;
+    const grown = { ...last, text: joinFragment(last.text, chunk, explicit), explicit };
+    s.turns = [...s.turns.slice(0, -1), grown];
+    return turnText(grown) !== turnText(last);
+  }
+  // A new turn: the person's starts from any markers held for it, as though it had opened with them.
+  const held = who === "you" ? s.heldInput : null;
+  const explicit = held ? held.explicit || LEADING_SPACE.test(chunk) : LEADING_SPACE.test(chunk);
+  const text = held ? joinFragment(held.text, chunk, explicit) : chunk.trim();
+  // Nothing to show yet (a space, or a marker in place of words): no turn, so the open one is not cut off.
+  if (!(who === "you" ? cleanTranscription(text) : text)) {
+    if (who === "you" && text) s.heldInput = { text, explicit };
+    return false;
   }
   closeOpen(s, who);
-  if (!chunk.trim()) return;
-  pushTurn(s, { who, text: chunk.trim(), open: true, explicit: LEADING_SPACE.test(chunk) });
+  if (who === "you") s.heldInput = null;
+  pushTurn(s, { who, text, open: true, explicit });
+  return true;
 }
 
 function applyContent(s: TalkState, c: ServerContent): void {
   if (c.interrupted) closeOpen(s, "you", true);
-  if (c.input) {
-    addFragment(s, "you", c.input);
-    s.idleWarning = null; // speaking counts as being there
-  }
+  // Speaking counts as being there; a marker or a space in place of words does not.
+  if (c.input && addFragment(s, "you", c.input)) s.idleWarning = null;
   // Her voice or her words: either means the person's turn is over.
   if (c.audio.length || c.output) closeOpen(s, "aida");
   if (c.output) addFragment(s, "aida", c.output);

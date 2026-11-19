@@ -231,6 +231,39 @@ describe("the room's state", () => {
     expect(cleanTranscription("")).toBe("");
   });
 
+  // Review round 3 (public-site-04): a marker or a lone space heard while she spoke closed her turn and split it in two,
+  // so the caption lost her first words and, on a video call, the barge-in gate was told she had stopped.
+  const turnsOf = (s: TalkState) => s.turns.map((t) => [t.who, turnText(t), t.open]);
+  for (const [name, chunks] of [
+    ["a marker", ["<noise>"]],
+    ["a lone space", [" "]],
+    ["a marker split over two fragments", ["<no", " speech>"]],
+  ] as const) {
+    it(`${name} heard while she speaks leaves her one turn, still open`, () => {
+      let s = feed(initialState(), ready, said("So tell me about"));
+      s = feed(s, ...chunks.map(heard));
+      expect(turnsOf(s)).toEqual([["aida", "So tell me about", true]]);
+      s = feed(s, said(" your team."));
+      expect(turnsOf(s)).toEqual([["aida", "So tell me about your team.", true]]);
+      expect(s.finished).toEqual([]);
+    });
+  }
+
+  it("words after a marker still start the person's turn, without the marker", () => {
+    const s = feed(initialState(), ready, said("So tell me about"), heard("<noise>"), heard(" We"), heard(" run rotas"));
+    expect(turnsOf(s)).toEqual([
+      ["aida", "So tell me about", false],
+      ["you", "We run rotas", true],
+    ]);
+  });
+
+  it("a marker is not the person speaking: the idle warning stays until real words arrive", () => {
+    let s = feed(initialState(), ready, aida({ type: "idle_warning", secondsLeft: 20 }), heard("<no speech>"), heard(" "));
+    expect(s.idleWarning).toEqual({ secondsLeft: 20 });
+    s = feed(s, heard("Yes"));
+    expect(s.idleWarning).toBeNull();
+  });
+
   it("keeps her previous words when the newest turn is only a marker", () => {
     let s = feed(initialState(), ready, said("Tell me about the week."), { serverContent: { turnComplete: true } });
     s = feed(s, said("<no"), said(" speech>"));
