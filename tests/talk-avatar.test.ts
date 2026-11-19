@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   APPEND_EVERY_MS,
+  AvatarPlayer,
   EDGE_MARGIN,
   KEEP_BEHIND,
   MAX_LEAD,
@@ -554,5 +555,41 @@ describe("a slow link: the offer to go on by voice (QA 18 Oct)", () => {
     expect(offers).toHaveLength(1);
     expect(offers[0]).toBeGreaterThan(42.5);
     expect(offers[0]).toBeLessThan(44);
+  });
+});
+
+describe("her sound when the player starts again", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a restart plays with sound again: a refused autoplay's mute does not carry over silently", () => {
+    // Review round 3 (public-site-33): autoplay with sound was refused, so the shared element was muted and "Tap for
+    // sound" shown. A restart (a connection swap, a reconnect) hid the button but left the element muted: the muted
+    // play then succeeded, so nothing asked again and the call went on in silence.
+    vi.stubGlobal("window", {
+      ManagedMediaSource: class {
+        readonly readyState = "closed";
+        addEventListener(): void {
+          // never opens here
+        }
+      },
+      setInterval: () => 1,
+      clearInterval: () => undefined,
+    });
+    const video = {
+      muted: true,
+      srcObject: null as unknown,
+      disableRemotePlayback: false,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      pause: () => undefined,
+      removeAttribute: () => undefined,
+      load: () => undefined,
+    };
+    const player = new AvatarPlayer(video as unknown as HTMLVideoElement, { onFail: () => undefined, onVisible: () => undefined });
+    expect(player.start()).toBe(true);
+    expect(video.muted).toBe(false);
+    player.stop();
   });
 });
