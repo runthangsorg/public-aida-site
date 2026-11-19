@@ -1424,6 +1424,25 @@ if (want9('35')) {
   await browser.close();
 }
 
+if (want9('55')) {
+  // "Opening your conversation…" kept its history entry after the request failed: Back showed the spinner with no
+  // buttons at all.
+  const browser = await chrome();
+  for (const [how, opts, press] of [
+    ['the email link (/confirm 500)', { goto: `/talk/?go=${GO}`, routes: { '**/api/talk/confirm': (r) => r.fulfill(json({ error: 'unavailable' }, 500)) } }, '#go-go'],
+    ['Continue on the welcome-back card (/continue 500)', { me: { known: true, name: 'Sam', canContinue: true, minutesSoFar: 3, canStartNew: true }, routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: 'unavailable' }, 500)) } }, '#known-continue'],
+  ]) {
+    const { ctx, page } = await open(browser, { size: PHONE, ...opts });
+    await page.waitForSelector(`${press}:not([hidden])`);
+    await page.click(press);
+    await page.waitForFunction((b) => document.querySelector('#app').dataset.screen === 'intro' && !document.querySelector(b).disabled, press, { timeout: 8000 });
+    const back = await travel(page, 'back');
+    check(`${how} failed, then Back: not the empty "Opening your conversation…" screen`, back !== 'mic', JSON.stringify({ back }));
+    await ctx.close();
+  }
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);

@@ -141,9 +141,10 @@ function show(name: Screen, focus = true, nav: "push" | "keep" = "push"): void {
   // the pages they have been on instead of leaving the site.
   const hs = history.state as { screen?: string } | null | undefined;
   if (nav === "push" && hs?.screen !== name) {
-    // The microphone screen and the room take each other's place (review round 3): the room replaces the question
-    // that opened it, and a line that did not open replaces the room, so Back never leads into a dead room.
-    const swap = (name === "room" && hs?.screen === "mic") || (name === "mic" && hs?.screen === "room");
+    // The microphone screen is a step on the way, never a place to come back to (review round 3): whatever follows
+    // it (the room, or the first screen after a request that failed) takes its entry, and a line that did not open
+    // takes the room's, so Back never leads into a dead room or an empty "Opening your conversation…".
+    const swap = hs?.screen === "mic" || (name === "mic" && hs?.screen === "room");
     if (swap) history.replaceState({ screen: name }, "");
     else history.pushState({ screen: name }, "");
   }
