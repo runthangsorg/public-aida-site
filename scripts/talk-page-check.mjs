@@ -1094,6 +1094,37 @@ if (want('7')) {
     await ctx.close();
   }
 
+  // A caption's focus ring (review, 19 Nov): the captions box clips its paint, and on a phone the ring round "Your
+  // words" lost its bottom edge (on a desk, its sides too). Each caption, focused from the keyboard, has its whole
+  // ring inside the box.
+  for (const [w, h, idleTyping] of [[390, 844], [320, 568], [280, 640], [1280, 800], [1366, 768], [1024, 576, true], [844, 390]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h });
+    if (idleTyping) {
+      await page.click('#type');
+      await page.evaluate(() => window.__ws.push({ aida: { type: 'idle_warning', secondsLeft: 30 } }));
+      await page.waitForSelector('#idle:not([hidden])');
+    }
+    await page.waitForTimeout(300);
+    for (const id of ['said-aida', 'said-you']) {
+      await page.focus(`#${id}`);
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      const m = await page.evaluate(() => {
+        const e = document.activeElement;
+        const cs = getComputedStyle(e);
+        const grow = parseFloat(cs.outlineOffset) + parseFloat(cs.outlineWidth);
+        const r = e.getBoundingClientRect();
+        const c = document.getElementById('captions').getBoundingClientRect();
+        const ring = { top: r.top - grow, bottom: r.bottom + grow, left: r.left - grow, right: r.right + grow };
+        const out = Object.fromEntries(Object.entries({ top: c.top - ring.top, bottom: ring.bottom - c.bottom, left: c.left - ring.left, right: ring.right - c.right }).filter(([, v]) => v > 0.5).map(([k, v]) => [k, Math.round(v * 10) / 10]));
+        return { focus: e.id, ring: e.matches(':focus-visible') && cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) >= 2, cut: out };
+      });
+      check(`[${w}x${h}${idleTyping ? ', typing, idle card' : ''}] ${id} focused from the keyboard: its whole focus ring is inside the captions box`, m.focus === id && m.ring && Object.keys(m.cut).length === 0, JSON.stringify(m));
+      if (id === 'said-you' && w === 390) await page.screenshot({ path: `${shots}/layout-caption-focus-${w}.png` });
+    }
+    await ctx.close();
+  }
+
   // A phone on its side, or a laptop at 200% (QA, 18 Nov): the room was held at 560 px and Mute and End sat below
   // the fold. Both are on screen without scrolling.
   for (const [w, h] of [[844, 390], [667, 375], [740, 360], [640, 400]]) {

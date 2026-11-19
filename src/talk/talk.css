@@ -874,13 +874,15 @@ input[aria-invalid="true"]:hover {
 /* Contained for paint, but sized by its text: a fixed box clipped her first line under the AIDA label and cut
    the YOU, TYPED line to a sliver (QA, 18 Oct). Each line keeps its own height (at most four lines of hers,
    two of yours, scrolled to the newest words), so her latest question is always whole on screen. */
+/* The 3 px under the last caption is room for its focus ring: the box clips its paint, and the ring on "Your words"
+   lost its bottom edge on a phone (review, 19 Nov). */
 .captions {
   grid-area: captions;
   contain: layout paint;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px calc(var(--gutter) + 4px) 0;
+  padding: 14px calc(var(--gutter) + 4px) 3px;
   overflow: hidden;
 }
 
@@ -916,6 +918,12 @@ input[aria-invalid="true"]:hover {
 
 .said::-webkit-scrollbar {
   display: none;
+}
+
+/* A caption is focusable (it scrolls). Its ring hugs it, so all four sides stay inside the captions box: 4 px of side
+   padding on a desk, 3 px under the last line (a 3 px offset cut the ring's sides there and its foot on a phone). */
+.said:focus-visible {
+  outline-offset: 0;
 }
 
 /* Each line carries its caption's size (the label keeps its own), so 1em on a line is its caption's size. */
@@ -1828,7 +1836,7 @@ input[aria-invalid="true"]:hover {
     justify-self: center;
     width: min(100%, 720px);
     height: 210px;
-    padding: 20px 4px 0;
+    padding: 20px 4px 3px;
   }
 
   .line-aida {
