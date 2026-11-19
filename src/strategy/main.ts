@@ -6,12 +6,15 @@ import {
   LOAD_FAILED_COPY,
   NOT_FOUND_COPY,
   NOT_FOUND_TITLE,
+  SIGNOUT_FAILED_COPY,
   emailProblem,
+  keepCode,
   landing,
   newLinkMailto,
   pageTitle,
   reduce,
   readRoute,
+  signOutDone,
   type ScreenState,
 } from "./state";
 import { GATE_FAILED, HumanCheck, loadTurnstile, withToken, type TurnstileApi } from "../talk/turnstile";
@@ -49,6 +52,8 @@ const form = byId("signin-form", HTMLFormElement);
 const emailField = byId("email", HTMLInputElement);
 const emailError = byId("email-error", HTMLParagraphElement);
 const signinButton = byId("signin-go", HTMLButtonElement);
+const signoutButton = byId("signout", HTMLButtonElement);
+const signoutNotice = byId("signout-notice", HTMLParagraphElement);
 
 let token: string | null = null;
 let state: ScreenState = { screen: "loading" };
@@ -145,6 +150,8 @@ function paint(): void {
       break;
     case "view":
       strategy.replaceChildren(renderStrategy(document, state.view));
+      signoutNotice.textContent = state.notice ?? "";
+      signoutNotice.hidden = !state.notice;
       screens.view.hidden = false;
       break;
     case "trouble":
@@ -168,21 +175,21 @@ async function boot(focus = false): Promise<void> {
   let response = await loadView();
 
   if (response.status === 401 && route.code) {
-    // A one-time code in the address: spend it, then drop it from history.
+    // A one-time code in the address: spend it, then drop it from history (unless it never got an answer).
     const awaiting = reduce(state, { type: "view", status: 401, body: response.body });
     const verified = await request("/api/strategy/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ t: token, c: route.code }),
     });
-    dropCode();
+    if (!keepCode(response.status, verified.status)) dropCode();
     if (verified.status !== 200) {
       show(reduce(awaiting, { type: "verify", status: verified.status, body: verified.body }), focus);
       return;
     }
     show(reduce(state, { type: "verify", status: 200 }), focus);
     response = await loadView();
-  } else if (route.code) {
+  } else if (route.code && !keepCode(response.status)) {
     dropCode();
   }
 
@@ -221,15 +228,27 @@ form.addEventListener("submit", (event) => {
   void sendLink(email);
 });
 
-byId("signout", HTMLButtonElement).addEventListener("click", () => {
-  if (!token) return;
-  show(reduce(state, { type: "signout" }), true);
+signoutButton.addEventListener("click", () => {
+  if (!token || signoutButton.disabled || state.screen !== "view") return;
+  signoutButton.disabled = true;
+  const view = state.view;
+  show({ screen: "view", view }); // a notice from an earlier try goes, so a new one is read out
   void (async () => {
-    await request("/api/strategy/signout", {
+    const out = await request("/api/strategy/signout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ t: token }),
     });
+    signoutButton.disabled = false;
+    if (!signOutDone(out.status)) {
+      // Still signed in: say so, and keep the strategy, rather than fetching it again as if nothing had happened.
+      show({ screen: "view", view, notice: SIGNOUT_FAILED_COPY });
+      // Disabling it dropped its focus to the page: give it back, so a keyboard or screen-reader user is still
+      // beside the notice. Focus the person moved elsewhere meanwhile is left where it is.
+      if (!document.activeElement || document.activeElement === document.body) signoutButton.focus();
+      return;
+    }
+    show(reduce(state, { type: "signout" }), true);
     const response = await loadView();
     show(reduce(state, { type: "view", status: response.status, body: response.body }), true);
   })();

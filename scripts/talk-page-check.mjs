@@ -12,11 +12,12 @@
  *
  *   node scripts/talk-page-check.mjs [--shots .tmp/shots] [--only 1,5]   (sections: 1 face, 1b room, 2 start,
  *                                                                     3 reconnect, 4 busy card, 5 round 3,
- *                                                                     6 round 4, 7 layout, 8 strategy)
+ *                                                                     6 round 4, 7 layout, 8 strategy,
+ *                                                                     9 review round 3; 9.<id> runs one)
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
-/* global window, document, getComputedStyle, innerHeight, innerWidth, location, matchMedia */
+/* global window, document, getComputedStyle, history, innerHeight, innerWidth, location, matchMedia */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -62,6 +63,8 @@ const chrome = (extra = []) =>
 /** A page with the stubbed server. `ws`: how the socket behaves ('ok' | 'throw' | 'close'). */
 async function open(browser, { size, perms = [], init = '', ws = 'ok', me = { known: false }, goto = '/talk/', routes = {}, hasTouch = false }) {
   const ctx = await browser.newContext({ viewport: size, permissions: perms, ...(hasTouch ? { hasTouch: true } : {}) });
+  // Nothing leaves this machine: a request for any other host (the person check's script) is refused.
+  await ctx.route((url) => url.host !== new URL(base).host, (r) => r.abort());
   const page = await ctx.newPage();
   const requests = [];
   const errors = [];
@@ -514,8 +517,8 @@ if (want('4')) {
     await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'intro' && !document.querySelector('#known-continue').disabled, null, { timeout: 8000 });
     await page.waitForTimeout(200);
     const m = await page.evaluate(() => ({ cont: !document.querySelector('#known-continue').hidden, start: !document.querySelector('#known-new').hidden, status: document.querySelector('#known-status').textContent }));
-    const ok = kept ? m.cont && m.start && m.status === 'We could not open it just now. Please try again in a moment.' : !m.cont && m.start && m.status === '';
-    check(`welcome-back Continue answered 404 ${code}: ${kept ? 'Continue stays, with "try again in a moment"' : 'Continue goes, Start a new conversation stays'}`, ok, JSON.stringify(m));
+    const ok = kept ? m.cont && m.start && m.status === 'We could not open it just now. Please try again in a moment.' : !m.cont && m.start && m.status === 'There is nothing to continue. Start a new conversation.';
+    check(`welcome-back Continue answered 404 ${code}: ${kept ? 'Continue stays, with "try again in a moment"' : 'Continue goes and says why, Start a new conversation stays'}`, ok, JSON.stringify(m));
     await ctx.close();
   }
   // At today's limit the card offers neither Continue nor Start, so the note on what video costs goes with them
@@ -1268,6 +1271,362 @@ if (want('8')) {
     check(`[${w}x${h}] strategy sign out: the base title, the strategy emptied (${before} parts before), focus on the sign-in heading`, before > 0 && m.title === 'Your AI and automation strategy — Aida' && m.strategy === 0 && m.focus === 'signin-title', JSON.stringify(m));
     await ctx.close();
   }
+  await browser.close();
+}
+
+// ---------- 9. review round 3 (19 Nov): her voice after the switch, End mid-move, Back and Forward ----------
+// `--only 9` runs them all; `--only 9.<finding>` (9.01, 9.20, ...) runs one.
+const want9 = (id) => want('9') || want(`9.${id}`);
+const PHONE = { width: 390, height: 844 };
+const NO_MIC = "navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Requested device not found', 'NotFoundError'));";
+/** Counts the chunks of her voice the page starts playing. */
+const COUNT_VOICE = 'const s = AudioBufferSourceNode.prototype.start; AudioBufferSourceNode.prototype.start = function (...a) { window.__starts = (window.__starts ?? 0) + 1; return s.apply(this, a); };';
+/** 100 ms of her (silent) voice, as the server sends it. */
+const VOICE_FRAME = { serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: Buffer.alloc(4800).toString('base64') } }] } } };
+const continued = { id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 1, stage: 'org', hasSummary: false, notes: [] } };
+const ready = (page, avatar, resumed) => page.evaluate(([s, a, r]) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: a, ...(r ? { resumed: r } : {}) } }), [sections, avatar, resumed ?? null]);
+
+if (want9('01')) {
+  // The voice-only switch closed both audio contexts; a person typing their answers never tapped again, so her
+  // voice on the new line was dropped.
+  const browser = await chrome();
+  const { ctx, page, errors } = await open(browser, { size: PHONE, goto: `/talk/?go=${GO}`, init: NO_MIC + COUNT_VOICE, routes: { '**/api/talk/continue': (r) => r.fulfill(json(continued)) } });
+  await page.click('#go-go');
+  await page.waitForSelector('#mic-actions:not([hidden])');
+  await page.click('#mic-type');
+  await page.waitForFunction(() => window.__ws);
+  await ready(page, true);
+  await page.waitForSelector('#voice-only:not([hidden])');
+  await page.click('#voice-only');
+  await page.waitForFunction(() => (window.__sockets ?? 0) >= 2, null, { timeout: 10000 });
+  await ready(page, false, continued.resumed);
+  await page.evaluate((f) => window.__ws.push(f), VOICE_FRAME);
+  await page.waitForTimeout(400);
+  const m = await page.evaluate(() => ({ starts: window.__starts ?? 0, screen: document.querySelector('#app').dataset.screen }));
+  check('typing, then Switch to voice only: her voice on the new line plays without another tap', m.starts > 0 && m.screen === 'room', JSON.stringify(m));
+  check('...and no page errors', errors.length === 0, errors.join('; '));
+  await ctx.close();
+  await browser.close();
+}
+
+if (want9('20')) {
+  // End pressed while there is no line to end. During the voice-only switch it waited 25 s on "Wrapping up"; while
+  // the way back after a drop waited for the microphone, it was undone and a new line opened.
+  const browser = await chrome(FAKE_MIC);
+  {
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      goto: `/talk/?go=${GO}`,
+      routes: { '**/api/talk/continue': async (r) => { await new Promise((d) => setTimeout(d, 3000)); await r.fulfill(json(continued)).catch(() => undefined); } },
+    });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await ready(page, true);
+    await page.waitForSelector('#voice-only:not([hidden])');
+    await page.click('#voice-only');
+    await page.waitForTimeout(300);
+    await page.click('#end');
+    await page.click('#confirm-yes');
+    const t0 = Date.now();
+    const shown = await page.waitForSelector('#end-screen:not([hidden])', { timeout: 2500 }).then(() => Date.now() - t0, () => null);
+    await page.waitForTimeout(3500); // past the delayed /continue
+    const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, sockets: window.__sockets }));
+    check('End during the voice-only switch: the end screen at once, and no new line after it', shown !== null && m.screen === 'end' && m.sockets === 1, JSON.stringify({ shownAfterMs: shown, ...m }));
+    await ctx.close();
+  }
+  {
+    // The second microphone question (the way back after the drop) takes 1.5 s to answer.
+    const slowMic = 'const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let n = 0; navigator.mediaDevices.getUserMedia = (c) => (++n === 1 ? g(c) : new Promise((d) => setTimeout(d, 1500)).then(() => g(c)));';
+    let asked = 0;
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      perms: ['microphone'],
+      goto: `/talk/?go=${GO}`,
+      init: slowMic,
+      routes: { '**/api/talk/continue': (r) => { asked++; return r.fulfill(json(continued)); } },
+    });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await ready(page, false);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => window.__ws.drop());
+    for (let i = 0; i < 40 && !asked; i++) await page.waitForTimeout(50);
+    await page.waitForTimeout(200);
+    await page.click('#end');
+    await page.click('#confirm-yes');
+    await page.waitForTimeout(3000);
+    const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, sockets: window.__sockets, live: (window.__streams ?? []).filter((s) => s.getAudioTracks().some((t) => t.readyState === 'live')).length }));
+    check(`End while the way back waits for the microphone: the end screen, no second line, the microphone off (asked ${asked})`, asked === 1 && m.screen === 'end' && m.sockets === 1 && m.live === 0, JSON.stringify(m));
+    await ctx.close();
+  }
+  {
+    // The voice-only line is open but not yet ready: End must still tell the server the call is over on that line,
+    // or the call the person ended stays open to continue (review, 19 Nov).
+    const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes: { '**/api/talk/continue': (r) => r.fulfill(json(continued)) } });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await ready(page, true);
+    await page.waitForSelector('#voice-only:not([hidden])');
+    await page.click('#voice-only');
+    await page.waitForFunction(() => (window.__sockets ?? 0) >= 2, null, { timeout: 10000 });
+    await page.waitForTimeout(200);
+    await page.click('#end');
+    await page.click('#confirm-yes');
+    const shown = await page.waitForSelector('#end-screen:not([hidden])', { timeout: 2500 }).then(() => true, () => false);
+    const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, sockets: window.__sockets, sent: window.__sent }));
+    const sentEnd = m.sent.some((s) => {
+      try {
+        return JSON.parse(s)?.aida?.type === 'end';
+      } catch {
+        return false;
+      }
+    });
+    check("End on the voice-only line once it is open, before it is ready: 'end' sent on that line, and the end screen", shown && m.screen === 'end' && m.sockets === 2 && sentEnd, JSON.stringify({ shown, ...m }));
+    await ctx.close();
+  }
+  await browser.close();
+}
+
+if (want9('02')) {
+  // After one reconnect that worked, a later call on the same page whose line never opened was taken for a drop:
+  // silent /continue requests and "The line dropped", not "The line did not open" with Try again.
+  const browser = await chrome(FAKE_MIC);
+  const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes: { '**/api/talk/continue': (r) => r.fulfill(json(continued)) } });
+  await page.click('#go-go');
+  await page.waitForFunction(() => window.__ws);
+  await ready(page, false);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__ws.drop());
+  await page.waitForFunction(() => window.__sockets >= 2, null, { timeout: 10000 });
+  await ready(page, false, continued.resumed);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__ws.push({ aida: { type: 'ended', reason: 'idle', minutes: 2, resumable: true } }));
+  await page.waitForSelector('#end-continue:not([hidden])', { timeout: 10000 });
+  await page.waitForTimeout(300);
+  await page.click('#end-continue');
+  await page.waitForFunction(() => window.__sockets >= 3, null, { timeout: 10000 });
+  await page.evaluate(() => window.__ws.drop()); // closes before `ready`
+  await page.waitForTimeout(2000);
+  const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, title: document.querySelector('#mic-title').textContent, sockets: window.__sockets }));
+  check('a later call whose line never opens, after a reconnect earlier on the page: "The line did not open", not a drop', m.screen === 'mic' && m.title === 'The line did not open' && m.sockets === 3, JSON.stringify(m));
+  await ctx.close();
+  await browser.close();
+}
+
+/** Back or Forward, and a moment for the page to answer it. */
+const travel = async (page, way) => {
+  await page.evaluate((w) => (w === 'back' ? history.back() : history.forward()), way);
+  await page.waitForTimeout(500);
+  return page.evaluate(() => document.querySelector('#app').dataset.screen);
+};
+
+if (want9('34')) {
+  // The first screen had no history entry of its own: Back from the details form pushed a new one, wasting a press
+  // and throwing Forward away.
+  const browser = await chrome();
+  const { ctx, page } = await open(browser, { size: PHONE });
+  await page.click('.check .box');
+  await page.click('#start-top');
+  await page.waitForSelector('#details:not([hidden])');
+  const back = await travel(page, 'back');
+  const forward = await travel(page, 'forward');
+  const length = await page.evaluate(() => history.length);
+  check('consent, details, Back shows the first screen and Forward the details again', back === 'intro' && forward === 'details', JSON.stringify({ back, forward, length }));
+  await ctx.close();
+  await browser.close();
+}
+
+if (want9('35')) {
+  // "The line did not open" sat on top of the room's history entry: Back led into a dead room with no line.
+  const browser = await chrome(FAKE_MIC);
+  const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], ws: 'close', goto: `/talk/?go=${GO}` });
+  await page.click('#go-go');
+  await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'mic' && !document.querySelector('#mic-actions').hidden, null, { timeout: 8000 });
+  const back = await travel(page, 'back');
+  const room = await page.evaluate(() => !document.querySelector('#room').hidden);
+  check('the line did not open, then Back: not the dead room', back !== 'room' && !room, JSON.stringify({ back, room }));
+  await ctx.close();
+  await browser.close();
+}
+
+if (want9('55')) {
+  // "Opening your conversation…" kept its history entry after the request failed: Back showed the spinner with no
+  // buttons at all.
+  const browser = await chrome();
+  for (const [how, opts, press] of [
+    ['the email link (/confirm 500)', { goto: `/talk/?go=${GO}`, routes: { '**/api/talk/confirm': (r) => r.fulfill(json({ error: 'unavailable' }, 500)) } }, '#go-go'],
+    ['Continue on the welcome-back card (/continue 500)', { me: { known: true, name: 'Sam', canContinue: true, minutesSoFar: 3, canStartNew: true }, routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: 'unavailable' }, 500)) } }, '#known-continue'],
+  ]) {
+    const { ctx, page } = await open(browser, { size: PHONE, ...opts });
+    await page.waitForSelector(`${press}:not([hidden])`);
+    await page.click(press);
+    await page.waitForFunction((b) => document.querySelector('#app').dataset.screen === 'intro' && !document.querySelector(b).disabled, press, { timeout: 8000 });
+    const back = await travel(page, 'back');
+    check(`${how} failed, then Back: not the empty "Opening your conversation…" screen`, back !== 'mic', JSON.stringify({ back }));
+    await ctx.close();
+  }
+  await browser.close();
+}
+
+if (want9('52')) {
+  // Back while "Continue later?" was open showed the End question beside it: two questions at once.
+  const browser = await chrome(FAKE_MIC);
+  const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], goto: `/talk/?go=${GO}` });
+  await page.click('#go-go');
+  await page.waitForFunction(() => window.__ws);
+  await ready(page, false);
+  await page.waitForTimeout(300);
+  await page.click('#later');
+  await page.waitForSelector('#confirm-later:not([hidden])');
+  await travel(page, 'back');
+  const m = await page.evaluate(() => ({ end: !document.querySelector('#confirm').hidden, later: !document.querySelector('#confirm-later').hidden, screen: document.querySelector('#app').dataset.screen }));
+  check('"Continue later?" open, then Back: one question on screen, not two', m.screen === 'room' && m.end !== m.later, JSON.stringify(m));
+  await ctx.close();
+  await browser.close();
+}
+
+if (want9('43')) {
+  // The team size was never kept for the trip to the privacy page: it was saved only if another field was typed in
+  // afterwards, and never put back.
+  const browser = await chrome();
+  const { ctx, page } = await open(browser, { size: PHONE });
+  await page.click('.check .box');
+  await page.click('#start-top');
+  await page.waitForSelector('#details:not([hidden])');
+  await page.fill('#f-name', 'Sam Example');
+  await page.click('#team-sizes label:nth-child(3)');
+  await page.reload();
+  await page.waitForTimeout(300);
+  const m = await page.evaluate(() => ({ size: document.querySelector('#team-sizes input:checked')?.id ?? null, name: document.querySelector('#f-name').value }));
+  check('a team size picked, then the page reloaded (as after the privacy page): still picked', m.size === 'f-teamSize-2' && m.name === 'Sam Example', JSON.stringify(m));
+  await ctx.close();
+  await browser.close();
+}
+
+if (want9('44')) {
+  // Nothing to continue: Continue went, but its voice-only twin stayed (and repeated the same 404), and the reason
+  // was never shown.
+  const browser = await chrome();
+  for (const press of ['#known-continue', '#known-voice']) {
+    let asked = 0;
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      me: { known: true, name: 'Sam', canContinue: true, minutesSoFar: 3, canStartNew: true },
+      routes: { '**/api/talk/continue': (r) => { asked++; return r.fulfill(json({ error: 'nothing_to_continue' }, 404)); } },
+    });
+    await page.waitForSelector(`${press}:not([hidden])`);
+    await page.click(press);
+    await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'intro' && !document.querySelector('#known-new').disabled, null, { timeout: 8000 });
+    await page.waitForTimeout(200);
+    const m = await page.evaluate(() => ({
+      cont: !document.querySelector('#known-continue').hidden,
+      voice: !document.querySelector('#known-voice').hidden,
+      start: !document.querySelector('#known-new').hidden,
+      startMain: document.querySelector('#known-new').classList.contains('btn-go'),
+      status: document.querySelector('#known-status').textContent,
+      focus: document.activeElement?.id || document.activeElement?.tagName || '',
+    }));
+    check(`welcome-back ${press === '#known-voice' ? 'voice-only ' : ''}Continue, nothing to continue: both Continues go, the reason is shown, Start is the main button (asked ${asked})`, asked === 1 && !m.cont && !m.voice && m.start && m.startMain && m.status === 'There is nothing to continue. Start a new conversation.', JSON.stringify(m));
+    check(`...and focus moves from the Continue that went to Start`, m.focus === 'known-new', JSON.stringify({ focus: m.focus }));
+    await ctx.close();
+  }
+  {
+    // The same answer on a card with no Start button (the server allows no new conversation): the reason must not
+    // tell the person to start one (review, 19 Nov).
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      me: { known: true, name: 'Sam', canContinue: true, minutesSoFar: 3, canStartNew: false },
+      routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: 'nothing_to_continue' }, 404)) },
+    });
+    await page.waitForSelector('#known-continue:not([hidden])');
+    await page.click('#known-continue');
+    await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'intro' && document.querySelector('#known-status').textContent !== '', null, { timeout: 8000 });
+    await page.waitForTimeout(200);
+    const m = await page.evaluate(() => ({
+      cont: !document.querySelector('#known-continue').hidden,
+      voice: !document.querySelector('#known-voice').hidden,
+      start: !document.querySelector('#known-new').hidden,
+      status: document.querySelector('#known-status').textContent,
+    }));
+    check('welcome-back Continue, nothing to continue, no Start on the card: the reason is said without sending the person to a button that is not there', !m.cont && !m.voice && !m.start && m.status === 'There is nothing to continue.', JSON.stringify(m));
+    await ctx.close();
+  }
+  await browser.close();
+}
+
+if (want9('16')) {
+  // The strategy page dropped the one-time code from the address on any first answer but 401: after a dropped
+  // connection, Try again could only show the sign-in form, although the code was never used.
+  const browser = await chrome();
+  const code = 'b'.repeat(43);
+  let down = true;
+  const verified = [];
+  const { ctx, page } = await open(browser, {
+    size: PHONE,
+    goto: `/strategy/${'a'.repeat(43)}?c=${code}`,
+    routes: {
+      '**/api/strategy/view**': (r) => r.fulfill(down ? json({ error: 'unavailable' }, 503) : json({ need: 'email', hint: 's***@acme.example' }, 401)),
+      '**/api/strategy/verify': (r) => {
+        verified.push(JSON.parse(r.request().postData() ?? '{}').c);
+        return r.fulfill(json({ error: 'expired' }, 400));
+      },
+    },
+  });
+  await page.waitForSelector('#trouble:not([hidden])', { timeout: 10000 });
+  const kept = await page.evaluate(() => new URLSearchParams(location.search).get('c'));
+  down = false;
+  await page.click('#retry');
+  await page.waitForSelector('#sign-in:not([hidden])', { timeout: 10000 });
+  const after = await page.evaluate(() => ({ c: new URLSearchParams(location.search).get('c'), notice: document.querySelector('#signin-notice').textContent }));
+  check('strategy: the first request fails, so the sign-in code stays in the address and Try again uses it', kept === code && verified.length === 1 && verified[0] === code && after.c === null, JSON.stringify({ kept: kept === code, verified: verified.length, ...after }));
+  await ctx.close();
+  await browser.close();
+}
+
+if (want9('30')) {
+  // A sign-out that failed was not reported: the strategy was fetched again and shown as if nothing had happened.
+  const browser = await chrome();
+  const view = {
+    company: 'Acme Cleaning (fictional)',
+    firstName: 'Sam',
+    publishedAt: '2026-10-20T09:00:00.000Z',
+    updatedAt: '2026-10-20T09:00:00.000Z',
+    contact: null,
+    deck: {
+      title: 'AI and automation strategy for Acme Cleaning (fictional)',
+      company: 'Acme Cleaning (fictional)',
+      dateLabel: '20 October 2026',
+      heard: { business: 'Acme Cleaning (fictional) cleans forty offices.', today: ['Two supervisors check every timesheet by hand.'], crux: 'Every approval waits on two supervisors.' },
+      swot: { strengths: ['A loyal team'], weaknesses: ['Rotas in three spreadsheets'], opportunities: ['Automate the approval list'], threats: ['Rising wages'] },
+      plays: [{ name: 'Friday approvals on one screen', whatWeWouldBuild: 'One approval list.', whatChangesForYou: 'Payroll starts on Friday.', firstStep: 'Map the spreadsheets.', evidence: 'Every approval waits on two supervisors.' }],
+      roadmap: [{ when: 'First 30 days', items: ['Map the spreadsheets'] }],
+      nextStep: 'Reply with a time next week.',
+      speaker: 'Aida',
+    },
+  };
+  const { ctx, page } = await open(browser, {
+    size: PHONE,
+    goto: `/strategy/${'a'.repeat(43)}`,
+    routes: {
+      '**/api/strategy/view**': (r) => r.fulfill(json(view)),
+      '**/api/strategy/signout**': (r) => r.fulfill(json({ error: 'unavailable' }, 503)),
+    },
+  });
+  await page.waitForSelector('#view:not([hidden])', { timeout: 10000 });
+  // By keyboard: Sign out is disabled while it is asked, which drops its focus to the page.
+  await page.focus('#signout');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(800);
+  const m = await page.evaluate(() => ({
+    view: !document.querySelector('#view').hidden,
+    notice: document.querySelector('#signout-notice')?.hidden === false ? document.querySelector('#signout-notice').textContent : null,
+    button: !document.querySelector('#signout').disabled,
+    focus: document.activeElement?.id || document.activeElement?.tagName || '',
+  }));
+  check('strategy: a sign-out that failed says so, and the strategy and Sign out stay', m.view && m.notice === 'We could not sign you out. Check your connection and try again.' && m.button, JSON.stringify(m));
+  check('...and keyboard focus is back on Sign out, beside the notice', m.focus === 'signout', JSON.stringify({ focus: m.focus }));
+  await page.locator('.strategy-foot').screenshot({ path: `${shots}/strategy-signout-failed-phone.png` });
+  await ctx.close();
   await browser.close();
 }
 

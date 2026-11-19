@@ -12,6 +12,7 @@ import {
   confirmRefusal,
   entryFor,
   entryRefusal,
+  nothingToContinueText,
   errorCode,
   idleSentence,
   connectFailedText,
@@ -320,6 +321,12 @@ describe("a returning visitor", () => {
     expect(entryRefusal(429, { error: "too_many" }).outcome).toBe("retry");
     expect(entryRefusal(500, null).outcome).toBe("retry");
     expect(entryRefusal(500, null).message).toBe(COULD_NOT_OPEN);
+  });
+
+  it("nothing to continue names Start only when the card offers it", () => {
+    expect(entryRefusal(404, { error: "nothing_to_continue" }).message).toBe(nothingToContinueText(true));
+    expect(nothingToContinueText(true)).toBe("There is nothing to continue. Start a new conversation.");
+    expect(nothingToContinueText(false)).toBe("There is nothing to continue.");
   });
 
   it("only a 404 nothing_to_continue hides Continue: any other 404 (switched off for now) keeps it and says try again", () => {

@@ -312,12 +312,18 @@ export interface EntryRefusal {
 /** A refusal that says nothing about what is saved (a server error, or conversations switched off for now). */
 export const COULD_NOT_OPEN = "We could not open it just now. Please try again in a moment.";
 
+/**
+ * Said when there is nothing to continue. It names Start only when the card offers it: a card with no Start button
+ * (the server allows no new conversation now) must not send the person to one (review, 19 Nov).
+ */
+export function nothingToContinueText(canStart: boolean): string {
+  return canStart ? "There is nothing to continue. Start a new conversation." : "There is nothing to continue.";
+}
+
 export function entryRefusal(status: number, data: unknown): EntryRefusal {
   const c = code(data);
   if (status === 401 || c === "no_session") return { message: USE_EMAILED_LINK, outcome: "login" };
-  if (c === "nothing_to_continue") {
-    return { message: "There is nothing to continue. Start a new conversation.", outcome: "nothing" };
-  }
+  if (c === "nothing_to_continue") return { message: nothingToContinueText(true), outcome: "nothing" };
   // Any other 404 ({ error: "closed" } while conversations are switched off) says nothing about the saved call:
   // Continue stays, as on the end screen (review, 19 Nov: the welcome-back card hid it for good).
   if (status === 404) return { message: COULD_NOT_OPEN, outcome: "retry" };
