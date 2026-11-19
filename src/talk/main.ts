@@ -89,7 +89,7 @@ import {
   type FailReason,
   type MseWindow,
 } from "./avatar";
-import { MicError, Voice, type MicProblem } from "./voice";
+import { MicError, MicSuperseded, Voice, type MicProblem } from "./voice";
 
 
 // Where the live call runs (the site's owner may move it off this host): read once, early. Absent or wrong
@@ -616,7 +616,8 @@ async function askForMic(): Promise<void> {
     await voice.openMic();
   } catch (err) {
     window.clearTimeout(help);
-    if (attempt !== micAttempt) return;
+    // A later press asked again (one Allow can answer both): that question owns the screen and the stream.
+    if (attempt !== micAttempt || err instanceof MicSuperseded) return;
     micWait.hidden = true;
     micActions.hidden = false;
     micText.textContent = MIC_TROUBLE[err instanceof MicError ? err.problem : "failed"];
