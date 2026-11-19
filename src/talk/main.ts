@@ -845,6 +845,8 @@ const lineAida = byId("line-aida", HTMLDivElement);
 const lineYou = byId("line-you", HTMLDivElement);
 const saidAida = byId("said-aida", HTMLParagraphElement);
 const saidYou = byId("said-you", HTMLParagraphElement);
+/** The frame that will fit the captions to whole lines (fitLinesSoon), or 0. */
+let fitFrame = 0;
 const whoYou = byId("who-you", HTMLParagraphElement);
 const hint = byId("hint", HTMLParagraphElement);
 const announce = byId("announce", HTMLParagraphElement);
@@ -1274,6 +1276,7 @@ function setSaid(el: HTMLElement, text: string): void {
   if (el.textContent === text) return;
   el.textContent = text;
   showTail(el);
+  fitLinesSoon();
 }
 
 /**
@@ -1286,14 +1289,47 @@ function showTail(el: HTMLElement): void {
   if (el.parentElement) el.parentElement.dataset.clipped = String(over > 1);
 }
 
+/**
+ * A caption that has given way to the room (a short desk window with the typing box and the idle card open) shows
+ * whole lines: its box is cut down to the lines that fit, so its top line is never cut through its letters under
+ * the label (QA, 18 Oct; review, 19 Nov: 2.57 lines of hers at 1024 x 576). The other caption may then take the
+ * room back, so both are fitted together, a frame after the change: never inside the observer that reported a
+ * size, where a new size would loop.
+ */
+function fitLinesSoon(): void {
+  if (fitFrame) return;
+  fitFrame = requestAnimationFrame(() => {
+    fitFrame = 0;
+    for (const el of [saidAida, saidYou]) fitLines(el);
+  });
+}
+
+function fitLines(el: HTMLElement): void {
+  if (el.style.maxHeight) el.style.maxHeight = "";
+  if (el.offsetParent === null) return; // not on screen: nothing to fit
+  const box = el.getBoundingClientRect().height;
+  const line = parseFloat(getComputedStyle(el).lineHeight);
+  // At its newest words the top line shows only its lower `part`. Up to 15% of a line hidden is only the space
+  // above the letters; more cuts through them.
+  const part = line > 0 ? box % line : 0;
+  if (el.scrollHeight - el.clientHeight > 1 && box > line && part > 1 && line - part > 0.15 * line) {
+    el.style.maxHeight = `${(box - part).toFixed(2)}px`;
+  }
+  // Letting the box out to measure it moved the caption off its newest words.
+  showTail(el);
+}
+
 // A caption's box also shrinks when the other caption grows (yours gives way to her longer line): its newest
-// words stay in view then too, not only when its own words change.
+// words stay in view then too, not only when its own words change. The captions' own box tells when the room
+// gives them more (the idle card goes), so a caption fitted to fewer lines gets them back.
 if (typeof ResizeObserver === "function") {
   const tails = new ResizeObserver((entries) => {
-    for (const entry of entries) if (entry.target instanceof HTMLElement) showTail(entry.target);
+    for (const entry of entries) if (entry.target !== captions && entry.target instanceof HTMLElement) showTail(entry.target);
+    fitLinesSoon();
   });
   tails.observe(saidAida);
   tails.observe(saidYou);
+  tails.observe(captions);
 }
 
 function renderCaptions(s: TalkState): void {

@@ -932,6 +932,16 @@ if (want('7')) {
     });
   };
 
+  // A caption that gives way shows whole lines (QA, 18 Oct; review, 19 Nov): at its newest words its top line
+  // was cut through its letters under the label (2.57 lines of hers at 1024 x 576). Up to 15% of a line hidden is
+  // only the space above the letters.
+  const WHOLE_LINES = (id) => {
+    const e = document.getElementById(id);
+    const lh = parseFloat(getComputedStyle(e).lineHeight);
+    const part = e.getBoundingClientRect().height % lh;
+    return e.scrollHeight - e.clientHeight <= 1 || part <= 1 || lh - part <= 0.15 * lh;
+  };
+
   // Text at 200% on a narrow phone: the room's four buttons were wider than the screen and the room's overflow cut
   // "Mute" and "End" in half; the end screen scrolled sideways by 22 px.
   for (const w of [320, 360]) {
@@ -1042,7 +1052,8 @@ if (want('7')) {
         await page.waitForSelector('#idle:not([hidden])');
       }
       await page.waitForTimeout(400);
-      const m = await page.evaluate(() => {
+      const m = await page.evaluate((wholeLines) => {
+        const whole = new Function(`return (${wholeLines})`)();
         const box = (id) => document.getElementById(id).getBoundingClientRect();
         const stage = box('stage');
         const tag = box('status');
@@ -1054,11 +1065,12 @@ if (want('7')) {
           tag: text.textContent,
           tagWhole: tag.right <= stage.right - 2 && tag.bottom <= stage.bottom && text.scrollWidth <= text.clientWidth + 1,
           captionsWhole: lines.length > 0 && lines.every((id) => box(id).bottom <= captions.bottom + 1),
+          wholeLines: ['said-aida', 'said-you'].filter((id) => document.getElementById(id).checkVisibility()).every(whole),
           endInView: box('end').bottom <= innerHeight,
           scroll: document.documentElement.scrollWidth - innerWidth,
         };
-      });
-      check(`[${w}x${h}, ${state}] her window ${m.stage} px (at least 120), "${m.tag}" whole inside it, the captions not cut, End in view`, m.stage >= 120 && m.tagWhole && m.captionsWhole && m.endInView && m.scroll === 0, JSON.stringify(m));
+      }, WHOLE_LINES.toString());
+      check(`[${w}x${h}, ${state}] her window ${m.stage} px (at least 120), "${m.tag}" whole inside it, the captions not cut and in whole lines, End in view`, m.stage >= 120 && m.tagWhole && m.captionsWhole && m.wholeLines && m.endInView && m.scroll === 0, JSON.stringify(m));
       if (w === 1024) await page.screenshot({ path: `${shots}/layout-short-${w}x${h}-${state.replace('+', '-')}.png` });
       await ctx.close();
     }
@@ -1068,7 +1080,7 @@ if (want('7')) {
   // 1280 x 800. Both end inside the captions box, theirs at least a line tall, each showing its newest words.
   const LONG_YOU = ' Mostly it is the Friday check, because I have to look at every timesheet myself and then type it all in again.';
   const LONG_HER = 'Let me read back what I have so far, and you tell me if I have any of it wrong. You run office cleaning with about forty people on two sites, the leads build the rotas, and everything waits for you on Friday, which means that when you are away, nobody gets paid on time.';
-  for (const [w, h, typing] of [[1280, 800], [1366, 768], [1440, 900], [1000, 700], [1280, 800, true], [390, 844], [844, 390], [640, 400], [320, 568]]) {
+  for (const [w, h, typing] of [[1280, 800], [1366, 768], [1440, 900], [1000, 700], [1280, 800, true], [1024, 576, true], [390, 844], [844, 390], [640, 400], [640, 400, true], [320, 568], [320, 568, true]]) {
     const { ctx, page } = await liveRoom({ width: w, height: h });
     if (typing) await page.click('#type');
     await page.evaluate(([you, her]) => {
@@ -1078,7 +1090,8 @@ if (want('7')) {
       for (const word of her.split(' ')) ws.push({ serverContent: { outputTranscription: { text: ` ${word}` } } });
     }, [LONG_YOU, LONG_HER]);
     await page.waitForTimeout(900);
-    const m = await page.evaluate(() => {
+    const m = await page.evaluate((wholeLines) => {
+      const whole = new Function(`return (${wholeLines})`)();
       const captions = document.getElementById('captions').getBoundingClientRect();
       const tail = (e) => Math.abs(e.scrollHeight - e.clientHeight - e.scrollTop) <= 2;
       const you = document.getElementById('said-you');
@@ -1087,10 +1100,11 @@ if (want('7')) {
         youInside: document.getElementById('line-you').getBoundingClientRect().bottom <= captions.bottom + 1,
         youLine: you.getBoundingClientRect().height >= parseFloat(getComputedStyle(you).lineHeight) - 1,
         newest: tail(you) && tail(her),
+        wholeLines: whole('said-aida') && whole('said-you'),
         endInView: document.getElementById('end').getBoundingClientRect().bottom <= innerHeight,
       };
-    });
-    check(`[${w}x${h}${typing ? ', typing' : ''}] long captions: theirs ends inside the captions box, a line or more tall, both showing their newest words`, m.youInside && m.youLine && m.newest && m.endInView, JSON.stringify(m));
+    }, WHOLE_LINES.toString());
+    check(`[${w}x${h}${typing ? ', typing' : ''}] long captions: theirs ends inside the captions box, a line or more tall, both showing their newest words in whole lines`, m.youInside && m.youLine && m.newest && m.wholeLines && m.endInView, JSON.stringify(m));
     await ctx.close();
   }
 
