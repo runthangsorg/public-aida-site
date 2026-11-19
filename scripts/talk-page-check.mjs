@@ -1443,6 +1443,23 @@ if (want9('55')) {
   await browser.close();
 }
 
+if (want9('52')) {
+  // Back while "Continue later?" was open showed the End question beside it: two questions at once.
+  const browser = await chrome(FAKE_MIC);
+  const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], goto: `/talk/?go=${GO}` });
+  await page.click('#go-go');
+  await page.waitForFunction(() => window.__ws);
+  await ready(page, false);
+  await page.waitForTimeout(300);
+  await page.click('#later');
+  await page.waitForSelector('#confirm-later:not([hidden])');
+  await travel(page, 'back');
+  const m = await page.evaluate(() => ({ end: !document.querySelector('#confirm').hidden, later: !document.querySelector('#confirm-later').hidden, screen: document.querySelector('#app').dataset.screen }));
+  check('"Continue later?" open, then Back: one question on screen, not two', m.screen === 'room' && m.end !== m.later, JSON.stringify(m));
+  await ctx.close();
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);

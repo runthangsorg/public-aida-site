@@ -176,6 +176,7 @@ window.addEventListener("popstate", () => {
     // Stay in the room's history entry, so a second Back asks again instead of leaving the site.
     history.pushState({ screen: "room" }, "");
     controls.hidden = true;
+    confirmLater.hidden = true; // one question at a time: Back asks about ending, in place of "Continue later?"
     confirmBox.hidden = false;
     byId("confirm-no", HTMLButtonElement).focus();
     return;
