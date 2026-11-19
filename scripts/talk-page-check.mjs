@@ -1460,6 +1460,24 @@ if (want9('52')) {
   await browser.close();
 }
 
+if (want9('43')) {
+  // The team size was never kept for the trip to the privacy page: it was saved only if another field was typed in
+  // afterwards, and never put back.
+  const browser = await chrome();
+  const { ctx, page } = await open(browser, { size: PHONE });
+  await page.click('.check .box');
+  await page.click('#start-top');
+  await page.waitForSelector('#details:not([hidden])');
+  await page.fill('#f-name', 'Sam Example');
+  await page.click('#team-sizes label:nth-child(3)');
+  await page.reload();
+  await page.waitForTimeout(300);
+  const m = await page.evaluate(() => ({ size: document.querySelector('#team-sizes input:checked')?.id ?? null, name: document.querySelector('#f-name').value }));
+  check('a team size picked, then the page reloaded (as after the privacy page): still picked', m.size === 'f-teamSize-2' && m.name === 'Sam Example', JSON.stringify(m));
+  await ctx.close();
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);

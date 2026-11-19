@@ -334,8 +334,14 @@ function restoreDetails(): void {
   if (!saved) return;
   for (const f of FIELDS) {
     const v = saved[f];
+    if (typeof v !== "string") continue;
+    if (f === "teamSize") {
+      // The sizes are radios (#f-teamSize-0, -1, …): the one with the saved value is picked again.
+      for (const input of chips.querySelectorAll<HTMLInputElement>("input")) input.checked = input.value === v;
+      continue;
+    }
     const el = document.getElementById(`f-${f}`);
-    if (typeof v === "string" && el instanceof HTMLInputElement) el.value = v.slice(0, MAX_LENGTH[f]);
+    if (el instanceof HTMLInputElement) el.value = v.slice(0, MAX_LENGTH[f]);
   }
 }
 for (const f of FIELDS) {
@@ -348,6 +354,7 @@ for (const f of FIELDS) {
   }
 }
 chips.addEventListener("change", () => {
+  saveDetails();
   clearIfFixed("teamSize");
 });
 consent.addEventListener("change", () => {
