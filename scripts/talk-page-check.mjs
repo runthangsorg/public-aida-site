@@ -332,7 +332,8 @@ if (want('3')) {
         '**/api/talk/continue': async (r) => {
           const status = replies[Math.min(asked.length, replies.length - 1)];
           asked.push(status);
-          await r.fulfill(status === 200 ? json(resumedBody) : json({ error: status === 409 ? 'busy' : 'nothing_to_continue' }, status));
+          const error = status === 409 ? 'busy' : status === 401 ? 'no_session' : 'nothing_to_continue';
+          await r.fulfill(status === 200 ? json(resumedBody) : json({ error }, status));
         },
       },
     });
@@ -373,13 +374,34 @@ if (want('3')) {
       check(`[${tag}] muted before the drop: still muted after the reconnect, and the new microphone track is off`, m.pressed === 'true' && /Unmute/.test(m.label) && m.live === false && m.streams >= 2, JSON.stringify(m));
       await ctx.close();
     }
+    const endState = (page) =>
+      page.evaluate(() => ({
+        title: document.querySelector('#end-title').textContent,
+        lede: document.querySelector('#end-lede').textContent,
+        choices: document.querySelector('#choices').hidden,
+        actions: !document.querySelector('#end-actions').hidden,
+        cont: !document.querySelector('#end-continue').hidden,
+        label: document.querySelector('#end-continue .label').textContent,
+        newConversation: document.querySelector('#end-new').hidden ? null : document.querySelector('#end-new').getAttribute('href'),
+      }));
     if (tag === 'phone') {
+      // 404: the server holds nothing to continue from, so the screen must not promise "your place is saved"
+      // (UI review, 19 Nov): it says so and offers a new conversation instead of a Continue that would fail.
       const { ctx, page, asked } = await dropped(tag, size, [404]);
       await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
       await page.waitForTimeout(500);
-      const end = await page.evaluate(() => ({ title: document.querySelector('#end-title').textContent, lede: document.querySelector('#end-lede').textContent, choices: document.querySelector('#choices').hidden, cont: !document.querySelector('#end-actions').hidden, label: document.querySelector('#end-continue .label').textContent }));
-      check(`[${tag}] 404: the line-dropped end screen, with Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && /place is saved/.test(end.lede) && end.cont && end.label === 'Continue' && end.choices, JSON.stringify(end));
+      const end = await endState(page);
+      check(`[${tag}] 404: the line-dropped end screen says nothing is saved and offers a new conversation, no Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && !/place is saved/.test(end.lede) && /nothing saved/.test(end.lede) && end.actions && !end.cont && end.newConversation === '/talk/' && end.choices, JSON.stringify(end));
       await page.screenshot({ path: `${shots}/review-end-dropped-${tag}.png`, fullPage: true });
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      // 401: no cookie, but the call may well be saved: the line-dropped end screen with Continue, as before.
+      const { ctx, page, asked } = await dropped(tag, size, [401]);
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(500);
+      const end = await endState(page);
+      check(`[${tag}] 401: the line-dropped end screen, with Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && /place is saved/.test(end.lede) && end.actions && end.cont && end.label === 'Continue' && end.newConversation === null && end.choices, JSON.stringify(end));
       await ctx.close();
     }
     if (tag === 'phone') {
