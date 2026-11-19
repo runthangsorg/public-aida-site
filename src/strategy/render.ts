@@ -3,7 +3,7 @@
 // with `textContent` only: there is no innerHTML and no markup parsing here,
 // and a field holding "<script>" stays the five characters a person sees.
 
-import type { StrategyView } from "./state";
+import { PLAIN_ADDRESS, type StrategyView } from "./state";
 
 function el<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
@@ -36,8 +36,6 @@ function numbered(doc: Document, items: readonly string[]): HTMLElement {
   for (const item of items) ol.append(el(doc, "li", undefined, item));
   return ol;
 }
-
-const PLAIN_ADDRESS = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 
 const QUADRANTS = [
   ["strengths", "Strengths", "s"],

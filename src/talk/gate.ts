@@ -18,6 +18,9 @@ type Bag = Record<string, unknown>;
 const isBag = (v: unknown): v is Bag => typeof v === "object" && v !== null && !Array.isArray(v);
 const code = (v: unknown): string => (isBag(v) && typeof v.error === "string" ? v.error : "");
 
+/** The error code a refusal's body carries (`{ "error": "busy" }` gives "busy"), or "" when it has none. */
+export const errorCode = (data: unknown): string => code(data);
+
 // ---------- the address bar ----------
 
 /** Everything the address bar carried that this page acts on, and the address to leave in its place. */
@@ -260,6 +263,11 @@ export interface KnownCopy {
    * Continue beside "already open"), and a quiet Check again re-reads /api/talk/me.
    */
   busy: boolean;
+  /**
+   * Continue is offered: there is a saved call and today's limit is not reached. At the limit the server
+   * refuses to continue as well as to start, so the card says the place is kept and offers no Continue.
+   */
+  continueNow: boolean;
 }
 
 /** The welcome-back card's wording for a returning visitor. */
@@ -267,11 +275,13 @@ export function knownCopy(me: Me): KnownCopy {
   const who = me.name;
   const mins = me.minutesSoFar === undefined ? 0 : Math.round(me.minutesSoFar);
   const busy = me.reasonIfNot === "busy";
+  const atLimit = me.reasonIfNot === "daily_limit";
   const startOnly = me.startReady === true && !me.canContinue;
   const sofar = mins >= 1 ? `You have talked for ${mins} min so far. ` : "";
   let detail: string;
   if (busy) detail = `${BUSY_CARD} ${BUSY_CLEARS}`;
   else if (startOnly) detail = "Your email is confirmed. Start whenever you are ready.";
+  else if (me.canContinue && atLimit) detail = `${sofar}Your place is saved.`;
   else if (me.canContinue && me.canStartNew) detail = `${sofar}Pick it up where you stopped, or start afresh.`;
   else if (me.canContinue) detail = `${sofar}Pick it up where you stopped.`;
   else if (me.canStartNew) detail = "Start a new conversation whenever you are ready.";
@@ -283,6 +293,7 @@ export function knownCopy(me: Me): KnownCopy {
     notYou: who ? `Not ${who}? Use a different email` : "Not you? Use a different email",
     limit: !busy && !me.canStartNew && me.reasonIfNot ? limitMessage(me.reasonIfNot) : "",
     busy,
+    continueNow: me.canContinue && !atLimit,
   };
 }
 
@@ -298,16 +309,22 @@ export interface EntryRefusal {
   outcome: "login" | "nothing" | "stop" | "retry";
 }
 
+/** A refusal that says nothing about what is saved (a server error, or conversations switched off for now). */
+export const COULD_NOT_OPEN = "We could not open it just now. Please try again in a moment.";
+
 export function entryRefusal(status: number, data: unknown): EntryRefusal {
   const c = code(data);
   if (status === 401 || c === "no_session") return { message: USE_EMAILED_LINK, outcome: "login" };
-  if (status === 404 || c === "nothing_to_continue") {
+  if (c === "nothing_to_continue") {
     return { message: "There is nothing to continue. Start a new conversation.", outcome: "nothing" };
   }
+  // Any other 404 ({ error: "closed" } while conversations are switched off) says nothing about the saved call:
+  // Continue stays, as on the end screen (review, 19 Nov: the welcome-back card hid it for good).
+  if (status === 404) return { message: COULD_NOT_OPEN, outcome: "retry" };
   if (c === "daily_limit") return { message: DAILY_LIMIT, outcome: "stop" };
   if (status === 409 || c === "busy") return { message: BUSY_OTHER_WINDOW, outcome: "stop" };
   if (status === 429) return { message: waitMessage(isBag(data) ? data.retryAfter : undefined), outcome: "retry" };
-  return { message: "We could not open it just now. Please try again in a moment.", outcome: "retry" };
+  return { message: COULD_NOT_OPEN, outcome: "retry" };
 }
 
 // ---------- the microphone and the connection: never a dead end ----------
@@ -343,6 +360,8 @@ export interface Closing {
 /** Under the heading "The line dropped": the heading already says what happened. */
 export const DROPPED_LEDE = "Your place is saved, so you can carry on where you stopped.";
 export const DROPPED_STILL_CLOSING = "Your last call is still closing. Please try again in a minute.";
+/** The server holds no saved place for this call (nothing to continue): never "your place is saved". */
+export const NOTHING_SAVED_LEDE = "There is nothing saved to continue from. You can start a new conversation.";
 export const IDLE_CLOSING: Closing = { title: "Paused", lede: "It went quiet. Your place is saved." };
 export const VIDEO_STOPPED_CLOSING: Closing = {
   title: "The video stopped",

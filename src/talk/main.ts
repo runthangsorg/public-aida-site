@@ -23,9 +23,12 @@ import {
   SWITCHING_CLOSING,
   VIDEO_STOPPED_CLOSING,
   NETWORK_TRY_AGAIN,
+  NOTHING_SAVED_LEDE,
+  COULD_NOT_OPEN,
   confirmRefusal,
   entryFor,
   entryRefusal,
+  errorCode,
   idleSentence,
   knownCopy,
   readContinued,
@@ -57,7 +60,15 @@ import {
   type TalkState,
 } from "./state";
 import { renderNotes, renderSummary } from "./swot";
-import { DROPPED_STATUS, RECONNECT_RETRY_MS, reconnecting, startReconnect, stepReconnect, type Reconnect } from "./reconnect";
+import {
+  DROPPED_STATUS,
+  NOTHING_TO_CONTINUE,
+  RECONNECT_RETRY_MS,
+  reconnecting,
+  startReconnect,
+  stepReconnect,
+  type Reconnect,
+} from "./reconnect";
 import {
   GATE_FAILED,
   HumanCheck,
@@ -451,7 +462,7 @@ async function start(name: string, body: Record<string, string | boolean>): Prom
       showGateFailure();
       return;
     }
-    showAlert(r.message);
+    showAlert(r.message, !r.field);
     if (r.field === "consent") {
       show("intro");
       setError(consentError, r.message);
@@ -484,9 +495,18 @@ function openSession(opened: Opened): void {
   void askForMic();
 }
 
-function showAlert(message: string): void {
+/**
+ * The form's one message, at the top of the form. On a phone Continue is a screen or more below it, and the
+ * pressed button was disabled while it waited (focus fell to the page): bring the message into view and put
+ * focus on it, so it is seen and read. A refusal about one field leaves both to that field's own error.
+ */
+function showAlert(message: string, bringIntoView = true): void {
   alertBox.textContent = message;
   alertBox.hidden = false;
+  if (!bringIntoView) return;
+  alertBox.tabIndex = -1;
+  alertBox.focus({ preventScroll: true });
+  alertBox.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
 }
 
 // ---------- 2b. check your email ----------
@@ -825,6 +845,8 @@ const lineAida = byId("line-aida", HTMLDivElement);
 const lineYou = byId("line-you", HTMLDivElement);
 const saidAida = byId("said-aida", HTMLParagraphElement);
 const saidYou = byId("said-you", HTMLParagraphElement);
+/** The frame that will fit the captions to whole lines (fitLinesSoon), or 0. */
+let fitFrame = 0;
 const whoYou = byId("who-you", HTMLParagraphElement);
 const hint = byId("hint", HTMLParagraphElement);
 const announce = byId("announce", HTMLParagraphElement);
@@ -1073,10 +1095,11 @@ async function askToContinue(): Promise<void> {
   const r = await post("/api/talk/continue", {});
   if (!reconnecting(rc)) return; // stopped (End pressed, page going) while the request was out
   const opened = r?.status === 200 ? readContinued(r.data) : null;
-  const step = stepReconnect(rc, { t: "reply", now: performance.now(), status: r ? (r.status === 200 && !opened ? 500 : r.status) : 0 });
+  const status = r ? (r.status === 200 && !opened ? 500 : r.status) : 0;
+  const step = stepReconnect(rc, { t: "reply", now: performance.now(), status, error: r ? errorCode(r.data) : "" });
   rc = step.state;
   if (step.action.kind === "open" && opened) reopen(opened);
-  else if (step.action.kind === "end") reconnectGaveUp();
+  else if (step.action.kind === "end") reconnectGaveUp(step.action.nothingSaved === true);
   else rcTimer = window.setTimeout(reconnectTick, RECONNECT_RETRY_MS);
 }
 
@@ -1115,12 +1138,15 @@ function reopen(opened: Opened): void {
   );
 }
 
-/** Reconnecting did not bring it back: the line-dropped end screen, with Continue. */
-function reconnectGaveUp(): void {
+/**
+ * Reconnecting did not bring it back: the line-dropped end screen, with Continue - or, when the server said it
+ * holds nothing to continue from, with a new conversation instead.
+ */
+function reconnectGaveUp(nothingSaved = false): void {
   window.clearTimeout(rcTimer);
   carriedStart = 0;
   voice.close();
-  dispatch({ kind: "closed", minutes: elapsed() / 60 });
+  dispatch({ kind: "closed", minutes: elapsed() / 60, nothingSaved });
 }
 
 /** End pressed, or the page going away, while reconnecting: stop asking. */
@@ -1249,11 +1275,61 @@ function renderStatus(): void {
 function setSaid(el: HTMLElement, text: string): void {
   if (el.textContent === text) return;
   el.textContent = text;
-  // Keep her newest words, and so her question, in view. Only a caption that
-  // overflows needs scrolling; one layout read per draw, not per word.
+  showTail(el);
+  fitLinesSoon();
+}
+
+/**
+ * Keep her newest words, and so her question, in view. Only a caption that overflows needs scrolling; one layout
+ * read per draw, not per word.
+ */
+function showTail(el: HTMLElement): void {
   const over = el.scrollHeight - el.clientHeight;
   if (over > 1) el.scrollTop = over;
   if (el.parentElement) el.parentElement.dataset.clipped = String(over > 1);
+}
+
+/**
+ * A caption that has given way to the room (a short desk window with the typing box and the idle card open) shows
+ * whole lines: its box is cut down to the lines that fit, so its top line is never cut through its letters under
+ * the label (QA, 18 Oct; review, 19 Nov: 2.57 lines of hers at 1024 x 576). The other caption may then take the
+ * room back, so both are fitted together, a frame after the change: never inside the observer that reported a
+ * size, where a new size would loop.
+ */
+function fitLinesSoon(): void {
+  if (fitFrame) return;
+  fitFrame = requestAnimationFrame(() => {
+    fitFrame = 0;
+    for (const el of [saidAida, saidYou]) fitLines(el);
+  });
+}
+
+function fitLines(el: HTMLElement): void {
+  if (el.style.maxHeight) el.style.maxHeight = "";
+  if (el.offsetParent === null) return; // not on screen: nothing to fit
+  const box = el.getBoundingClientRect().height;
+  const line = parseFloat(getComputedStyle(el).lineHeight);
+  // At its newest words the top line shows only its lower `part`. Up to 15% of a line hidden is only the space
+  // above the letters; more cuts through them.
+  const part = line > 0 ? box % line : 0;
+  if (el.scrollHeight - el.clientHeight > 1 && box > line && part > 1 && line - part > 0.15 * line) {
+    el.style.maxHeight = `${(box - part).toFixed(2)}px`;
+  }
+  // Letting the box out to measure it moved the caption off its newest words.
+  showTail(el);
+}
+
+// A caption's box also shrinks when the other caption grows (yours gives way to her longer line): its newest
+// words stay in view then too, not only when its own words change. The captions' own box tells when the room
+// gives them more (the idle card goes), so a caption fitted to fewer lines gets them back.
+if (typeof ResizeObserver === "function") {
+  const tails = new ResizeObserver((entries) => {
+    for (const entry of entries) if (entry.target !== captions && entry.target instanceof HTMLElement) showTail(entry.target);
+    fitLinesSoon();
+  });
+  tails.observe(saidAida);
+  tails.observe(saidYou);
+  tails.observe(captions);
 }
 
 function renderCaptions(s: TalkState): void {
@@ -1651,6 +1727,37 @@ function setNotebook(open: boolean, focus = true): void {
 nbToggle.addEventListener("click", () => {
   setNotebook(notebook.dataset.open !== "true");
 });
+
+// A phone with the height for it keeps the notebook open under her captions, but the rest of the room can still
+// leave it less than a note: text enlarged to 200% left it 0 px, its tabs and notes out of reach (review, 19 Nov).
+// Then the room shows the strip with her newest note instead, which opens the notes as a sheet. It is measured
+// open whenever the room's sizes change, so the open notebook comes back as soon as there is room for it. A frame
+// after the change, never inside the observer, where a new size would loop.
+const notebookOpenLayout = window.matchMedia("(max-width: 480px) and (min-height: 661px)");
+const NOTES_FLOOR = 40; // px of notes in view: about one note
+
+function fitNotes(): void {
+  const room = screens.room;
+  const wasStrip = room.dataset.notes === "strip";
+  if (wasStrip) delete room.dataset.notes;
+  if (room.hidden || !notebookOpenLayout.matches) return;
+  const panel = notebook.querySelector<HTMLElement>(".nb-panel:not([hidden])");
+  const inView = panel ? notebook.getBoundingClientRect().bottom - panel.getBoundingClientRect().top : 0;
+  if (inView < NOTES_FLOOR) room.dataset.notes = "strip";
+  else if (wasStrip && notebook.dataset.open === "true") setNotebook(false, false);
+}
+
+let notesFrame = 0;
+if (typeof ResizeObserver === "function") {
+  const roomSizes = new ResizeObserver(() => {
+    if (notesFrame) return;
+    notesFrame = requestAnimationFrame(() => {
+      notesFrame = 0;
+      fitNotes();
+    });
+  });
+  for (const el of [screens.room, notebook, captions]) roomSizes.observe(el);
+}
 byId("nb-close", HTMLButtonElement).addEventListener("click", () => {
   setNotebook(false);
   nbToggle.focus();
@@ -1698,6 +1805,20 @@ const endActions = byId("end-actions", HTMLDivElement);
 const endContinue = byId("end-continue", HTMLButtonElement);
 const endContinueStatus = byId("end-continue-status", HTMLParagraphElement);
 const endContinueLabel = endContinue.querySelector<HTMLElement>(".label");
+const endNew = byId("end-new", HTMLAnchorElement);
+
+/**
+ * The server holds no saved place for this call (it answered "nothing to continue"): say so, and offer a new
+ * conversation where Continue was. The link reloads the page, whose first screen knows this browser.
+ */
+function showNothingSaved(): void {
+  byId("end-lede", HTMLParagraphElement).textContent = NOTHING_SAVED_LEDE;
+  byId("end-more", HTMLParagraphElement).hidden = true;
+  endActions.hidden = false;
+  endContinue.hidden = true;
+  endContinueStatus.textContent = "";
+  endNew.hidden = false;
+}
 
 function showEnd(): void {
   const title = byId("end-title", HTMLHeadingElement);
@@ -1712,6 +1833,8 @@ function showEnd(): void {
   const next = byId("next-steps", HTMLElement);
   more.hidden = true;
   endActions.hidden = true;
+  endContinue.hidden = false;
+  endNew.hidden = true;
   endContinueStatus.textContent = "";
   next.hidden = view.kind !== "done" && view.kind !== "budget";
   choices.hidden = true;
@@ -1768,13 +1891,17 @@ function showEnd(): void {
     endContinue.disabled = false;
     if (endContinueLabel) endContinueLabel.textContent = "Continue";
   }
+  if (view.kind === "unsaved") {
+    title.textContent = "The line dropped";
+    showNothingSaved();
+  }
   if (view.kind === "budget") lede.textContent = BUDGET_LEDE;
   const minutes = state.ended?.minutes ?? elapsed() / 60;
   const ceiling = reason === "ceiling" ? " She stopped at the time limit." : "";
   byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(minutes))} min.${ceiling}`;
   app.dataset.ending = reason ?? "";
   show("end");
-  if (session && view.kind !== "dropped") choices.hidden = false;
+  if (session && view.kind !== "dropped" && view.kind !== "unsaved") choices.hidden = false;
 }
 
 // ---------- continuing later ----------
@@ -1920,6 +2047,15 @@ const knownContinue = byId("known-continue", HTMLButtonElement);
 const knownNew = byId("known-new", HTMLButtonElement);
 const knownVoice = byId("known-voice", HTMLButtonElement);
 const knownStatus = byId("known-status", HTMLParagraphElement);
+const knownNote = knownCard.querySelector<HTMLElement>("[data-note]");
+
+/**
+ * The video data note is for someone about to start a call. At today's limit the card offers neither Continue
+ * nor Start (review, 19 Nov: the note was left under no button at all), so it goes with them.
+ */
+function syncKnownNote(): void {
+  if (knownNote) knownNote.hidden = !knownNote.textContent || (knownContinue.hidden && knownNew.hidden);
+}
 
 /**
  * Who the first screen is for. A stranger sees the consent box and Start; someone with a confirmation
@@ -2025,13 +2161,14 @@ function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
   byId("known-title", HTMLElement).textContent = copy.title;
   byId("known-detail", HTMLElement).textContent = copy.detail;
   byId("known-forget", HTMLButtonElement).textContent = copy.notYou;
-  knownContinue.hidden = !me.canContinue;
+  // At today's limit the server refuses Continue too: the card says the place is kept, with no button that fails.
+  knownContinue.hidden = !copy.continueNow;
   knownNew.hidden = !me.canStartNew;
-  knownVoice.hidden = !me.canContinue; // a voice-only Continue beside an ordinary one, or nothing
+  knownVoice.hidden = !copy.continueNow; // a voice-only Continue beside an ordinary one, or nothing
   knownNew.textContent = copy.startLabel;
   // A confirmed interview waiting to be started is the one thing to do: Start is the main button.
   // With nothing to continue, Start is the one thing to do: the main button.
-  const startOnly = !me.canContinue;
+  const startOnly = !copy.continueNow;
   knownNew.classList.toggle("btn-go", startOnly);
   knownNew.classList.toggle("btn-quiet", !startOnly);
   knownStatus.textContent = copy.limit;
@@ -2039,6 +2176,7 @@ function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
   knownBlocked = copy.busy;
   knownBusy(false);
   knownCheck.hidden = !copy.busy;
+  syncKnownNote();
   knownCard.hidden = false;
   introFor("known");
 }
@@ -2116,6 +2254,7 @@ async function enterAs(kind: "continue" | "new"): Promise<void> {
   else if (refusal.outcome === "nothing") {
     knownContinue.hidden = true;
     knownStatus.textContent = "";
+    syncKnownNote();
   } else {
     knownStatus.textContent = refusal.message;
   }
@@ -2165,9 +2304,18 @@ endContinue.addEventListener("click", () => {
     }
     endContinue.disabled = false;
     endActions.hidden = false;
+    const refusal = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data) : null;
+    if (r?.status === 404 && errorCode(r.data) === NOTHING_TO_CONTINUE) {
+      // Nothing saved after all: Continue cannot work, so it goes, and a new conversation is offered instead.
+      showNothingSaved();
+      endNew.focus();
+      return;
+    }
     // After a dropped line, a 409 means the old call has not cleared yet, not another window.
     if (r?.status === 409 && endView(state).kind === "dropped") endContinueStatus.textContent = DROPPED_STILL_CLOSING;
-    else endContinueStatus.textContent = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data).message : NETWORK_TRY_AGAIN;
+    // Any other 404 (conversations switched off for now) says nothing about the saved place: Continue stays.
+    else if (refusal?.outcome === "nothing") endContinueStatus.textContent = COULD_NOT_OPEN;
+    else endContinueStatus.textContent = refusal ? refusal.message : NETWORK_TRY_AGAIN;
   });
 });
 

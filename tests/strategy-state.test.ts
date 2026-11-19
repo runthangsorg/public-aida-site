@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   BAD_EMAIL_COPY,
+  BASE_TITLE,
   EXPIRED_CODE_COPY,
   LOAD_FAILED_COPY,
   SEND_FAILED_COPY,
+  newLinkMailto,
+  pageTitle,
   reduce,
   waitCopy,
   type ScreenState,
@@ -39,6 +42,26 @@ describe("what the page shows for GET /api/strategy/view", () => {
     expect(reduce(loading, { type: "view", status: 404, body: { error: "not_found" } })).toEqual({
       screen: "not-found",
     });
+  });
+
+  it("on a 404 carrying the team's address, offers it to ask for a new link (and only a plain address)", () => {
+    const team = ["team", "aida.example"].join("@");
+    expect(reduce(loading, { type: "view", status: 404, body: { error: "not_found", contact: team } })).toEqual({
+      screen: "not-found",
+      contact: team,
+    });
+    for (const odd of ["", "not an address", `${team},${team}`, `${team}?bcc=x`, 42]) {
+      expect(reduce(loading, { type: "view", status: 404, body: { error: "not_found", contact: odd } }), String(odd)).toEqual({
+        screen: "not-found",
+      });
+    }
+    expect(newLinkMailto(team)).toBe(`mailto:${team}?subject=New%20link%20to%20my%20strategy`);
+  });
+
+  it("on a 429 says how long to wait, not to check the connection", () => {
+    const next = reduce(loading, { type: "view", status: 429, body: { error: "rate_limited", retryAfter: 600 } });
+    expect(next).toEqual({ screen: "trouble", notice: "Too many tries. Wait 10 minutes and try again." });
+    expect(reduce(loading, { type: "view", status: 429, body: null })).toEqual({ screen: "trouble", notice: waitCopy(60) });
   });
 
   it("shows a connection problem on a 500, a network failure, or a malformed 200", () => {
@@ -126,5 +149,14 @@ describe("signing out", () => {
     expect(reduce({ screen: "view", view: sampleView() }, { type: "signout" })).toEqual({
       screen: "loading",
     });
+  });
+
+  it("the tab keeps the strategy's title only while the strategy is on screen", () => {
+    const view = sampleView();
+    expect(pageTitle({ screen: "view", view })).toBe(`${view.deck.title} — Aida`);
+    const out = reduce({ screen: "view", view }, { type: "signout" });
+    expect(pageTitle(out)).toBe(BASE_TITLE);
+    expect(pageTitle(reduce(out, { type: "view", status: 401, body: { need: "email", hint: HINT } }))).toBe(BASE_TITLE);
+    expect(pageTitle({ screen: "not-found" })).toBe(BASE_TITLE);
   });
 });
