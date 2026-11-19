@@ -22,3 +22,27 @@ describe("the captions", () => {
     }
   });
 });
+
+describe("her portrait", () => {
+  /** The slot width `sizes` gives at a viewport width, for the (min-width: Npx) conditions this page uses. */
+  function slot(sizes: string, viewport: number): number {
+    for (const part of sizes.split(",").map((p) => p.trim())) {
+      const m = /^\(min-width:\s*(\d+)px\)\s+(\d+)(px|vw)$/.exec(part);
+      if (m) {
+        if (viewport >= Number(m[1])) return m[3] === "vw" ? (Number(m[2]) * viewport) / 100 : Number(m[2]);
+        continue;
+      }
+      const last = /^(\d+)(px|vw)$/.exec(part);
+      if (last) return last[2] === "vw" ? (Number(last[1]) * viewport) / 100 : Number(last[1]);
+    }
+    throw new Error(`cannot read sizes "${sizes}"`);
+  }
+
+  it("asks for the width the first screen draws her at, so a tablet does not fetch the 1024 px file", () => {
+    const sizes = /<img class="vera-still"[^>]*\ssizes="([^"]+)"/.exec(html)?.[1] ?? "";
+    // Measured: 460 px wide from 560 to 999 px, 44vw (up to 640 px) from 1000 px.
+    for (const w of [560, 600, 768, 899, 999]) expect(slot(sizes, w), `at ${w}`).toBeLessThanOrEqual(470);
+    for (const w of [560, 768, 999]) expect(slot(sizes, w), `at ${w}`).toBeGreaterThanOrEqual(450);
+    expect(slot(sizes, 1280)).toBeGreaterThanOrEqual(540);
+  });
+});
