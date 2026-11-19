@@ -1727,6 +1727,37 @@ function setNotebook(open: boolean, focus = true): void {
 nbToggle.addEventListener("click", () => {
   setNotebook(notebook.dataset.open !== "true");
 });
+
+// A phone with the height for it keeps the notebook open under her captions, but the rest of the room can still
+// leave it less than a note: text enlarged to 200% left it 0 px, its tabs and notes out of reach (review, 19 Nov).
+// Then the room shows the strip with her newest note instead, which opens the notes as a sheet. It is measured
+// open whenever the room's sizes change, so the open notebook comes back as soon as there is room for it. A frame
+// after the change, never inside the observer, where a new size would loop.
+const notebookOpenLayout = window.matchMedia("(max-width: 480px) and (min-height: 661px)");
+const NOTES_FLOOR = 40; // px of notes in view: about one note
+
+function fitNotes(): void {
+  const room = screens.room;
+  const wasStrip = room.dataset.notes === "strip";
+  if (wasStrip) delete room.dataset.notes;
+  if (room.hidden || !notebookOpenLayout.matches) return;
+  const panel = notebook.querySelector<HTMLElement>(".nb-panel:not([hidden])");
+  const inView = panel ? notebook.getBoundingClientRect().bottom - panel.getBoundingClientRect().top : 0;
+  if (inView < NOTES_FLOOR) room.dataset.notes = "strip";
+  else if (wasStrip && notebook.dataset.open === "true") setNotebook(false, false);
+}
+
+let notesFrame = 0;
+if (typeof ResizeObserver === "function") {
+  const roomSizes = new ResizeObserver(() => {
+    if (notesFrame) return;
+    notesFrame = requestAnimationFrame(() => {
+      notesFrame = 0;
+      fitNotes();
+    });
+  });
+  for (const el of [screens.room, notebook, captions]) roomSizes.observe(el);
+}
 byId("nb-close", HTMLButtonElement).addEventListener("click", () => {
   setNotebook(false);
   nbToggle.focus();

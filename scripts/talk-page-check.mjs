@@ -943,23 +943,45 @@ if (want('7')) {
   };
 
   // Text at 200% on a narrow phone: the room's four buttons were wider than the screen and the room's overflow cut
-  // "Mute" and "End" in half; the end screen scrolled sideways by 22 px.
-  for (const w of [320, 360]) {
+  // "Mute" and "End" in half; the end screen scrolled sideways by 22 px. The notes stay within reach (review,
+  // 19 Nov): on a tall phone the open notebook went to 0 px with no strip, its tabs "whole" inside a box of nothing.
+  // Either the open notebook shows 90 px of notes, or the strip is offered and opens them as a sheet.
+  const notesInReach = () => {
+    const nb = document.getElementById('notebook').getBoundingClientRect();
+    const notes = document.getElementById('nb-notes').getBoundingClientRect();
+    return {
+      notes: Math.round(Math.max(0, Math.min(notes.bottom, nb.bottom, innerHeight) - Math.max(notes.top, nb.top, 0))),
+      strip: document.getElementById('nb-toggle').checkVisibility(),
+    };
+  };
+  for (const [w, h] of [[320, 740], [360, 740], [390, 844]]) {
     {
-      const { ctx, page } = await liveRoom({ width: w, height: 740 });
+      const { ctx, page } = await liveRoom({ width: w, height: h });
       await page.evaluate(DOUBLE);
       await page.waitForTimeout(300);
-      const m = await page.evaluate(() => ({
+      const m = await page.evaluate((reach) => ({
         scroll: document.documentElement.scrollWidth,
         width: innerWidth,
         cut: [...document.querySelectorAll('.controls .ctl, .nb-tab')].filter((e) => e.checkVisibility()).filter((e) => e.getBoundingClientRect().left < -0.5 || e.getBoundingClientRect().right > innerWidth + 0.5).map((e) => e.id),
-      }));
-      check(`[${w}, text x2] the call's buttons and the notebook's tabs are whole on screen, no sideways scroll`, m.cut.length === 0 && m.scroll === m.width, JSON.stringify(m));
-      await page.screenshot({ path: `${shots}/layout-room-text2x-${w}.png` });
+        ...new Function(`return (${reach})`)()(),
+      }), notesInReach.toString());
+      let sheet = null;
+      if (m.strip) {
+        await page.click('#nb-toggle');
+        await page.waitForTimeout(600);
+        sheet = await page.evaluate(() => {
+          const notes = document.getElementById('nb-notes').getBoundingClientRect();
+          const tabs = [...document.querySelectorAll('.nb-tab')].map((e) => e.getBoundingClientRect());
+          return { notes: Math.round(Math.min(notes.bottom, innerHeight) - Math.max(notes.top, 0)), tabs: tabs.every((t) => t.top >= 0 && t.bottom <= innerHeight && t.left >= -0.5 && t.right <= innerWidth + 0.5) };
+        });
+      }
+      const reach = m.strip ? sheet.notes >= 90 && sheet.tabs : m.notes >= 90;
+      check(`[${w}x${h}, text x2] the call's buttons and the notebook's tabs are whole on screen, no sideways scroll, and the notes within reach (90 px open, or the strip and its sheet)`, m.cut.length === 0 && m.scroll === m.width && reach, JSON.stringify({ ...m, sheet }));
+      await page.screenshot({ path: `${shots}/layout-room-text2x-${w}${sheet ? '-sheet' : ''}.png` });
       await ctx.close();
     }
     {
-      const { ctx, page } = await liveRoom({ width: w, height: 740 });
+      const { ctx, page } = await liveRoom({ width: w, height: h });
       await page.evaluate(() => window.__ws.push({ aida: { type: 'ended', reason: 'complete', minutes: 3 } }));
       await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
       await page.waitForTimeout(400);

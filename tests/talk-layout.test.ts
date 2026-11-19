@@ -111,12 +111,22 @@ describe("the call room fits the screen it is on", () => {
 
   it("a short phone keeps the notes strip: the open notebook is only for a phone with the height for it", () => {
     for (const body of rules(css, ".nb-peek, .nb-close")) expect(prop(body, "display")).toBe("none");
-    const phoneOnly = rules(css, ".nb-peek, .nb-close", "max-width: 480px");
-    expect(phoneOnly.length).toBe(1);
-    expect(rules(css, ".nb-peek, .nb-close", "min-height: 661px")).toHaveLength(1);
+    const open = '.screen-room:not([data-notes="strip"])';
+    expect(rules(css, `${open} .nb-peek, ${open} .nb-close`, "max-width: 480px")).toHaveLength(1);
+    expect(rules(css, `${open} .nb-peek, ${open} .nb-close`, "min-height: 661px")).toHaveLength(1);
     // The stage's name gives way, its count does not.
     expect(prop(rules(css, "#stage-label")[0] ?? "", "text-overflow")).toBe("ellipsis");
     expect(prop(rules(css, ".stage-now .count")[0] ?? "", "flex")).toBe("none");
+  });
+
+  it("a tall phone's open notebook gives way to the strip when the room leaves it less than a note", () => {
+    // Text at 200% left the open notebook 0 px with no strip: its tabs and notes out of reach. Every rule that opens
+    // it applies only while the page has not marked the room data-notes="strip".
+    const block = /@media \(max-width: 480px\) and \(min-height: 661px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+    const heads = block.split("}").map((rule) => (rule.split("{")[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim());
+    const selectors = heads.filter(Boolean).flatMap((head) => head.split(",").map((x) => x.trim()));
+    expect(selectors.length).toBeGreaterThan(5);
+    for (const sel of selectors) expect(sel.startsWith('.screen-room:not([data-notes="strip"])')).toBe(true);
   });
 
   it("a caption line scrolls inside itself rather than being cut: yours gives way first, to one line, hers to two", () => {

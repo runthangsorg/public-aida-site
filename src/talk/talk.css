@@ -2990,13 +2990,14 @@ input[aria-invalid="true"]:hover {
 /* A phone with the height for it: the notebook sits open under her face and her captions, about 40% of the
    height, newest at the bottom (owner, 20 Oct: collapsed, it was not obvious she was taking notes). A shorter
    phone (320 x 568, 360 x 640) left the open notes 12-52 px, a sliver: there it keeps the strip with her newest
-   note, which opens the notes as a sheet. */
+   note, which opens the notes as a sheet. So does a tall phone whose room leaves the open notes less than a note
+   (text enlarged to 200% left them 0 px, review 19 Nov): the page marks the room data-notes="strip" (fitNotes). */
 @media (max-width: 480px) and (min-height: 661px) {
-  .screen-room {
+  .screen-room:not([data-notes="strip"]) {
     grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   }
 
-  .notebook {
+  .screen-room:not([data-notes="strip"]) .notebook {
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -3007,13 +3008,13 @@ input[aria-invalid="true"]:hover {
     box-shadow: 0 0 0 1.5px var(--rule);
   }
 
-  .nb-peek,
-  .nb-close {
+  .screen-room:not([data-notes="strip"]) .nb-peek,
+  .screen-room:not([data-notes="strip"]) .nb-close {
     display: none;
   }
 
-  .nb-body,
-  .notebook[data-open="true"] .nb-body {
+  .screen-room:not([data-notes="strip"]) .nb-body,
+  .screen-room:not([data-notes="strip"]) .notebook[data-open="true"] .nb-body {
     position: static;
     flex: 1;
     min-height: 0;
@@ -3027,12 +3028,12 @@ input[aria-invalid="true"]:hover {
     transition: none;
   }
 
-  .notebook[data-open="true"]::before {
+  .screen-room:not([data-notes="strip"]) .notebook[data-open="true"]::before {
     display: none;
   }
 
   /* The tabs name the panel; the heading stays for screen readers. */
-  .nb-head {
+  .screen-room:not([data-notes="strip"]) .nb-head {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3041,26 +3042,26 @@ input[aria-invalid="true"]:hover {
     clip-path: inset(50%);
   }
 
-  .nb-why {
+  .screen-room:not([data-notes="strip"]) .nb-why {
     margin: 0;
     font-size: 13px;
   }
 
-  .nb-tabs {
+  .screen-room:not([data-notes="strip"]) .nb-tabs {
     margin-top: 6px;
   }
 
-  .nb-tab {
+  .screen-room:not([data-notes="strip"]) .nb-tab {
     min-height: 44px;
     padding: 4px 12px;
   }
 
-  .nb-group h3 {
+  .screen-room:not([data-notes="strip"]) .nb-group h3 {
     margin-top: 12px;
   }
 
-  .nb-group li,
-  .transcript li {
+  .screen-room:not([data-notes="strip"]) .nb-group li,
+  .screen-room:not([data-notes="strip"]) .transcript li {
     padding-block: 6px;
     font-size: 16px;
   }
