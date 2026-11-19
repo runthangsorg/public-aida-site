@@ -367,6 +367,7 @@ export interface Closing {
 export const DROPPED_LEDE = "Your place is saved, so you can carry on where you stopped.";
 export const DROPPED_STILL_CLOSING = "Your last call is still closing. Please try again in a minute.";
 /** The server holds no saved place for this call (nothing to continue): never "your place is saved". */
+export const NOTHING_SAVED_TITLE = "Nothing saved";
 export const NOTHING_SAVED_LEDE = "There is nothing saved to continue from. You can start a new conversation.";
 export const IDLE_CLOSING: Closing = { title: "Paused", lede: "It went quiet. Your place is saved." };
 export const VIDEO_STOPPED_CLOSING: Closing = {

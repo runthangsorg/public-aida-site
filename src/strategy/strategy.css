@@ -372,6 +372,7 @@ a:hover {
 
 .strategy-head .display {
   max-width: 15ch;
+  overflow-wrap: anywhere;
 }
 
 .dek {
