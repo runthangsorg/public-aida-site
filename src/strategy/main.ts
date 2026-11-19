@@ -1,9 +1,20 @@
 import "./strategy.css";
 import { renderStrategy } from "./render";
-import { emailProblem, reduce, readRoute, type ScreenState } from "./state";
+import {
+  INCOMPLETE_COPY,
+  INCOMPLETE_TITLE,
+  LOAD_FAILED_COPY,
+  NOT_FOUND_COPY,
+  NOT_FOUND_TITLE,
+  emailProblem,
+  landing,
+  newLinkMailto,
+  pageTitle,
+  reduce,
+  readRoute,
+  type ScreenState,
+} from "./state";
 import { GATE_FAILED, HumanCheck, loadTurnstile, withToken, type TurnstileApi } from "../talk/turnstile";
-
-const BASE_TITLE = "Your AI and automation strategy — Aida";
 
 function byId<T extends HTMLElement>(id: string, type: new () => T): T {
   const node = document.getElementById(id);
@@ -25,6 +36,11 @@ const screens = {
   trouble: byId("trouble", HTMLElement),
   view: byId("view", HTMLElement),
 };
+const notFoundTitle = byId("not-found-title", HTMLHeadingElement);
+const notFoundText = byId("not-found-text", HTMLParagraphElement);
+const notFoundAsk = byId("not-found-ask", HTMLParagraphElement);
+const notFoundMail = byId("not-found-mail", HTMLAnchorElement);
+const troubleText = byId("trouble-text", HTMLParagraphElement);
 const signinHint = byId("signin-hint", HTMLParagraphElement);
 const signinNotice = byId("signin-notice", HTMLParagraphElement);
 const sentHint = byId("sent-hint", HTMLParagraphElement);
@@ -80,20 +96,40 @@ function dropCode(): void {
   }
 }
 
-function show(next: ScreenState): void {
+/**
+ * Move to a screen. `focus`: the person did something (signed out, sent the form, tried again), so when the
+ * screen changes, focus goes to its heading; otherwise it would fall to the page with the button that hid.
+ */
+function show(next: ScreenState, focus = false): void {
+  const changed = next.screen !== state.screen;
   state = next;
   paint();
+  if (!focus || !changed) return;
+  const heading = Object.values(screens).find((s) => !s.hidden)?.querySelector<HTMLElement>("h1");
+  if (!heading) return;
+  heading.tabIndex = -1;
+  window.scrollTo(0, 0);
+  heading.focus({ preventScroll: true });
 }
 
 function paint(): void {
   for (const screen of Object.values(screens)) screen.hidden = true;
   app.dataset.screen = state.screen;
+  // The strategy's title and the strategy itself stay only while it is on screen: after sign-out neither is
+  // left behind in the tab or the page.
+  document.title = pageTitle(state);
+  if (state.screen !== "view") strategy.replaceChildren();
 
   switch (state.screen) {
     case "loading":
       screens.loading.hidden = false;
       break;
     case "not-found":
+      notFoundTitle.textContent = state.incomplete ? INCOMPLETE_TITLE : NOT_FOUND_TITLE;
+      notFoundText.textContent = state.incomplete ? INCOMPLETE_COPY : NOT_FOUND_COPY;
+      notFoundAsk.hidden = !state.contact;
+      if (state.contact) notFoundMail.href = newLinkMailto(state.contact);
+      else notFoundMail.removeAttribute("href");
       screens.notFound.hidden = false;
       break;
     case "sign-in":
@@ -109,24 +145,26 @@ function paint(): void {
       break;
     case "view":
       strategy.replaceChildren(renderStrategy(document, state.view));
-      document.title = state.view.deck.title ? `${state.view.deck.title} — Aida` : BASE_TITLE;
       screens.view.hidden = false;
       break;
     case "trouble":
+      troubleText.textContent = state.notice ?? LOAD_FAILED_COPY;
       screens.trouble.hidden = false;
       break;
   }
 }
 
-async function boot(): Promise<void> {
+/** `focus`: Try again was pressed, so the screen it ends on takes focus. */
+async function boot(focus = false): Promise<void> {
   const route = readRoute(location.href);
   token = route.token;
-  if (!token) {
-    show({ screen: "not-found" });
+  const first = landing(route);
+  if (first.screen !== "loading") {
+    show(first, focus);
     return;
   }
 
-  show({ screen: "loading" });
+  show(first, focus);
   let response = await loadView();
 
   if (response.status === 401 && route.code) {
@@ -139,16 +177,16 @@ async function boot(): Promise<void> {
     });
     dropCode();
     if (verified.status !== 200) {
-      show(reduce(awaiting, { type: "verify", status: verified.status, body: verified.body }));
+      show(reduce(awaiting, { type: "verify", status: verified.status, body: verified.body }), focus);
       return;
     }
-    show(reduce(state, { type: "verify", status: 200 }));
+    show(reduce(state, { type: "verify", status: 200 }), focus);
     response = await loadView();
   } else if (route.code) {
     dropCode();
   }
 
-  show(reduce(state, { type: "view", status: response.status, body: response.body }));
+  show(reduce(state, { type: "view", status: response.status, body: response.body }), focus);
 }
 
 async function sendLink(email: string): Promise<void> {
@@ -166,7 +204,7 @@ async function sendLink(email: string): Promise<void> {
     if (state.screen === "sign-in") show({ ...state, notice: GATE_FAILED });
     return;
   }
-  show(reduce(state, { type: "signin", status: attempt.value.status, body: attempt.value.body }));
+  show(reduce(state, { type: "signin", status: attempt.value.status, body: attempt.value.body }), true);
 }
 
 form.addEventListener("submit", (event) => {
@@ -185,7 +223,7 @@ form.addEventListener("submit", (event) => {
 
 byId("signout", HTMLButtonElement).addEventListener("click", () => {
   if (!token) return;
-  show(reduce(state, { type: "signout" }));
+  show(reduce(state, { type: "signout" }), true);
   void (async () => {
     await request("/api/strategy/signout", {
       method: "POST",
@@ -193,12 +231,12 @@ byId("signout", HTMLButtonElement).addEventListener("click", () => {
       body: JSON.stringify({ t: token }),
     });
     const response = await loadView();
-    show(reduce(state, { type: "view", status: response.status, body: response.body }));
+    show(reduce(state, { type: "view", status: response.status, body: response.body }), true);
   })();
 });
 
 byId("retry", HTMLButtonElement).addEventListener("click", () => {
-  void boot();
+  void boot(true);
 });
 
 void boot();
