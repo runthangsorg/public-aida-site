@@ -12,7 +12,8 @@
  *
  *   node scripts/talk-page-check.mjs [--shots .tmp/shots] [--only 1,5]   (sections: 1 face, 1b room, 2 start,
  *                                                                     3 reconnect, 4 busy card, 5 round 3,
- *                                                                     6 round 4, 7 layout, 8 strategy)
+ *                                                                     6 round 4, 7 layout, 8 strategy,
+ *                                                                     9 review round 3; 9.<id> runs one)
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
@@ -1270,6 +1271,41 @@ if (want('8')) {
     check(`[${w}x${h}] strategy sign out: the base title, the strategy emptied (${before} parts before), focus on the sign-in heading`, before > 0 && m.title === 'Your AI and automation strategy — Aida' && m.strategy === 0 && m.focus === 'signin-title', JSON.stringify(m));
     await ctx.close();
   }
+  await browser.close();
+}
+
+// ---------- 9. review round 3 (19 Nov): her voice after the switch, End mid-move, Back and Forward ----------
+// `--only 9` runs them all; `--only 9.<finding>` (9.01, 9.20, ...) runs one.
+const want9 = (id) => want('9') || want(`9.${id}`);
+const PHONE = { width: 390, height: 844 };
+const NO_MIC = "navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Requested device not found', 'NotFoundError'));";
+/** Counts the chunks of her voice the page starts playing. */
+const COUNT_VOICE = 'const s = AudioBufferSourceNode.prototype.start; AudioBufferSourceNode.prototype.start = function (...a) { window.__starts = (window.__starts ?? 0) + 1; return s.apply(this, a); };';
+/** 100 ms of her (silent) voice, as the server sends it. */
+const VOICE_FRAME = { serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: Buffer.alloc(4800).toString('base64') } }] } } };
+const continued = { id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 1, stage: 'org', hasSummary: false, notes: [] } };
+const ready = (page, avatar, resumed) => page.evaluate(([s, a, r]) => window.__ws.push({ aida: { type: 'ready', targetMinutes: 5, sections: s, avatar: a, ...(r ? { resumed: r } : {}) } }), [sections, avatar, resumed ?? null]);
+
+if (want9('01')) {
+  // The voice-only switch closed both audio contexts; a person typing their answers never tapped again, so her
+  // voice on the new line was dropped.
+  const browser = await chrome();
+  const { ctx, page, errors } = await open(browser, { size: PHONE, goto: `/talk/?go=${GO}`, init: NO_MIC + COUNT_VOICE, routes: { '**/api/talk/continue': (r) => r.fulfill(json(continued)) } });
+  await page.click('#go-go');
+  await page.waitForSelector('#mic-actions:not([hidden])');
+  await page.click('#mic-type');
+  await page.waitForFunction(() => window.__ws);
+  await ready(page, true);
+  await page.waitForSelector('#voice-only:not([hidden])');
+  await page.click('#voice-only');
+  await page.waitForFunction(() => (window.__sockets ?? 0) >= 2, null, { timeout: 10000 });
+  await ready(page, false, continued.resumed);
+  await page.evaluate((f) => window.__ws.push(f), VOICE_FRAME);
+  await page.waitForTimeout(400);
+  const m = await page.evaluate(() => ({ starts: window.__starts ?? 0, screen: document.querySelector('#app').dataset.screen }));
+  check('typing, then Switch to voice only: her voice on the new line plays without another tap', m.starts > 0 && m.screen === 'room', JSON.stringify(m));
+  check('...and no page errors', errors.length === 0, errors.join('; '));
+  await ctx.close();
   await browser.close();
 }
 

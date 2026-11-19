@@ -391,8 +391,16 @@ export class Voice {
     return this.output ? Math.max(0, this.nextAt - this.output.currentTime) : 0;
   }
 
-  /** Close everything: socket, microphone, both contexts. */
-  close(): void {
+  /** A socket is open (or opening) for this call. */
+  get connected(): boolean {
+    return this.socket !== null;
+  }
+
+  /**
+   * Close the line only: socket and microphone. Both audio contexts stay, so her voice on the next line plays
+   * without another tap (the voice-only switch: a person typing their answers may never tap again).
+   */
+  closeLine(): void {
     this.flush();
     this.stopMic();
     const socket = this.socket;
@@ -401,6 +409,11 @@ export class Voice {
       socket.onclose = null;
       socket.close(1000, "done");
     }
+  }
+
+  /** Close everything: socket, microphone, both contexts. */
+  close(): void {
+    this.closeLine();
     for (const ctx of [this.input, this.output]) void ctx?.close().catch(() => undefined);
     this.input = null;
     this.output = null;

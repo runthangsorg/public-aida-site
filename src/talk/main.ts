@@ -778,9 +778,9 @@ async function switchToVoiceOnly(): Promise<void> {
   voice.flush();
   stopAvatar();
   dispatch({ kind: "switching" });
-  // The old socket is done with us; closing it locally must not look like a dropped line
-  // (voice.close() takes its onclose off first).
-  voice.close();
+  // The old socket is done with us; closing it locally must not look like a dropped line (closeLine() takes its
+  // onclose off first). Only the line: the audio contexts stay, so her voice plays on the new one untapped.
+  voice.closeLine();
   const deadline = performance.now() + SWITCH_WINDOW_MS;
   for (;;) {
     const r = await post("/api/talk/continue", {});
@@ -803,6 +803,7 @@ async function switchToVoiceOnly(): Promise<void> {
 function chooseVoiceOnly(): void {
   slowOffer.hidden = true;
   if (state.switching) return;
+  voice.wake(); // inside the click: her voice on the new line may need it
   rememberVoiceOnly(safeStorage());
   void switchToVoiceOnly();
 }

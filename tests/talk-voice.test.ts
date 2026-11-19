@@ -135,3 +135,27 @@ describe("the microphone", () => {
     expect(voice.hasMic).toBe(false);
   });
 });
+
+describe("her voice on the next line", () => {
+  /** 100 ms of her (silent) voice, as the server sends it. */
+  const audioFrame = JSON.stringify({
+    serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: "audio/pcm;rate=24000", data: Buffer.alloc(4800).toString("base64") } }] } },
+  });
+  const handlers = { onFrame: () => undefined, onClose: () => undefined };
+
+  it("closing only the line keeps both audio contexts, so she is heard on the new line without another tap", () => {
+    // Review round 3 (public-site-01): the voice-only switch closed both contexts, and on the typed-answers path
+    // nothing made them again, so her voice on the new line was dropped until the person tapped the room.
+    const voice = new Voice();
+    voice.wake(); // the click that started the call
+    voice.connect("s1", handlers, "1");
+    voice.closeLine();
+    voice.connect("s2", handlers);
+    FakeSocket.last?.onmessage?.({ data: audioFrame });
+    expect(contexts.map((c) => c.state)).toEqual(["running", "running"]);
+    expect(contexts[0]?.buffers).toHaveLength(1);
+    expect(voice.isSpeaking).toBe(true);
+    voice.close();
+    expect(contexts.map((c) => c.state)).toEqual(["closed", "closed"]);
+  });
+});
