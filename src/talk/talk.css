@@ -1218,7 +1218,7 @@ input[aria-invalid="true"]:hover {
 .ctl-label {
   min-width: 68px;
   text-align: center;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .ctl:hover .ctl-ic {

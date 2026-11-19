@@ -32,7 +32,9 @@ describe("nothing is cut off or runs into its neighbour (320 px phones, text enl
   it("a control's label wraps inside its own button: no fixed button width under it, never nowrap", () => {
     for (const body of rules(css, ".ctl")) expect(prop(body, "min-width")).toBeUndefined();
     const labels = rules(css, ".ctl-label");
-    expect(labels.some((b) => prop(b, "overflow-wrap") === "anywhere")).toBe(true);
+    // Wraps between words; a word wider than the whole row may still break (break-word keeps the button at least
+    // as wide as its longest word, so a normal label is never cut mid-word).
+    expect(labels.some((b) => prop(b, "overflow-wrap") === "break-word")).toBe(true);
     for (const body of rules(css, ".ctl-later .ctl-label")) expect(prop(body, "white-space")).not.toBe("nowrap");
   });
 
