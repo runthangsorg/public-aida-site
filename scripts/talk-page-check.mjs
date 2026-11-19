@@ -1524,8 +1524,31 @@ if (want9('44')) {
       start: !document.querySelector('#known-new').hidden,
       startMain: document.querySelector('#known-new').classList.contains('btn-go'),
       status: document.querySelector('#known-status').textContent,
+      focus: document.activeElement?.id || document.activeElement?.tagName || '',
     }));
     check(`welcome-back ${press === '#known-voice' ? 'voice-only ' : ''}Continue, nothing to continue: both Continues go, the reason is shown, Start is the main button (asked ${asked})`, asked === 1 && !m.cont && !m.voice && m.start && m.startMain && m.status === 'There is nothing to continue. Start a new conversation.', JSON.stringify(m));
+    check(`...and focus moves from the Continue that went to Start`, m.focus === 'known-new', JSON.stringify({ focus: m.focus }));
+    await ctx.close();
+  }
+  {
+    // The same answer on a card with no Start button (the server allows no new conversation): the reason must not
+    // tell the person to start one (review, 19 Nov).
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      me: { known: true, name: 'Sam', canContinue: true, minutesSoFar: 3, canStartNew: false },
+      routes: { '**/api/talk/continue': (r) => r.fulfill(json({ error: 'nothing_to_continue' }, 404)) },
+    });
+    await page.waitForSelector('#known-continue:not([hidden])');
+    await page.click('#known-continue');
+    await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'intro' && document.querySelector('#known-status').textContent !== '', null, { timeout: 8000 });
+    await page.waitForTimeout(200);
+    const m = await page.evaluate(() => ({
+      cont: !document.querySelector('#known-continue').hidden,
+      voice: !document.querySelector('#known-voice').hidden,
+      start: !document.querySelector('#known-new').hidden,
+      status: document.querySelector('#known-status').textContent,
+    }));
+    check('welcome-back Continue, nothing to continue, no Start on the card: the reason is said without sending the person to a button that is not there', !m.cont && !m.voice && !m.start && m.status === 'There is nothing to continue.', JSON.stringify(m));
     await ctx.close();
   }
   await browser.close();

@@ -28,6 +28,7 @@ import {
   confirmRefusal,
   entryFor,
   entryRefusal,
+  nothingToContinueText,
   errorCode,
   idleSentence,
   knownCopy,
@@ -2306,13 +2307,21 @@ async function enterAs(kind: "continue" | "new"): Promise<void> {
   const refusal = entryRefusal(r.status === 200 ? 500 : r.status, r.data);
   if (refusal.outcome === "login") hideKnown();
   else if (refusal.outcome === "nothing") {
-    // Both Continues go (the voice-only one would only ask again), the reason is said, and Start is the one thing to do.
+    // Both Continues go (the voice-only one would only ask again), the reason is said, and Start is the one thing to
+    // do. A card with no Start (no new conversation allowed now) says the reason without sending the person to one.
+    const canStart = !knownNew.hidden;
     knownContinue.hidden = true;
     knownVoice.hidden = true;
-    knownStatus.textContent = refusal.message;
-    knownNew.classList.toggle("btn-go", !knownNew.hidden);
-    knownNew.classList.toggle("btn-quiet", knownNew.hidden);
+    knownStatus.textContent = nothingToContinueText(canStart);
+    knownNew.classList.toggle("btn-go", canStart);
+    knownNew.classList.toggle("btn-quiet", !canStart);
     syncKnownNote();
+    // The Continue pressed has gone, and focus was left on the "Opening…" screen just hidden: Start is next, for a
+    // keyboard or a screen reader. Focus the person put somewhere still in view is left there.
+    const focused = document.activeElement;
+    if (canStart && (!focused || focused === document.body || focused.closest("[hidden]"))) {
+      knownNew.focus({ preventScroll: true });
+    }
   } else {
     knownStatus.textContent = refusal.message;
   }
