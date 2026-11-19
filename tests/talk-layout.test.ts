@@ -115,6 +115,21 @@ describe("the call room fits the screen it is on", () => {
     }
   });
 
+  it("on a short desk window her window keeps 120 px, the room draws tighter, and her status tag takes the phone's size", () => {
+    // 1024 x 576 (1280 x 720 at 125%): her window was 70-88 px, and nothing with the typing box open.
+    const widths = rules(css, ".stage", "min-width: 1000px").map((b) => prop(b, "width") ?? "").filter((w) => w.includes("svh"));
+    expect(widths.length).toBeGreaterThan(0);
+    for (const w of widths) expect(w).toContain("max(120px, calc(100svh - var(--beside-stage)))");
+    const short = "max-height: 700px";
+    const keptShort = rules(css, ".screen-room", short).map((b) => prop(b, "--beside-stage")).find(Boolean) ?? "";
+    const keptDesk = rules(css, ".screen-room", "min-width: 1000px").map((b) => prop(b, "--beside-stage")).find(Boolean) ?? "";
+    expect(parseFloat(keptShort)).toBeLessThan(parseFloat(keptDesk));
+    for (const sel of [".bar", ".controls", ".ctl-ic", ".idle"]) expect(rules(css, sel, short).length).toBe(1);
+    // Under 160 px her "Listening" tag is the phone's size, so it stays whole and off her face.
+    const [tag] = rules(css, ".status", "max-width: 159px");
+    expect(prop(tag ?? "", "font-size")).toBe("13px");
+  });
+
   it("on a desk the idle card has a row of its own, between the captions and the typing box, as wide as the captions", () => {
     const [idle] = rules(css, ".idle", "min-width: 1000px");
     expect(prop(idle ?? "", "grid-area")).toBe("idle");

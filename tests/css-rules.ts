@@ -1,8 +1,9 @@
 // Reads rules out of a stylesheet as text, for tests that guard what the stylesheet decides.
 
 /**
- * The declaration blocks of every rule, inside media queries or not, whose selector list is exactly `selector`
- * (whitespace and comments ignored). With `media`, only rules inside an @media whose condition contains it.
+ * The declaration blocks of every rule, inside media (or container) queries or not, whose selector list is exactly
+ * `selector` (whitespace and comments ignored). With `media`, only rules inside an @media or @container whose
+ * condition contains it.
  */
 export function rules(css: string, selector: string, media?: string): string[] {
   const want = selector.replace(/\s+/g, " ").trim();
@@ -22,7 +23,7 @@ export function rules(css: string, selector: string, media?: string): string[] {
         j++;
       }
       const body = text.slice(open + 1, j - 1);
-      if (head.startsWith("@media")) scan(body, head);
+      if (head.startsWith("@media") || head.startsWith("@container")) scan(body, head);
       else if (head === want && (media === undefined || (inMedia ?? "").includes(media))) out.push(body);
       i = j;
     }

@@ -2763,7 +2763,7 @@ input[aria-invalid="true"]:hover {
   }
 
   .stage {
-    width: min(100%, 44vh, 420px, calc(100svh - var(--beside-stage)));
+    width: min(100%, 44vh, 420px, max(120px, calc(100svh - var(--beside-stage))));
   }
 
   .nb-body,
@@ -2780,7 +2780,82 @@ input[aria-invalid="true"]:hover {
   /* On a laptop screen the typing box and the idle card take room from her captions: her window gives it back. */
   .screen-room:has(.typer:not([hidden])) .stage,
   .screen-room:has(.idle:not([hidden])) .stage {
-    width: min(100%, 36vh, 420px, calc(100svh - var(--beside-stage)));
+    width: min(100%, 36vh, 420px, max(120px, calc(100svh - var(--beside-stage))));
+  }
+}
+
+/* A short desk window: a 1366 x 768 or 1280 x 800 laptop once the browser's own bars are drawn, or a laptop
+   zoomed in (1280 x 720 at 125% is 1024 x 576). Her window went down to 70-88 px, and to nothing with the typing
+   box open, with "Listening" cut to "Liste" across her face. The bar, the controls and the idle card draw
+   tighter here (about 80 px back), the column keeps that much less beside her window, and her window never goes
+   below 120 px: the captions give way instead, each scrolling to its newest words. */
+@media (min-width: 1000px) and (max-height: 700px) {
+  .bar {
+    padding-block: 10px 8px;
+  }
+
+  .captions {
+    padding-top: 4px;
+  }
+
+  [data-screen="room"] .mark {
+    top: 16px;
+  }
+
+  .controls {
+    padding-block: 4px 12px;
+  }
+
+  .ctl-ic {
+    width: 48px;
+    height: 48px;
+  }
+
+  .ctl-later .ctl-label {
+    max-width: none;
+  }
+
+  .idle {
+    margin-top: 6px;
+    padding-block: 8px;
+  }
+
+  .idle .btn {
+    min-height: 44px;
+    padding-block: 8px;
+  }
+
+  .screen-room {
+    --beside-stage: 407px;
+  }
+
+  .screen-room:has(.typer:not([hidden])) {
+    --beside-stage: 472px;
+  }
+
+  .screen-room:has(.idle:not([hidden])) {
+    --beside-stage: 483px;
+  }
+
+  .screen-room:has(.typer:not([hidden])):has(.idle:not([hidden])) {
+    --beside-stage: 548px;
+  }
+}
+
+/* Her window at its smallest (a short desk window, a short phone, a phone on its side): the on-air tag at the
+   phone's size, so "Listening" stays whole and off her face. */
+@container (max-width: 159px) {
+  .status {
+    top: 6px;
+    left: 6px;
+    gap: 6px;
+    padding: 4px 9px 4px 7px;
+    font-size: 13px;
+  }
+
+  .status .dot {
+    width: 8px;
+    height: 8px;
   }
 }
 

@@ -958,6 +958,40 @@ if (want('7')) {
       await ctx.close();
     }
   }
+
+  // A short desk window (review, 19 Nov): at 1024 x 576 (1280 x 720 at 125%) her window was 70-88 px with
+  // "Listening" cut to "Liste" across her face, and next to nothing with the typing box open. Her window keeps
+  // 120 px, her status tag is whole and inside it, both captions end inside their box, and End is in view.
+  for (const [w, h] of [[1000, 560], [1024, 576], [1366, 657], [1280, 690]]) {
+    for (const state of ['voice', 'typing', 'typing+idle']) {
+      const { ctx, page } = await liveRoom({ width: w, height: h });
+      if (state !== 'voice') await page.click('#type');
+      if (state === 'typing+idle') {
+        await page.evaluate(() => window.__ws.push({ aida: { type: 'idle_warning', secondsLeft: 30 } }));
+        await page.waitForSelector('#idle:not([hidden])');
+      }
+      await page.waitForTimeout(400);
+      const m = await page.evaluate(() => {
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        const stage = box('stage');
+        const tag = box('status');
+        const text = document.getElementById('status-text');
+        const captions = box('captions');
+        const lines = ['line-aida', 'line-you'].filter((id) => document.getElementById(id).checkVisibility());
+        return {
+          stage: Math.round(stage.width),
+          tag: text.textContent,
+          tagWhole: tag.right <= stage.right - 2 && tag.bottom <= stage.bottom && text.scrollWidth <= text.clientWidth + 1,
+          captionsWhole: lines.length > 0 && lines.every((id) => box(id).bottom <= captions.bottom + 1),
+          endInView: box('end').bottom <= innerHeight,
+          scroll: document.documentElement.scrollWidth - innerWidth,
+        };
+      });
+      check(`[${w}x${h}, ${state}] her window ${m.stage} px (at least 120), "${m.tag}" whole inside it, the captions not cut, End in view`, m.stage >= 120 && m.tagWhole && m.captionsWhole && m.endInView && m.scroll === 0, JSON.stringify(m));
+      if (w === 1024) await page.screenshot({ path: `${shots}/layout-short-${w}x${h}-${state.replace('+', '-')}.png` });
+      await ctx.close();
+    }
+  }
   await browser.close();
 }
 
