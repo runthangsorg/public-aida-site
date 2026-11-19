@@ -60,6 +60,8 @@ const rawFrames = frames.map((f) => Buffer.from(f)); // as ffmpeg wrote them: Ch
 // audio timeline has a one-packet hole at the start (0, 2048, 3072, ...), and the audio fragments declare a
 // sample duration of 0 (the muxer cannot know the next packet's time). The real stream has continuous PTS and
 // real durations (measured). Make the fixture match: audio frame n starts at n * 1024 and lasts 1024.
+/** Audio fragments in the stream: one AAC-LC frame (1024 samples at 24 kHz) each, so they give its length. */
+let audioFrames;
 {
   const kids = (buf, s, e) => {
     const out = [];
@@ -82,11 +84,18 @@ const rawFrames = frames.map((f) => Buffer.from(f)); // as ffmpeg wrote them: Ch
     else f.writeBigUInt64BE(BigInt(n * 1024), tfdt.o + 12);
     n++;
   }
+  audioFrames = n;
+}
+// The pace below comes from the audio: with none, every message would go at once and the check fail unexplained.
+if (audioFrames === 0) {
+  console.error('the source needs an AAC audio track: the stream is paced by it (H.264 + AAC, see the header)');
+  process.exit(2);
 }
 /** The server's envelope: pretty-printed, one base64 part, a trailing newline. */
 const envelope = (bytes) =>
   Buffer.from(JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'video/mp4', data: bytes.toString('base64') } }] } } }, null, 2) + '\n');
-const DT = 19333 / frames.length; // ms between messages: the stream is real-time paced
+// ms between messages: the stream is real-time paced, over its own length (not the 19.333 s of one recording).
+const DT = (audioFrames * 1024) / 24 / frames.length;
 
 const STREAM_S = 8;
 const perStream = Math.min(frames.length, Math.floor((STREAM_S * 1000) / DT));
@@ -154,8 +163,15 @@ const browser = await chromium.launch({
 });
 console.log(`browser ${browser.version()}`);
 
-async function run(label, viewport, shotAt) {
+/** A context that refuses every request to another host: nothing leaves this machine. */
+async function context(viewport) {
   const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  await ctx.route((url) => url.host !== new URL(base).host, (r) => r.abort());
+  return ctx;
+}
+
+async function run(label, viewport, shotAt) {
+  const ctx = await context(viewport);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -329,7 +345,7 @@ async function runFailure(label, viewport, switching = false) {
     offsets.push([o, b.length]);
     o += b.length;
   }
-  const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  const ctx = await context(viewport);
   const page = await ctx.newPage();
   await page.addInitScript(() => {
     const made = new Set();
@@ -442,7 +458,7 @@ async function runFailure(label, viewport, switching = false) {
 /** A link that carries only 60% of real time: the video falls ~0.4 s further behind every second. */
 async function runSlow(label, viewport) {
   const PACE = 0.6;
-  const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  const ctx = await context(viewport);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

@@ -677,6 +677,12 @@ a:hover {
   font-size: 16px;
 }
 
+/* A sign-out that did not happen: its own line above Sign out. */
+.strategy-foot .notice {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 /* ---------- phones ---------- */
 
 @media (max-width: 700px) {

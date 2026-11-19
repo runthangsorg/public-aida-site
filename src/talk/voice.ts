@@ -37,6 +37,13 @@ export class MicError extends Error {
   }
 }
 
+/** A later question, or a release, overtook this one: nothing to tell the person, and no stream was kept. */
+export class MicSuperseded extends Error {
+  constructor() {
+    super("superseded");
+  }
+}
+
 export interface VoiceHandlers {
   onFrame: (frame: ServerFrame) => void;
   onClose: (code: number) => void;
@@ -81,6 +88,8 @@ export class Voice {
   onVoice: ((on: boolean) => void) | null = null;
   /** Muted: the track sends silence, which the gate must not learn as the room. */
   private muted = false;
+  /** Counts microphone questions and releases: only the newest question may keep its stream. */
+  private micAsk = 0;
 
   /**
    * Make both audio contexts inside the click that started the interview:
@@ -99,7 +108,10 @@ export class Voice {
     return this.stream !== null;
   }
 
-  /** Ask for the microphone and start capturing (sending waits for `ready`). */
+  /**
+   * Ask for the microphone and start capturing (sending waits for `ready`). One stream at a time: a question
+   * overtaken by a later one, or by stopMic(), stops whatever its answer brings and rejects with MicSuperseded.
+   */
   async openMic(): Promise<void> {
     if (!window.isSecureContext) throw new MicError("insecure");
     // Outside a secure context `navigator.mediaDevices` is missing altogether, whatever the types say.
@@ -107,8 +119,10 @@ export class Voice {
       throw new MicError("unsupported");
     }
     this.wake();
+    const ask = ++this.micAsk;
+    let stream: MediaStream;
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           // Not optional: without echo cancellation she hears herself and
@@ -119,23 +133,40 @@ export class Voice {
         },
       });
     } catch (err) {
+      if (ask !== this.micAsk) throw new MicSuperseded();
       const name = err instanceof DOMException ? err.name : "";
       if (name === "NotAllowedError" || name === "SecurityError") throw new MicError("denied");
       if (name === "NotFoundError" || name === "OverconstrainedError") throw new MicError("missing");
       throw new MicError("failed");
     }
+    if (ask !== this.micAsk) {
+      // One Allow can answer two questions: the older answer's stream must not be left recording.
+      this.drop(stream);
+      throw new MicSuperseded();
+    }
+    this.release(); // a stream this one replaces
+    this.stream = stream;
     this.muted = false; // a new stream's track starts live; a reconnect puts the person's mute back itself
     try {
-      await this.attach();
-    } catch {
+      await this.attach(stream, ask);
+    } catch (err) {
+      if (err instanceof MicSuperseded) throw err;
+      if (ask !== this.micAsk) {
+        this.drop(stream);
+        throw new MicSuperseded();
+      }
       this.stopMic();
       throw new MicError("failed");
     }
   }
 
-  private async attach(): Promise<void> {
-    const stream = this.stream;
-    if (!stream) return;
+  /** An overtaken question's stream: stopped, and released if it is still the one held. */
+  private drop(stream: MediaStream): void {
+    if (this.stream === stream) this.release();
+    else for (const track of stream.getTracks()) track.stop();
+  }
+
+  private async attach(stream: MediaStream, ask: number): Promise<void> {
     let ctx = this.input ?? newContext(INPUT_RATE);
     let source: MediaStreamAudioSourceNode;
     try {
@@ -154,6 +185,13 @@ export class Voice {
     node.port.onmessage = (event: MessageEvent<{ samples: Float32Array; level: number; levels?: number[] }>) => {
       this.capture(event.data.samples, event.data.level, event.data.levels);
     };
+    if (ask !== this.micAsk) {
+      // Overtaken while the graph was being built: this stream goes too, whatever overtook it.
+      source.disconnect();
+      node.disconnect();
+      this.drop(stream);
+      throw new MicSuperseded();
+    }
     source.connect(node); // never to the speakers: that is a feedback loop
     this.source = source;
     this.node = node;
@@ -192,8 +230,13 @@ export class Voice {
     if (muted) this.micLevel = 0;
   }
 
-  /** Release the microphone (the browser's recording light goes out). */
+  /** Release the microphone (the browser's recording light goes out), and any question still open for it. */
   stopMic(): void {
+    this.micAsk++;
+    this.release();
+  }
+
+  private release(): void {
     this.streaming = false;
     this.chunker.clear();
     // Nothing held from this stream may reach the next one; what was learnt of the room is kept.
@@ -348,8 +391,16 @@ export class Voice {
     return this.output ? Math.max(0, this.nextAt - this.output.currentTime) : 0;
   }
 
-  /** Close everything: socket, microphone, both contexts. */
-  close(): void {
+  /** A socket is open (or opening) for this call. */
+  get connected(): boolean {
+    return this.socket !== null;
+  }
+
+  /**
+   * Close the line only: socket and microphone. Both audio contexts stay, so her voice on the next line plays
+   * without another tap (the voice-only switch: a person typing their answers may never tap again).
+   */
+  closeLine(): void {
     this.flush();
     this.stopMic();
     const socket = this.socket;
@@ -358,6 +409,11 @@ export class Voice {
       socket.onclose = null;
       socket.close(1000, "done");
     }
+  }
+
+  /** Close everything: socket, microphone, both contexts. */
+  close(): void {
+    this.closeLine();
     for (const ctx of [this.input, this.output]) void ctx?.close().catch(() => undefined);
     this.input = null;
     this.output = null;

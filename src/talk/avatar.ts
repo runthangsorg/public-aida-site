@@ -562,6 +562,9 @@ export class AvatarPlayer {
     const Mse = w.MediaSource ?? w.ManagedMediaSource;
     if (!Mse) return false;
     this.stop();
+    // Sound on again: a refused autoplay muted the shared element, and a muted play would now succeed silently,
+    // with no "Tap for sound" (that went with the old player). Unmuted, it plays aloud or is refused and asks again.
+    this.video.muted = false;
     this.done = false;
     this.health = startHealth(performance.now());
     this.slow = startSlowLink();

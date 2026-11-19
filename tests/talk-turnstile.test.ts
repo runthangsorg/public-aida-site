@@ -165,6 +165,26 @@ describe("getting a token", () => {
     expect(loader).toHaveBeenCalledTimes(2);
   });
 
+  it("a widget that fails to draw fails the attempt, and the next attempt draws it again", async () => {
+    // Review round 3 (public-site-56): a render that threw was kept as a rejected promise for good, so every later
+    // attempt failed at once until the page was reloaded.
+    const widget = fakeWidget();
+    let draws = 0;
+    const render = widget.api.render.bind(widget.api);
+    widget.api.render = (container, options) => {
+      if (++draws === 1) throw new Error("render failed");
+      return render(container, options);
+    };
+    const { check, loader } = setup(() => Promise.resolve(widget.api));
+    await expect(check.token()).resolves.toEqual({ ok: false, reason: "script" });
+    const pending = check.token();
+    await settle();
+    widget.say().callback("tok-3");
+    await expect(pending).resolves.toEqual({ ok: true, token: "tok-3" });
+    expect(loader).toHaveBeenCalledTimes(2);
+    expect(draws).toBe(2);
+  });
+
   it("times out when the script never answers", async () => {
     const { check, clock } = setup(() => new Promise<TurnstileApi>(() => undefined));
     const pending = check.token();

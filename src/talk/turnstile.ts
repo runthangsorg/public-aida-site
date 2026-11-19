@@ -64,8 +64,9 @@ export class HumanCheck {
 
   /** Load the script and draw the (invisible) widget. Safe to call often; a failure is retried next time. */
   prepare(): Promise<void> {
-    this.ready ??= this.deps.load().then(
-      (api) => {
+    this.ready ??= this.deps
+      .load()
+      .then((api) => {
         this.api = api;
         this.widget = api.render(this.deps.container, {
           sitekey: siteKeyFor(typeof location === "undefined" ? "" : location.hostname),
@@ -84,12 +85,12 @@ export class HumanCheck {
             this.waiting?.({ ok: false, reason: "timeout" });
           },
         });
-      },
-      (err: unknown) => {
-        this.ready = null; // the next attempt loads the script afresh
+      })
+      .catch((err: unknown) => {
+        // The script would not load, or the widget would not draw: the next attempt starts afresh.
+        this.ready = null;
         throw err;
-      },
-    );
+      });
     return this.ready;
   }
 

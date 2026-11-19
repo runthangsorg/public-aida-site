@@ -28,6 +28,7 @@ import {
   confirmRefusal,
   entryFor,
   entryRefusal,
+  nothingToContinueText,
   errorCode,
   idleSentence,
   knownCopy,
@@ -48,6 +49,7 @@ import {
   groupNotes,
   noteStamp,
   initialState,
+  inputAddsWords,
   endView,
   latestTurns,
   progress,
@@ -88,7 +90,7 @@ import {
   type FailReason,
   type MseWindow,
 } from "./avatar";
-import { MicError, Voice, type MicProblem } from "./voice";
+import { MicError, MicSuperseded, Voice, type MicProblem } from "./voice";
 
 
 // Where the live call runs (the site's owner may move it off this host): read once, early. Absent or wrong
@@ -129,13 +131,24 @@ const screens = {
 };
 type Screen = keyof typeof screens;
 
-function show(name: Screen, focus = true): void {
+/**
+ * `nav`: "push" adds a history entry for the screen (unless the current one is already it); "keep" leaves history
+ * alone, for Back and Forward, which have already moved to the entry being shown.
+ */
+function show(name: Screen, focus = true, nav: "push" | "keep" = "push"): void {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
   app.dataset.screen = name;
   // In-app history per screen (QA round 2 E): the browser's Back button walks the person back through
   // the pages they have been on instead of leaving the site.
   const hs = history.state as { screen?: string } | null | undefined;
-  if (hs?.screen !== name) history.pushState({ screen: name }, "");
+  if (nav === "push" && hs?.screen !== name) {
+    // The microphone screen is a step on the way, never a place to come back to (review round 3): whatever follows
+    // it (the room, or the first screen after a request that failed) takes its entry, and a line that did not open
+    // takes the room's, so Back never leads into a dead room or an empty "Opening your conversation…".
+    const swap = hs?.screen === "mic" || (name === "mic" && hs?.screen === "room");
+    if (swap) history.replaceState({ screen: name }, "");
+    else history.pushState({ screen: name }, "");
+  }
   // The person check's script is loaded the first time the details form is shown, never before.
   if (name === "details") void check.prepare().catch(() => undefined);
   window.scrollTo(0, 0);
@@ -164,14 +177,25 @@ window.addEventListener("popstate", () => {
     // Stay in the room's history entry, so a second Back asks again instead of leaving the site.
     history.pushState({ screen: "room" }, "");
     controls.hidden = true;
+    confirmLater.hidden = true; // one question at a time: Back asks about ending, in place of "Continue later?"
     confirmBox.hidden = false;
     byId("confirm-no", HTMLButtonElement).focus();
     return;
   }
   const st = history.state as { screen?: string } | null | undefined;
   const target = typeof st?.screen === "string" ? (st.screen as Screen) : "intro";
-  if (target !== app.dataset.screen) show(target, false);
+  if (target === "room" && !callOn()) {
+    // A room with no call in it is a dead end: stay where the person is.
+    history.replaceState({ screen: app.dataset.screen }, "");
+    return;
+  }
+  if (target !== app.dataset.screen) show(target, false, "keep");
 });
+
+/** The room has a call in it: a line open or opening, a reconnect under way, or the move to voice only. */
+function callOn(): boolean {
+  return (state.phase === "live" || state.phase === "connecting") && (voice.connected || reconnecting(rc) || state.switching);
+}
 
 // ---------- her face, wherever the page shows her ----------
 
@@ -311,8 +335,14 @@ function restoreDetails(): void {
   if (!saved) return;
   for (const f of FIELDS) {
     const v = saved[f];
+    if (typeof v !== "string") continue;
+    if (f === "teamSize") {
+      // The sizes are radios (#f-teamSize-0, -1, …): the one with the saved value is picked again.
+      for (const input of chips.querySelectorAll<HTMLInputElement>("input")) input.checked = input.value === v;
+      continue;
+    }
     const el = document.getElementById(`f-${f}`);
-    if (typeof v === "string" && el instanceof HTMLInputElement) el.value = v.slice(0, MAX_LENGTH[f]);
+    if (el instanceof HTMLInputElement) el.value = v.slice(0, MAX_LENGTH[f]);
   }
 }
 for (const f of FIELDS) {
@@ -325,6 +355,7 @@ for (const f of FIELDS) {
   }
 }
 chips.addEventListener("change", () => {
+  saveDetails();
   clearIfFixed("teamSize");
 });
 consent.addEventListener("change", () => {
@@ -492,6 +523,7 @@ function openSession(opened: Opened): void {
     ...(opened.resumed ? { resumed: opened.resumed } : {}),
   };
   gateEmail = "";
+  settleReconnect(); // a new call: a line that never opens is a failed connect, not a drop
   void askForMic();
 }
 
@@ -615,7 +647,8 @@ async function askForMic(): Promise<void> {
     await voice.openMic();
   } catch (err) {
     window.clearTimeout(help);
-    if (attempt !== micAttempt) return;
+    // A later press asked again (one Allow can answer both): that question owns the screen and the stream.
+    if (attempt !== micAttempt || err instanceof MicSuperseded) return;
     micWait.hidden = true;
     micActions.hidden = false;
     micText.textContent = MIC_TROUBLE[err instanceof MicError ? err.problem : "failed"];
@@ -735,6 +768,7 @@ function onAvatarFrame(frame: Parameters<typeof reduce>[1]): void {
       // The server's word is the truth: it falls back to voice when the avatar would not start.
       connectFails = 0;
       carriedStart = 0;
+      settleReconnect();
       if (f.avatar && avatarParamAsked) startAvatar();
       else stopAvatar();
     } else if (f.type === "reconnecting") player?.setReconnecting(true);
@@ -776,9 +810,9 @@ async function switchToVoiceOnly(): Promise<void> {
   voice.flush();
   stopAvatar();
   dispatch({ kind: "switching" });
-  // The old socket is done with us; closing it locally must not look like a dropped line
-  // (voice.close() takes its onclose off first).
-  voice.close();
+  // The old socket is done with us; closing it locally must not look like a dropped line (closeLine() takes its
+  // onclose off first). Only the line: the audio contexts stay, so her voice plays on the new one untapped.
+  voice.closeLine();
   const deadline = performance.now() + SWITCH_WINDOW_MS;
   for (;;) {
     const r = await post("/api/talk/continue", {});
@@ -791,6 +825,7 @@ async function switchToVoiceOnly(): Promise<void> {
     if (r && (r.status === 401 || r.status === 404)) break; // nothing to carry on: the end screen
     if (performance.now() >= deadline) break; // or it never cleared: the end screen, with Continue
     await new Promise<void>((resolve) => window.setTimeout(resolve, SWITCH_RETRY_MS));
+    if (!switchStillOn()) return; // End pressed while waiting to ask again: no further request
   }
   if (!switchStillOn()) return;
   dispatch({ kind: "video-stopped", switching: false });
@@ -801,6 +836,7 @@ async function switchToVoiceOnly(): Promise<void> {
 function chooseVoiceOnly(): void {
   slowOffer.hidden = true;
   if (state.switching) return;
+  voice.wake(); // inside the click: her voice on the new line may need it
   rememberVoiceOnly(safeStorage());
   void switchToVoiceOnly();
 }
@@ -906,7 +942,9 @@ function chipFrame(frame: ServerFrame): void {
   }
   const c = frame.content;
   if (c.output || c.audio.length) chip = stepChip(chip, { t: "her", now });
-  else if (c.input && !herSpeaking(state)) chip = stepChip(chip, { t: "you", now });
+  // A marker in place of words ("<noise>", or "<no" then " speech>") is not the person talking: no "Transcribing…"
+  // for hiss. Asked of the state before this frame, as the reducer will judge it, so the chip and the caption agree.
+  else if (c.input && !herSpeaking(state) && inputAddsWords(state, c.input)) chip = stepChip(chip, { t: "you", now });
 }
 
 // A small "78/80" once a capped field is within two characters of its limit — a silent cut is a bug
@@ -1128,11 +1166,17 @@ function reopen(opened: Opened): void {
   // The microphone was allowed a minute ago, so this does not ask again; if it fails, the microphone screen says why.
   voice.openMic().then(
     () => {
+      // End was pressed while the browser was asked: it stays ended (End releases the microphone; this is a guard).
+      if (state.phase === "ending" || state.phase === "ended") {
+        voice.stopMic();
+        return;
+      }
       // The new microphone stream starts live: put the person's mute back before anything is sent.
       voice.setMuted(muted);
       startRoom(false);
     },
-    () => {
+    (err: unknown) => {
+      if (err instanceof MicSuperseded) return; // End (or the page going) released it while it was asked
       void askForMic();
     },
   );
@@ -1147,6 +1191,14 @@ function reconnectGaveUp(nothingSaved = false): void {
   carriedStart = 0;
   voice.close();
   dispatch({ kind: "closed", minutes: elapsed() / 60, nothingSaved });
+}
+
+/**
+ * A reconnect is over once its line is up (or a new call begins): the next close is judged afresh, so a later
+ * call whose line never opens is a failed connect, not a drop. The page's count of reconnects is kept.
+ */
+function settleReconnect(): void {
+  if (rc.phase === "done") rc = { ...rc, phase: "idle" };
 }
 
 /** End pressed, or the page going away, while reconnecting: stop asking. */
@@ -1701,9 +1753,12 @@ function awaitEnd(): void {
 
 byId("confirm-yes", HTMLButtonElement).addEventListener("click", () => {
   if (state.phase !== "live" && state.phase !== "connecting") return;
-  if (reconnecting(rc)) {
-    // No line to end: stop reconnecting and show the end screen now.
+  if (reconnecting(rc) || state.switching || !voice.connected) {
+    // No line ready to end (reconnecting, moving to voice only, or the way back still waiting for the microphone):
+    // stop that and show the end screen now. A microphone question still open is answered into nothing. If the
+    // voice-only line is already open (not yet ready), it is still told the call is over, as End always did.
     stopReconnecting();
+    voice.end();
     dispatch({ kind: "end-pressed" });
     dispatch({ kind: "closed", minutes: elapsed() / 60 });
     return;
@@ -2252,9 +2307,21 @@ async function enterAs(kind: "continue" | "new"): Promise<void> {
   const refusal = entryRefusal(r.status === 200 ? 500 : r.status, r.data);
   if (refusal.outcome === "login") hideKnown();
   else if (refusal.outcome === "nothing") {
+    // Both Continues go (the voice-only one would only ask again), the reason is said, and Start is the one thing to
+    // do. A card with no Start (no new conversation allowed now) says the reason without sending the person to one.
+    const canStart = !knownNew.hidden;
     knownContinue.hidden = true;
-    knownStatus.textContent = "";
+    knownVoice.hidden = true;
+    knownStatus.textContent = nothingToContinueText(canStart);
+    knownNew.classList.toggle("btn-go", canStart);
+    knownNew.classList.toggle("btn-quiet", !canStart);
     syncKnownNote();
+    // The Continue pressed has gone, and focus was left on the "Opening…" screen just hidden: Start is next, for a
+    // keyboard or a screen reader. Focus the person put somewhere still in view is left there.
+    const focused = document.activeElement;
+    if (canStart && (!focused || focused === document.body || focused.closest("[hidden]"))) {
+      knownNew.focus({ preventScroll: true });
+    }
   } else {
     knownStatus.textContent = refusal.message;
   }
@@ -2322,6 +2389,9 @@ endContinue.addEventListener("click", () => {
 // A link opens here. Its token leaves the address bar before anything else happens, and nothing is asked
 // of the server until the person presses the button: that click is what lets her voice play.
 const entry = entryFor(takeLanding(location, history));
+// The first screen gets its own history entry (review round 3: Back from the details form found none, pushed one and
+// threw Forward away). It replaces whatever this entry held before a reload.
+history.replaceState({ screen: app.dataset.screen ?? "intro" }, "");
 if (entry.kind === "go") {
   pendingGo = entry.token;
   // A used link, or the same link opened in a second tab, in a browser that already holds a session: welcome

@@ -5,9 +5,12 @@ import {
   EXPIRED_CODE_COPY,
   LOAD_FAILED_COPY,
   SEND_FAILED_COPY,
+  SIGNOUT_FAILED_COPY,
+  keepCode,
   newLinkMailto,
   pageTitle,
   reduce,
+  signOutDone,
   waitCopy,
   type ScreenState,
 } from "../src/strategy/state";
@@ -145,6 +148,14 @@ describe("what the page shows for POST /api/strategy/verify", () => {
 });
 
 describe("signing out", () => {
+  // Review round 3 (public-site-30): a sign-out the server never confirmed fetched the strategy again and showed it
+  // as if nothing had happened.
+  it("is done only when the server says so (or says there was no session); anything else is reported", () => {
+    for (const status of [200, 204, 401]) expect(signOutDone(status)).toBe(true);
+    for (const status of [0, 403, 429, 500, 503]) expect(signOutDone(status)).toBe(false);
+    expect(SIGNOUT_FAILED_COPY).toBe("We could not sign you out. Check your connection and try again.");
+  });
+
   it("shows the loading screen while the view is fetched again", () => {
     expect(reduce({ screen: "view", view: sampleView() }, { type: "signout" })).toEqual({
       screen: "loading",
@@ -158,5 +169,22 @@ describe("signing out", () => {
     expect(pageTitle(out)).toBe(BASE_TITLE);
     expect(pageTitle(reduce(out, { type: "view", status: 401, body: { need: "email", hint: HINT } }))).toBe(BASE_TITLE);
     expect(pageTitle({ screen: "not-found" })).toBe(BASE_TITLE);
+  });
+});
+
+describe("the one-time code in the address", () => {
+  // Review round 3 (public-site-16): any answer but 401 dropped the code, so a dropped connection or a server fault on
+  // the first request lost it, and Try again could only show the sign-in form.
+  it("stays while the strategy request had no definitive answer", () => {
+    for (const status of [0, 429, 500, 503]) expect(keepCode(status)).toBe(true);
+  });
+
+  it("goes once the strategy opened without it, or the link is closed", () => {
+    for (const status of [200, 404]) expect(keepCode(status)).toBe(false);
+  });
+
+  it("stays while the code itself had no definitive answer, and goes once the server answered it", () => {
+    for (const status of [0, 429, 500, 503]) expect(keepCode(401, status)).toBe(true);
+    for (const status of [200, 400, 401, 404]) expect(keepCode(401, status)).toBe(false);
   });
 });
