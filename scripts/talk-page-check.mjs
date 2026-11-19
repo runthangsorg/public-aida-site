@@ -962,20 +962,35 @@ if (want('7')) {
   }
 
   // At normal text size the four buttons share one row on every phone width (integration, 19 Nov): with the row
-  // free to wrap, End went to a row of its own from 320 to 346 px and took 80 px from the captions.
-  for (const w of [320, 340, 346, 360, 375, 390, 414, 480, 540]) {
+  // free to wrap, End went to a row of its own from 320 to 346 px and took 80 px from the captions; under 320 px
+  // (a folding phone's 280 px cover screen) too (review, 19 Nov). Muted as well ("Unmute" is the longest label),
+  // with no button over the next and no label wider than its button.
+  const ctlRow = () => {
+    const btns = [...document.querySelectorAll('.controls .ctl')].filter((e) => e.checkVisibility());
+    const boxes = btns.map((e) => e.getBoundingClientRect());
+    return {
+      rows: new Set(boxes.map((b) => Math.round(b.top))).size,
+      buttons: btns.length,
+      cut: btns.filter((e) => e.getBoundingClientRect().left < -0.5 || e.getBoundingClientRect().right > innerWidth + 0.5).map((e) => e.id),
+      overlap: boxes.some((b, i) => i > 0 && Math.round(b.top) === Math.round(boxes[i - 1].top) && b.left < boxes[i - 1].right - 0.5),
+      spill: btns.filter((e) => {
+        const label = e.querySelector('.ctl-label');
+        const l = label.getBoundingClientRect();
+        const b = e.getBoundingClientRect();
+        return label.scrollWidth > label.clientWidth + 1 || l.left < b.left - 0.5 || l.right > b.right + 0.5;
+      }).map((e) => e.id),
+      scroll: document.documentElement.scrollWidth - innerWidth,
+    };
+  };
+  for (const w of [280, 300, 320, 340, 346, 360, 375, 390, 414, 480, 540]) {
     const { ctx, page } = await liveRoom({ width: w, height: 640 });
-    const m = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('.controls .ctl')].filter((e) => e.checkVisibility());
-      return {
-        rows: new Set(btns.map((e) => Math.round(e.getBoundingClientRect().top))).size,
-        buttons: btns.length,
-        cut: btns.filter((e) => e.getBoundingClientRect().left < -0.5 || e.getBoundingClientRect().right > innerWidth + 0.5).map((e) => e.id),
-        scroll: document.documentElement.scrollWidth - innerWidth,
-      };
-    });
-    check(`[${w}x640] at normal text size Mute, Type, Continue later and End share one row, all on screen`, m.buttons === 4 && m.rows === 1 && m.cut.length === 0 && m.scroll <= 0, JSON.stringify(m));
-    if (w === 320) await page.screenshot({ path: `${shots}/layout-room-row-320.png` });
+    const m = await page.evaluate(ctlRow);
+    await page.click('#mute');
+    await page.waitForTimeout(150);
+    const muted = await page.evaluate(ctlRow);
+    const fits = (r) => r.buttons === 4 && r.rows === 1 && r.cut.length === 0 && !r.overlap && r.spill.length === 0 && r.scroll <= 0;
+    check(`[${w}x640] at normal text size Mute (and Unmute), Type, Continue later and End share one row, all on screen, none over the next`, fits(m) && fits(muted), JSON.stringify({ m, muted }));
+    if (w === 320 || w === 280) await page.screenshot({ path: `${shots}/layout-room-row-${w}.png` });
     await ctx.close();
   }
 

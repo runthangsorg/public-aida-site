@@ -86,6 +86,11 @@ describe("nothing is cut off or runs into its neighbour (320 px phones, text enl
     expect(oneLine).toHaveLength(1);
     expect(wraps).toHaveLength(1);
     expect(wraps[0]?.at).toBeGreaterThan(oneLine[0]?.at ?? Infinity);
+    // Under 320 px (a 280 px cover screen) the floor is lower again: that rule comes after the 359 px one.
+    const under320 = rulesAt(css, ".ctl-label", "(max-width: 319px)");
+    expect(under320).toHaveLength(1);
+    expect(px(prop(under320[0]?.body ?? "", "min-width"))).toBeLessThan(floor);
+    expect(under320[0]?.at).toBeGreaterThan(rulesAt(css, ".ctl-label", narrow)[0]?.at ?? Infinity);
   });
 
   it("the strategy cards stay inside the screen: a one-column track that cannot grow, and words that can break", () => {
