@@ -47,6 +47,23 @@ describe("nothing is cut off or runs into its neighbour (320 px phones, text enl
 });
 
 describe("the call room fits the screen it is on", () => {
+  it("a short screen (a phone on its side, a laptop at 200%) drops the 560 px floor and puts her window beside her captions", () => {
+    const [room] = rules(css, ".screen-room", "max-height: 559px");
+    expect(room).toBeDefined();
+    expect(prop(room ?? "", "min-height")).toBe("0");
+    expect(prop(room ?? "", "grid-template-areas")).toMatch(/"stage captions"[\s\S]*"notes controls"/);
+  });
+
+  it("a short phone keeps the notes strip: the open notebook is only for a phone with the height for it", () => {
+    for (const body of rules(css, ".nb-peek, .nb-close")) expect(prop(body, "display")).toBe("none");
+    const phoneOnly = rules(css, ".nb-peek, .nb-close", "max-width: 480px");
+    expect(phoneOnly.length).toBe(1);
+    expect(rules(css, ".nb-peek, .nb-close", "min-height: 661px")).toHaveLength(1);
+    // The stage's name gives way, its count does not.
+    expect(prop(rules(css, "#stage-label")[0] ?? "", "text-overflow")).toBe("ellipsis");
+    expect(prop(rules(css, ".stage-now .count")[0] ?? "", "flex")).toBe("none");
+  });
+
   it("a caption line scrolls inside itself rather than being cut: yours gives way first, to one line, hers to two", () => {
     const you = rules(css, ".captions .line-you")[0] ?? "";
     const her = rules(css, ".captions .line-aida")[0] ?? "";
