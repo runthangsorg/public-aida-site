@@ -451,7 +451,7 @@ async function start(name: string, body: Record<string, string | boolean>): Prom
       showGateFailure();
       return;
     }
-    showAlert(r.message);
+    showAlert(r.message, !r.field);
     if (r.field === "consent") {
       show("intro");
       setError(consentError, r.message);
@@ -484,9 +484,18 @@ function openSession(opened: Opened): void {
   void askForMic();
 }
 
-function showAlert(message: string): void {
+/**
+ * The form's one message, at the top of the form. On a phone Continue is a screen or more below it, and the
+ * pressed button was disabled while it waited (focus fell to the page): bring the message into view and put
+ * focus on it, so it is seen and read. A refusal about one field leaves both to that field's own error.
+ */
+function showAlert(message: string, bringIntoView = true): void {
   alertBox.textContent = message;
   alertBox.hidden = false;
+  if (!bringIntoView) return;
+  alertBox.tabIndex = -1;
+  alertBox.focus({ preventScroll: true });
+  alertBox.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
 }
 
 // ---------- 2b. check your email ----------
