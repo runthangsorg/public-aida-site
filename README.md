@@ -11,7 +11,8 @@ The browser half of two pages on Aida's site:
 The server half is not in this repository; both pages talk only to their own site's `/api/`.
 
 - Static site, no framework: Vite + TypeScript + plain CSS. A self-hosted, subset Anton (SIL OFL,
-  `licenses/OFL-Anton.txt`) for display type, system fonts for the rest. No analytics in the page and
+  `licenses/OFL-Anton.txt`; Latin with accents, rebuilt by `scripts/subset-anton.sh`) for display type, system
+  fonts for the rest. No analytics in the page and
   no third-party requests, except the invisible bot check on the details and sign-in forms.
 - Pure, tested modules: `src/talk/pcm.ts` (PCM16 and resampling), `protocol.ts` and `state.ts`
   (frames into what the room shows), `swot.ts` (the read-back, escaped), `details.ts`, `gate.ts`,
