@@ -1173,7 +1173,6 @@ input[aria-invalid="true"]:hover {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  min-width: 76px;
   padding: 4px;
   border: 0;
   border-radius: 16px;
@@ -1204,6 +1203,15 @@ input[aria-invalid="true"]:hover {
 .ctl .ic {
   width: 26px;
   height: 26px;
+}
+
+/* Each button keeps its width (the floor sits on the label, so a button can still grow to fit its words), and a
+   label that has no room wraps inside its own button instead of running into the next one (text enlarged to
+   200% on a phone put "MuteTypeContinue laterEnd" on one line). */
+.ctl-label {
+  min-width: 68px;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .ctl:hover .ctl-ic {
@@ -1433,14 +1441,18 @@ input[aria-invalid="true"]:hover {
   background: var(--tint-t);
 }
 
+/* A quadrant is about 100 px wide on a 320 px phone: the heading scales with it ("OPPORTUNITIES" fits from
+   320 px up), and a word that still does not fit (enlarged text) breaks inside the quadrant instead of being cut. */
 .q h3 {
   margin: 0 0 10px;
   font-family: var(--display);
-  font-size: clamp(22px, 5.6vw, 38px);
+  font-size: clamp(16px, 5.6vw, 38px);
   font-weight: 400;
   letter-spacing: 0.01em;
   line-height: 1.04;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 .q ul,
@@ -1460,6 +1472,14 @@ input[aria-invalid="true"]:hover {
   font-size: 16px;
   line-height: 1.4;
   text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+/* About 100 px a quadrant: a long word ("spreadsheets") is hyphenated rather than cut at an arbitrary letter. */
+@media (max-width: 379px) {
+  .q li {
+    hyphens: auto;
+  }
 }
 
 .q li::before,
@@ -2090,10 +2110,6 @@ input[aria-invalid="true"]:hover {
 @media (max-width: 480px) {
   .controls {
     gap: 4px;
-  }
-
-  .ctl {
-    min-width: 72px;
   }
 }
 
@@ -2828,9 +2844,12 @@ input[aria-invalid="true"]:hover {
   }
 
   .ctl {
-    min-width: 66px;
     gap: 4px;
     font-size: 14px;
+  }
+
+  .ctl-label {
+    min-width: 58px;
   }
 
   .ctl-ic {
@@ -2838,10 +2857,10 @@ input[aria-invalid="true"]:hover {
     height: 48px;
   }
 
-  /* "Continue later" on one line: four buttons fit across a 360 px phone. */
+  /* "Continue later" on one line where it fits: four buttons fit across a 360 px phone. Narrower, or with the
+     text enlarged, it wraps inside its own button. */
   .ctl-later .ctl-label {
     max-width: none;
-    white-space: nowrap;
   }
 }
 
