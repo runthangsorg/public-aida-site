@@ -17,7 +17,7 @@
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
-/* global window, document, getComputedStyle, innerHeight, innerWidth, location, matchMedia */
+/* global window, document, getComputedStyle, history, innerHeight, innerWidth, location, matchMedia */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -1384,6 +1384,29 @@ if (want9('02')) {
   await page.waitForTimeout(2000);
   const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, title: document.querySelector('#mic-title').textContent, sockets: window.__sockets }));
   check('a later call whose line never opens, after a reconnect earlier on the page: "The line did not open", not a drop', m.screen === 'mic' && m.title === 'The line did not open' && m.sockets === 3, JSON.stringify(m));
+  await ctx.close();
+  await browser.close();
+}
+
+/** Back or Forward, and a moment for the page to answer it. */
+const travel = async (page, way) => {
+  await page.evaluate((w) => (w === 'back' ? history.back() : history.forward()), way);
+  await page.waitForTimeout(500);
+  return page.evaluate(() => document.querySelector('#app').dataset.screen);
+};
+
+if (want9('34')) {
+  // The first screen had no history entry of its own: Back from the details form pushed a new one, wasting a press
+  // and throwing Forward away.
+  const browser = await chrome();
+  const { ctx, page } = await open(browser, { size: PHONE });
+  await page.click('.check .box');
+  await page.click('#start-top');
+  await page.waitForSelector('#details:not([hidden])');
+  const back = await travel(page, 'back');
+  const forward = await travel(page, 'forward');
+  const length = await page.evaluate(() => history.length);
+  check('consent, details, Back shows the first screen and Forward the details again', back === 'intro' && forward === 'details', JSON.stringify({ back, forward, length }));
   await ctx.close();
   await browser.close();
 }

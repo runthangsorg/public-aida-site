@@ -130,13 +130,17 @@ const screens = {
 };
 type Screen = keyof typeof screens;
 
-function show(name: Screen, focus = true): void {
+/**
+ * `nav`: "push" adds a history entry for the screen (unless the current one is already it); "keep" leaves history
+ * alone, for Back and Forward, which have already moved to the entry being shown.
+ */
+function show(name: Screen, focus = true, nav: "push" | "keep" = "push"): void {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
   app.dataset.screen = name;
   // In-app history per screen (QA round 2 E): the browser's Back button walks the person back through
   // the pages they have been on instead of leaving the site.
   const hs = history.state as { screen?: string } | null | undefined;
-  if (hs?.screen !== name) history.pushState({ screen: name }, "");
+  if (nav === "push" && hs?.screen !== name) history.pushState({ screen: name }, "");
   // The person check's script is loaded the first time the details form is shown, never before.
   if (name === "details") void check.prepare().catch(() => undefined);
   window.scrollTo(0, 0);
@@ -171,7 +175,7 @@ window.addEventListener("popstate", () => {
   }
   const st = history.state as { screen?: string } | null | undefined;
   const target = typeof st?.screen === "string" ? (st.screen as Screen) : "intro";
-  if (target !== app.dataset.screen) show(target, false);
+  if (target !== app.dataset.screen) show(target, false, "keep");
 });
 
 // ---------- her face, wherever the page shows her ----------
@@ -2345,6 +2349,9 @@ endContinue.addEventListener("click", () => {
 // A link opens here. Its token leaves the address bar before anything else happens, and nothing is asked
 // of the server until the person presses the button: that click is what lets her voice play.
 const entry = entryFor(takeLanding(location, history));
+// The first screen gets its own history entry (review round 3: Back from the details form found none, pushed one and
+// threw Forward away). It replaces whatever this entry held before a reload.
+history.replaceState({ screen: app.dataset.screen ?? "intro" }, "");
 if (entry.kind === "go") {
   pendingGo = entry.token;
   // A used link, or the same link opened in a second tab, in a browser that already holds a session: welcome
