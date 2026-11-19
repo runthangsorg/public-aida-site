@@ -11,7 +11,8 @@
  *      Transcribing…, Noted, the notebook open on a phone with its transcript, and the QA findings of 18 Oct.
  *
  *   node scripts/talk-page-check.mjs [--shots .tmp/shots] [--only 1,5]   (sections: 1 face, 1b room, 2 start,
- *                                                                     3 reconnect, 4 busy card, 5 round 3)
+ *                                                                     3 reconnect, 4 busy card, 5 round 3,
+ *                                                                     6 round 4, 7 layout)
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
@@ -854,6 +855,70 @@ if (want('6')) {
         tabs.coarse && tabs.notes >= 44 && tabs.transcript >= 44 && tabs.notes <= 46 && tabs.transcript <= 46,
         JSON.stringify(tabs),
       );
+      await ctx.close();
+    }
+  }
+  await browser.close();
+}
+
+// ---------- 7. layout: the room and the end screen on the screens people use (review, 19 Nov) ----------
+if (want('7')) {
+  const browser = await chrome(FAKE_MIC);
+  /** A live call a few minutes in: her question, the person's answer, three notes. */
+  const liveRoom = async (size, { routes = {}, colorScheme } = {}) => {
+    const opened = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes });
+    const { page } = opened;
+    if (colorScheme) await page.emulateMedia({ colorScheme });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await page.evaluate((s) => {
+      const ws = window.__ws;
+      ws.push({ aida: { type: 'ready', targetMinutes: 20, sections: s, avatar: false } });
+      ws.push({ serverContent: { outputTranscription: { text: 'Walk me through a normal week, from the rota to people being paid. What goes wrong most often?' } } });
+      ws.push({ serverContent: { turnComplete: true } });
+      ws.push({ serverContent: { inputTranscription: { text: 'Hours come out of the app, I check them against the rota, then type them into payroll.' } } });
+      const notes = [['org', 'Office cleaning, about forty staff across two sites'], ['tools', 'Rotas kept in spreadsheets, one per site'], ['workflows', 'Hours are re-typed into payroll every week']];
+      for (const [section, text] of notes) ws.push({ aida: { type: 'note', section, text } });
+    }, sections);
+    await page.waitForTimeout(800);
+    return opened;
+  };
+  // Every font size (and line height) on the page doubled: how a phone's text scaling at 200% lays the page out.
+  const DOUBLE = () => {
+    const els = [...document.querySelectorAll('body *')];
+    const sizes = els.map((e) => [parseFloat(getComputedStyle(e).fontSize), getComputedStyle(e).lineHeight]);
+    els.forEach((e, i) => {
+      const [fs, lh] = sizes[i];
+      e.style.fontSize = `${fs * 2}px`;
+      if (lh.endsWith('px')) e.style.lineHeight = `${parseFloat(lh) * 2}px`;
+    });
+  };
+
+  // Text at 200% on a narrow phone: the room's four buttons were wider than the screen and the room's overflow cut
+  // "Mute" and "End" in half; the end screen scrolled sideways by 22 px.
+  for (const w of [320, 360]) {
+    {
+      const { ctx, page } = await liveRoom({ width: w, height: 740 });
+      await page.evaluate(DOUBLE);
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        width: innerWidth,
+        cut: [...document.querySelectorAll('.controls .ctl, .nb-tab')].filter((e) => e.checkVisibility()).filter((e) => e.getBoundingClientRect().left < -0.5 || e.getBoundingClientRect().right > innerWidth + 0.5).map((e) => e.id),
+      }));
+      check(`[${w}, text x2] the call's buttons and the notebook's tabs are whole on screen, no sideways scroll`, m.cut.length === 0 && m.scroll === m.width, JSON.stringify(m));
+      await page.screenshot({ path: `${shots}/layout-room-text2x-${w}.png` });
+      await ctx.close();
+    }
+    {
+      const { ctx, page } = await liveRoom({ width: w, height: 740 });
+      await page.evaluate(() => window.__ws.push({ aida: { type: 'ended', reason: 'complete', minutes: 3 } }));
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(400);
+      await page.evaluate(DOUBLE);
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));
+      check(`[${w}, text x2] the end screen does not scroll sideways`, m.scroll === m.width, JSON.stringify(m));
       await ctx.close();
     }
   }

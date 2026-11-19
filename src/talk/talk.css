@@ -1176,8 +1176,11 @@ input[aria-invalid="true"]:hover {
   grid-area: controls;
 }
 
+/* With the text enlarged on a narrow phone the four buttons are wider than the screen: End goes to a second row
+   rather than past the edge, where the room's overflow cut "Mute" and "End" in half. */
 .controls {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: clamp(12px, 6vw, 36px);
   padding: 10px var(--gutter) calc(12px + env(safe-area-inset-bottom));
@@ -2640,6 +2643,7 @@ input[aria-invalid="true"]:hover {
 .nb-tabs {
   flex: none;
   display: flex;
+  flex-wrap: wrap; /* text enlarged on a narrow phone: Transcript goes under Notes, not past the edge */
   gap: 6px;
   margin-top: 8px;
   padding-bottom: 6px;

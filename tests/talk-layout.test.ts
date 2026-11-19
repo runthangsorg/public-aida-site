@@ -38,6 +38,13 @@ describe("nothing is cut off or runs into its neighbour (320 px phones, text enl
     for (const body of rules(css, ".ctl-later .ctl-label")) expect(prop(body, "white-space")).not.toBe("nowrap");
   });
 
+  it("the call's buttons and the notebook's tabs wrap to a second row rather than run past the screen's edge", () => {
+    // 320 px with the text at 200%: the room's overflow cut "Mute" and "End" in half, and "Transcript".
+    expect(rules(css, ".controls").some((b) => prop(b, "flex-wrap") === "wrap")).toBe(true);
+    for (const body of rules(css, ".controls")) expect(prop(body, "flex-wrap") ?? "wrap").toBe("wrap");
+    expect(rules(css, ".nb-tabs").some((b) => prop(b, "flex-wrap") === "wrap")).toBe(true);
+  });
+
   it("the end screen's words go under her portrait when the column beside it is too narrow, and its buttons stay inside it", () => {
     // 320 px: beside the 108 px portrait, "Start a new conversation" ran 21 px past the screen's edge.
     const [head] = rules(css, ".end-head");
