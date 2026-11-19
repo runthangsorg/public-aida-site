@@ -2304,8 +2304,12 @@ async function enterAs(kind: "continue" | "new"): Promise<void> {
   const refusal = entryRefusal(r.status === 200 ? 500 : r.status, r.data);
   if (refusal.outcome === "login") hideKnown();
   else if (refusal.outcome === "nothing") {
+    // Both Continues go (the voice-only one would only ask again), the reason is said, and Start is the one thing to do.
     knownContinue.hidden = true;
-    knownStatus.textContent = "";
+    knownVoice.hidden = true;
+    knownStatus.textContent = refusal.message;
+    knownNew.classList.toggle("btn-go", !knownNew.hidden);
+    knownNew.classList.toggle("btn-quiet", knownNew.hidden);
     syncKnownNote();
   } else {
     knownStatus.textContent = refusal.message;

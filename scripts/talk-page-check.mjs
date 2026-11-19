@@ -517,8 +517,8 @@ if (want('4')) {
     await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'intro' && !document.querySelector('#known-continue').disabled, null, { timeout: 8000 });
     await page.waitForTimeout(200);
     const m = await page.evaluate(() => ({ cont: !document.querySelector('#known-continue').hidden, start: !document.querySelector('#known-new').hidden, status: document.querySelector('#known-status').textContent }));
-    const ok = kept ? m.cont && m.start && m.status === 'We could not open it just now. Please try again in a moment.' : !m.cont && m.start && m.status === '';
-    check(`welcome-back Continue answered 404 ${code}: ${kept ? 'Continue stays, with "try again in a moment"' : 'Continue goes, Start a new conversation stays'}`, ok, JSON.stringify(m));
+    const ok = kept ? m.cont && m.start && m.status === 'We could not open it just now. Please try again in a moment.' : !m.cont && m.start && m.status === 'There is nothing to continue. Start a new conversation.';
+    check(`welcome-back Continue answered 404 ${code}: ${kept ? 'Continue stays, with "try again in a moment"' : 'Continue goes and says why, Start a new conversation stays'}`, ok, JSON.stringify(m));
     await ctx.close();
   }
   // At today's limit the card offers neither Continue nor Start, so the note on what video costs goes with them
@@ -1475,6 +1475,34 @@ if (want9('43')) {
   const m = await page.evaluate(() => ({ size: document.querySelector('#team-sizes input:checked')?.id ?? null, name: document.querySelector('#f-name').value }));
   check('a team size picked, then the page reloaded (as after the privacy page): still picked', m.size === 'f-teamSize-2' && m.name === 'Sam Example', JSON.stringify(m));
   await ctx.close();
+  await browser.close();
+}
+
+if (want9('44')) {
+  // Nothing to continue: Continue went, but its voice-only twin stayed (and repeated the same 404), and the reason
+  // was never shown.
+  const browser = await chrome();
+  for (const press of ['#known-continue', '#known-voice']) {
+    let asked = 0;
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      me: { known: true, name: 'Sam', canContinue: true, minutesSoFar: 3, canStartNew: true },
+      routes: { '**/api/talk/continue': (r) => { asked++; return r.fulfill(json({ error: 'nothing_to_continue' }, 404)); } },
+    });
+    await page.waitForSelector(`${press}:not([hidden])`);
+    await page.click(press);
+    await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'intro' && !document.querySelector('#known-new').disabled, null, { timeout: 8000 });
+    await page.waitForTimeout(200);
+    const m = await page.evaluate(() => ({
+      cont: !document.querySelector('#known-continue').hidden,
+      voice: !document.querySelector('#known-voice').hidden,
+      start: !document.querySelector('#known-new').hidden,
+      startMain: document.querySelector('#known-new').classList.contains('btn-go'),
+      status: document.querySelector('#known-status').textContent,
+    }));
+    check(`welcome-back ${press === '#known-voice' ? 'voice-only ' : ''}Continue, nothing to continue: both Continues go, the reason is shown, Start is the main button (asked ${asked})`, asked === 1 && !m.cont && !m.voice && m.start && m.startMain && m.status === 'There is nothing to continue. Start a new conversation.', JSON.stringify(m));
+    await ctx.close();
+  }
   await browser.close();
 }
 
