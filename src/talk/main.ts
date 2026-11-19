@@ -24,6 +24,7 @@ import {
   VIDEO_STOPPED_CLOSING,
   NETWORK_TRY_AGAIN,
   NOTHING_SAVED_LEDE,
+  NOTHING_SAVED_TITLE,
   COULD_NOT_OPEN,
   confirmRefusal,
   entryFor,
@@ -1866,7 +1867,12 @@ const endNew = byId("end-new", HTMLAnchorElement);
  * The server holds no saved place for this call (it answered "nothing to continue"): say so, and offer a new
  * conversation where Continue was. The link reloads the page, whose first screen knows this browser.
  */
-function showNothingSaved(): void {
+function showNothingSaved(title?: string): void {
+  if (title) {
+    byId("end-title", HTMLHeadingElement).textContent = title;
+    const minutes = Math.max(1, Math.round(state.ended?.minutes ?? elapsed() / 60));
+    byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${minutes} min.`;
+  }
   byId("end-lede", HTMLParagraphElement).textContent = NOTHING_SAVED_LEDE;
   byId("end-more", HTMLParagraphElement).hidden = true;
   endActions.hidden = false;
@@ -2374,7 +2380,7 @@ endContinue.addEventListener("click", () => {
     const refusal = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data) : null;
     if (r?.status === 404 && errorCode(r.data) === NOTHING_TO_CONTINUE) {
       // Nothing saved after all: Continue cannot work, so it goes, and a new conversation is offered instead.
-      showNothingSaved();
+      showNothingSaved(NOTHING_SAVED_TITLE);
       endNew.focus();
       return;
     }
