@@ -1590,14 +1590,18 @@ if (want9('30')) {
     },
   });
   await page.waitForSelector('#view:not([hidden])', { timeout: 10000 });
-  await page.click('#signout');
+  // By keyboard: Sign out is disabled while it is asked, which drops its focus to the page.
+  await page.focus('#signout');
+  await page.keyboard.press('Enter');
   await page.waitForTimeout(800);
   const m = await page.evaluate(() => ({
     view: !document.querySelector('#view').hidden,
     notice: document.querySelector('#signout-notice')?.hidden === false ? document.querySelector('#signout-notice').textContent : null,
     button: !document.querySelector('#signout').disabled,
+    focus: document.activeElement?.id || document.activeElement?.tagName || '',
   }));
   check('strategy: a sign-out that failed says so, and the strategy and Sign out stay', m.view && m.notice === 'We could not sign you out. Check your connection and try again.' && m.button, JSON.stringify(m));
+  check('...and keyboard focus is back on Sign out, beside the notice', m.focus === 'signout', JSON.stringify({ focus: m.focus }));
   await page.locator('.strategy-foot').screenshot({ path: `${shots}/strategy-signout-failed-phone.png` });
   await ctx.close();
   await browser.close();

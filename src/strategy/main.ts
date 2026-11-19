@@ -243,6 +243,9 @@ signoutButton.addEventListener("click", () => {
     if (!signOutDone(out.status)) {
       // Still signed in: say so, and keep the strategy, rather than fetching it again as if nothing had happened.
       show({ screen: "view", view, notice: SIGNOUT_FAILED_COPY });
+      // Disabling it dropped its focus to the page: give it back, so a keyboard or screen-reader user is still
+      // beside the notice. Focus the person moved elsewhere meanwhile is left where it is.
+      if (!document.activeElement || document.activeElement === document.body) signoutButton.focus();
       return;
     }
     show(reduce(state, { type: "signout" }), true);
