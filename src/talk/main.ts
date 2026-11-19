@@ -1980,6 +1980,15 @@ const knownContinue = byId("known-continue", HTMLButtonElement);
 const knownNew = byId("known-new", HTMLButtonElement);
 const knownVoice = byId("known-voice", HTMLButtonElement);
 const knownStatus = byId("known-status", HTMLParagraphElement);
+const knownNote = knownCard.querySelector<HTMLElement>("[data-note]");
+
+/**
+ * The video data note is for someone about to start a call. At today's limit the card offers neither Continue
+ * nor Start (review, 19 Nov: the note was left under no button at all), so it goes with them.
+ */
+function syncKnownNote(): void {
+  if (knownNote) knownNote.hidden = !knownNote.textContent || (knownContinue.hidden && knownNew.hidden);
+}
 
 /**
  * Who the first screen is for. A stranger sees the consent box and Start; someone with a confirmation
@@ -2100,6 +2109,7 @@ function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
   knownBlocked = copy.busy;
   knownBusy(false);
   knownCheck.hidden = !copy.busy;
+  syncKnownNote();
   knownCard.hidden = false;
   introFor("known");
 }
@@ -2177,6 +2187,7 @@ async function enterAs(kind: "continue" | "new"): Promise<void> {
   else if (refusal.outcome === "nothing") {
     knownContinue.hidden = true;
     knownStatus.textContent = "";
+    syncKnownNote();
   } else {
     knownStatus.textContent = refusal.message;
   }

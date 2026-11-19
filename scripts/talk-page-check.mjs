@@ -518,6 +518,24 @@ if (want('4')) {
     check(`welcome-back Continue answered 404 ${code}: ${kept ? 'Continue stays, with "try again in a moment"' : 'Continue goes, Start a new conversation stays'}`, ok, JSON.stringify(m));
     await ctx.close();
   }
+  // At today's limit the card offers neither Continue nor Start, so the note on what video costs goes with them
+  // (review, 19 Nov: it was left under no button at all). Beside a Continue it stays.
+  for (const [me, noted] of [
+    [{ known: true, name: 'Sam', canContinue: true, minutesSoFar: 6, canStartNew: false, reasonIfNot: 'daily_limit' }, false],
+    [{ known: true, name: 'Sam', canContinue: true, minutesSoFar: 6, canStartNew: true }, true],
+  ]) {
+    const { ctx, page } = await open(browser, { size: { width: 390, height: 844 }, me });
+    await page.waitForSelector('#known-card:not([hidden])');
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => {
+      const note = document.querySelector('#known-card [data-note]');
+      return { cont: !document.querySelector('#known-continue').hidden, start: !document.querySelector('#known-new').hidden, note: note.checkVisibility(), text: note.textContent };
+    });
+    const ok = noted ? m.cont && m.note && /MB a minute/.test(m.text) : !m.cont && !m.start && !m.note;
+    check(`welcome-back card ${noted ? 'with Continue: the video data note is shown' : "at today's limit: no Continue, no Start, and no video data note"}`, ok, JSON.stringify(m));
+    if (!noted) await page.screenshot({ path: `${shots}/review-welcome-limit-phone.png` });
+    await ctx.close();
+  }
   // a stranger sees the bottom link; a known visitor does not
   for (const [me, want] of [[{ known: false }, false], [{ known: true, name: 'Sam', canContinue: true, canStartNew: true }, true]]) {
     const { ctx, page } = await open(browser, { size: { width: 390, height: 844 }, me });
