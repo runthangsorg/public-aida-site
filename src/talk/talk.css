@@ -910,11 +910,19 @@ input[aria-invalid="true"]:hover {
   display: none;
 }
 
+/* Each line carries its caption's size (the label keeps its own), so 1em on a line is its caption's size. */
+.line-aida {
+  font-size: 21px;
+}
+
+.line-you {
+  font-size: 17px;
+}
+
 /* A caption that has scrolled inside itself is clipped cleanly: no paper band over the first
    visible line (mobile, 18 Oct: the grey band made the start of a long caption unreadable). */
 .line-aida .said {
   max-height: calc(1.36em * 4);
-  font-size: 21px;
   font-weight: 650;
   line-height: 1.36;
 }
@@ -922,7 +930,6 @@ input[aria-invalid="true"]:hover {
 .line-you .said {
   max-height: calc(1.42em * 2);
   color: var(--ink-2);
-  font-size: 17px;
   line-height: 1.42;
 }
 
@@ -1802,11 +1809,11 @@ input[aria-invalid="true"]:hover {
     padding: 20px 4px 0;
   }
 
-  .line-aida .said {
+  .line-aida {
     font-size: 24px;
   }
 
-  .line-you .said {
+  .line-you {
     font-size: 18px;
   }
 
@@ -2337,12 +2344,17 @@ input[aria-invalid="true"]:hover {
   line-height: 1.35;
 }
 
+/* On a desk the card sits in the room's flow, in the typing box's row above the controls and as wide as the
+   captions: a 560 px card laid over the 630-720 px captions left a cut fragment of the person's words showing
+   beside it. The captions give way to it (each scrolls to its newest words); End stays where it is. */
 @media (min-width: 1000px) {
   .idle {
-    right: auto;
-    left: 40px;
-    width: min(560px, calc(100% - 40vw - 80px));
-    bottom: 150px;
+    grid-area: typer;
+    position: relative;
+    inset: auto;
+    justify-self: center;
+    width: min(100%, 720px);
+    margin-top: 10px;
   }
 }
 
@@ -2545,11 +2557,23 @@ input[aria-invalid="true"]:hover {
 }
 
 /* A caption line that has less room than its text scrolls inside itself (newest words kept in view)
-   rather than being cut at the edge of the captions box. */
+   rather than being cut at the edge of the captions box. Yours gives way first, down to one line; hers only
+   after, down to two (at 1280 x 800 her four lines pushed the second line of yours under the controls). The
+   floors are the label (13 px, 1.2, 3 px under it) and the caption lines, in the line's own size. */
 .captions .line {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+}
+
+.captions .line-you {
+  flex-shrink: 100;
+  min-height: calc(13px * 1.2 + 3px + 1.42em);
+}
+
+.captions .line-aida {
+  flex-shrink: 1;
+  min-height: calc(13px * 1.2 + 3px + 2 * 1.36em);
 }
 
 .captions .said {
@@ -2685,9 +2709,11 @@ input[aria-invalid="true"]:hover {
 }
 
 @media (min-width: 1000px) {
-  /* Her window gives way before the captions do: room for four lines of hers and two of yours, always. */
+  /* Her window gives way before the captions do: room for four lines of hers and two of yours, always. Those
+     need about 250 px with their labels; 460 px left them 220 at 1280 x 800, and the second line of yours went
+     under the controls. */
   .stage {
-    width: min(100%, 44vh, 420px, calc(100svh - 460px));
+    width: min(100%, 44vh, 420px, calc(100svh - 490px));
   }
 
   .nb-body,
@@ -2702,7 +2728,12 @@ input[aria-invalid="true"]:hover {
 
 @media (min-width: 1000px) and (max-height: 900px) {
   .screen-room:has(.typer:not([hidden])) .stage {
-    width: min(100%, 36vh, 420px, calc(100svh - 525px));
+    width: min(100%, 36vh, 420px, calc(100svh - 555px));
+  }
+
+  /* The idle card takes the same row: her window gives the room back for it too. */
+  .screen-room:has(.idle:not([hidden])) .stage {
+    width: min(100%, 36vh, 420px, calc(100svh - 585px));
   }
 }
 
@@ -2762,11 +2793,11 @@ input[aria-invalid="true"]:hover {
     padding-top: 8px;
   }
 
-  .line-aida .said {
+  .line-aida {
     font-size: 19px;
   }
 
-  .line-you .said {
+  .line-you {
     font-size: 16px;
   }
 

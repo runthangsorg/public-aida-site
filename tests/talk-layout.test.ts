@@ -43,3 +43,27 @@ describe("nothing is cut off or runs into its neighbour (320 px phones, text enl
     expect(prop(sheet ?? "", "overflow-wrap")).toBe("anywhere");
   });
 });
+
+describe("the call room fits the screen it is on", () => {
+  it("a caption line scrolls inside itself rather than being cut: yours gives way first, to one line, hers to two", () => {
+    const you = rules(css, ".captions .line-you")[0] ?? "";
+    const her = rules(css, ".captions .line-aida")[0] ?? "";
+    expect(Number(prop(you, "flex-shrink"))).toBeGreaterThan(Number(prop(her, "flex-shrink")));
+    expect(prop(you, "min-height")).toMatch(/1\.42em/);
+    expect(prop(her, "min-height")).toMatch(/2 \* 1\.36em/);
+  });
+
+  it("on a desk her window leaves her captions the 250 px that four lines of hers and two of yours need", () => {
+    const desk = rules(css, ".stage", "min-width: 1000px").map((b) => prop(b, "width") ?? "");
+    const reserved = desk.map((w) => /calc\(100svh - (\d+)px\)/.exec(w)?.[1]).filter(Boolean).map(Number);
+    expect(reserved.length).toBeGreaterThan(0);
+    for (const r of reserved) expect(r).toBeGreaterThanOrEqual(490);
+  });
+
+  it("on a desk the idle card sits in the room's flow above the controls, as wide as the captions", () => {
+    const [idle] = rules(css, ".idle", "min-width: 1000px");
+    expect(prop(idle ?? "", "grid-area")).toBe("typer");
+    expect(prop(idle ?? "", "position")).toBe("relative");
+    expect(prop(idle ?? "", "width")).toBe("min(100%, 720px)");
+  });
+});

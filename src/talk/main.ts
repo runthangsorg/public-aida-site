@@ -1262,11 +1262,27 @@ function renderStatus(): void {
 function setSaid(el: HTMLElement, text: string): void {
   if (el.textContent === text) return;
   el.textContent = text;
-  // Keep her newest words, and so her question, in view. Only a caption that
-  // overflows needs scrolling; one layout read per draw, not per word.
+  showTail(el);
+}
+
+/**
+ * Keep her newest words, and so her question, in view. Only a caption that overflows needs scrolling; one layout
+ * read per draw, not per word.
+ */
+function showTail(el: HTMLElement): void {
   const over = el.scrollHeight - el.clientHeight;
   if (over > 1) el.scrollTop = over;
   if (el.parentElement) el.parentElement.dataset.clipped = String(over > 1);
+}
+
+// A caption's box also shrinks when the other caption grows (yours gives way to her longer line): its newest
+// words stay in view then too, not only when its own words change.
+if (typeof ResizeObserver === "function") {
+  const tails = new ResizeObserver((entries) => {
+    for (const entry of entries) if (entry.target instanceof HTMLElement) showTail(entry.target);
+  });
+  tails.observe(saidAida);
+  tails.observe(saidYou);
 }
 
 function renderCaptions(s: TalkState): void {
