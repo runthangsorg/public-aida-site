@@ -18,6 +18,9 @@ type Bag = Record<string, unknown>;
 const isBag = (v: unknown): v is Bag => typeof v === "object" && v !== null && !Array.isArray(v);
 const code = (v: unknown): string => (isBag(v) && typeof v.error === "string" ? v.error : "");
 
+/** The error code a refusal's body carries (`{ "error": "busy" }` gives "busy"), or "" when it has none. */
+export const errorCode = (data: unknown): string => code(data);
+
 // ---------- the address bar ----------
 
 /** Everything the address bar carried that this page acts on, and the address to leave in its place. */
@@ -306,6 +309,9 @@ export interface EntryRefusal {
   outcome: "login" | "nothing" | "stop" | "retry";
 }
 
+/** A refusal that says nothing about what is saved (a server error, or conversations switched off for now). */
+export const COULD_NOT_OPEN = "We could not open it just now. Please try again in a moment.";
+
 export function entryRefusal(status: number, data: unknown): EntryRefusal {
   const c = code(data);
   if (status === 401 || c === "no_session") return { message: USE_EMAILED_LINK, outcome: "login" };
@@ -315,7 +321,7 @@ export function entryRefusal(status: number, data: unknown): EntryRefusal {
   if (c === "daily_limit") return { message: DAILY_LIMIT, outcome: "stop" };
   if (status === 409 || c === "busy") return { message: BUSY_OTHER_WINDOW, outcome: "stop" };
   if (status === 429) return { message: waitMessage(isBag(data) ? data.retryAfter : undefined), outcome: "retry" };
-  return { message: "We could not open it just now. Please try again in a moment.", outcome: "retry" };
+  return { message: COULD_NOT_OPEN, outcome: "retry" };
 }
 
 // ---------- the microphone and the connection: never a dead end ----------

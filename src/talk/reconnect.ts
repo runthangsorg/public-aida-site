@@ -3,8 +3,9 @@
 // the end screen: it shows the room's reconnecting state and asks the server to continue the call
 // (POST /api/talk/continue, by cookie). The server may still believe the old call is alive for a short
 // while (its heartbeat clears a dead call within about 40 s), so `409 busy` is retried every 5 s for up
-// to 75 s. `401` / `404` mean there is nothing to continue: the person gets the line-dropped end screen. A `404`
-// (`nothing_to_continue`) means the server holds no saved place, so that screen must not offer to carry on.
+// to 75 s. `401` / `404` mean there is nothing to continue: the person gets the line-dropped end screen. Only a
+// `404 nothing_to_continue` says the server holds no saved place, so only then must that screen not offer to carry
+// on: the same 404 status also answers `closed` (interviews switched off), when the call is still saved.
 //
 // Pure: the page feeds it events and does what it says. Never a reconnect after `ended`, Pause, End or a
 // voice-only switch (the caller only reports a drop while the call is live), and at most three a page load.
@@ -12,6 +13,8 @@
 export const RECONNECT_RETRY_MS = 5000;
 export const RECONNECT_WINDOW_MS = 75_000;
 export const MAX_RECONNECTS = 3;
+/** The error code of POST /api/talk/continue when the server holds no saved call for this cookie. */
+export const NOTHING_TO_CONTINUE = "nothing_to_continue";
 
 export type ReconnectPhase = "idle" | "asking" | "waiting" | "done" | "gave-up";
 
@@ -32,8 +35,8 @@ export const startReconnect = (): Reconnect => ({ phase: "idle", since: 0, nextA
 export type ReconnectEvent =
   /** The socket closed (or errored). `live`: the call was live, with no `ended`, Pause, End or switch before it. */
   | { t: "dropped"; now: number; live: boolean }
-  /** The answer to POST /api/talk/continue; status 0 is a network failure. */
-  | { t: "reply"; now: number; status: number }
+  /** The answer to POST /api/talk/continue; status 0 is a network failure. `error`: the body's error code, if any. */
+  | { t: "reply"; now: number; status: number; error?: string }
   /** Time passing, while waiting to ask again. */
   | { t: "tick"; now: number }
   /** The person pressed End while it was reconnecting, or the page is going away. */
@@ -48,7 +51,7 @@ export type ReconnectAction =
   | { kind: "open" }
   /**
    * Stop: show the line-dropped end screen with its continue options. `nothingSaved`: the server answered that
-   * there is no saved call to continue (404), so the screen offers a new conversation instead.
+   * there is no saved call to continue (404 `nothing_to_continue`), so the screen offers a new conversation instead.
    */
   | { kind: "end"; nothingSaved?: true };
 
@@ -71,11 +74,14 @@ export function stepReconnect(s: Reconnect, e: ReconnectEvent): ReconnectStep {
     case "reply": {
       if (s.phase !== "asking") return { state: s, action: none };
       if (e.status === 200) return { state: { ...s, phase: "done" }, action: { kind: "open" } };
-      // Nothing to continue (no cookie, or no saved call): stop at once.
-      if (e.status === 404 || e.status === 410) {
+      // Nothing to continue (no cookie, or no saved call): stop at once. Only the server's own word that it holds
+      // no saved call makes the screen say so; any other refusal keeps the place-is-saved screen and its Continue.
+      if (e.status === 404 && e.error === NOTHING_TO_CONTINUE) {
         return { state: { ...s, phase: "gave-up" }, action: { kind: "end", nothingSaved: true } };
       }
-      if (e.status === 401 || e.status === 403) return { state: { ...s, phase: "gave-up" }, action: { kind: "end" } };
+      if (e.status === 401 || e.status === 403 || e.status === 404 || e.status === 410) {
+        return { state: { ...s, phase: "gave-up" }, action: { kind: "end" } };
+      }
       // 409 (the old call not yet cleared), 429, 5xx, a network failure: ask again in 5 s, within 75 s.
       const nextAt = e.now + RECONNECT_RETRY_MS;
       if (nextAt - s.since > RECONNECT_WINDOW_MS) return { state: { ...s, phase: "gave-up" }, action: { kind: "end" } };

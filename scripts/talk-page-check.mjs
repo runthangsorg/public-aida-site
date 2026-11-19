@@ -321,7 +321,10 @@ if (want('3')) {
   const browser = await chrome(FAKE_MIC);
   const resumedBody = { id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [{ section: 'org', text: 'Forty staff on two sites', at: 40 }] } };
   let roomAt = 0;
-  /** Opens a live call, drops its line, answers /continue with `replies` in turn (the last repeats). */
+  /**
+   * Opens a live call, drops its line, answers /continue with `replies` in turn (the last repeats). A reply is a
+   * status (with the server's usual error code for it) or [status, error code].
+   */
   async function dropped(tag, size, replies, { clock = false, mute = false } = {}) {
     const asked = [];
     const { ctx, page, errors } = await open(browser, {
@@ -330,9 +333,10 @@ if (want('3')) {
       goto: `/talk/?go=${GO}`,
       routes: {
         '**/api/talk/continue': async (r) => {
-          const status = replies[Math.min(asked.length, replies.length - 1)];
+          const reply = replies[Math.min(asked.length, replies.length - 1)];
+          const [status, code] = Array.isArray(reply) ? reply : [reply];
           asked.push(status);
-          const error = status === 409 ? 'busy' : status === 401 ? 'no_session' : 'nothing_to_continue';
+          const error = code ?? (status === 409 ? 'busy' : status === 401 ? 'no_session' : 'nothing_to_continue');
           await r.fulfill(status === 200 ? json(resumedBody) : json({ error }, status));
         },
       },
@@ -393,6 +397,16 @@ if (want('3')) {
       const end = await endState(page);
       check(`[${tag}] 404: the line-dropped end screen says nothing is saved and offers a new conversation, no Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && !/place is saved/.test(end.lede) && /nothing saved/.test(end.lede) && end.actions && !end.cont && end.newConversation === '/talk/' && end.choices, JSON.stringify(end));
       await page.screenshot({ path: `${shots}/review-end-dropped-${tag}.png`, fullPage: true });
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      // 404 for another reason (conversations switched off for now: { error: 'closed' }) says nothing about the
+      // saved call: the line-dropped end screen keeps "your place is saved" and Continue (review, 19 Nov).
+      const { ctx, page, asked } = await dropped(tag, size, [[404, 'closed']]);
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(500);
+      const end = await endState(page);
+      check(`[${tag}] 404 closed: the line-dropped end screen still says the place is saved, with Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && /place is saved/.test(end.lede) && end.cont && end.newConversation === null, JSON.stringify(end));
       await ctx.close();
     }
     if (tag === 'phone') {

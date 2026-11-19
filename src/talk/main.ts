@@ -24,9 +24,11 @@ import {
   VIDEO_STOPPED_CLOSING,
   NETWORK_TRY_AGAIN,
   NOTHING_SAVED_LEDE,
+  COULD_NOT_OPEN,
   confirmRefusal,
   entryFor,
   entryRefusal,
+  errorCode,
   idleSentence,
   knownCopy,
   readContinued,
@@ -58,7 +60,15 @@ import {
   type TalkState,
 } from "./state";
 import { renderNotes, renderSummary } from "./swot";
-import { DROPPED_STATUS, RECONNECT_RETRY_MS, reconnecting, startReconnect, stepReconnect, type Reconnect } from "./reconnect";
+import {
+  DROPPED_STATUS,
+  NOTHING_TO_CONTINUE,
+  RECONNECT_RETRY_MS,
+  reconnecting,
+  startReconnect,
+  stepReconnect,
+  type Reconnect,
+} from "./reconnect";
 import {
   GATE_FAILED,
   HumanCheck,
@@ -1083,7 +1093,8 @@ async function askToContinue(): Promise<void> {
   const r = await post("/api/talk/continue", {});
   if (!reconnecting(rc)) return; // stopped (End pressed, page going) while the request was out
   const opened = r?.status === 200 ? readContinued(r.data) : null;
-  const step = stepReconnect(rc, { t: "reply", now: performance.now(), status: r ? (r.status === 200 && !opened ? 500 : r.status) : 0 });
+  const status = r ? (r.status === 200 && !opened ? 500 : r.status) : 0;
+  const step = stepReconnect(rc, { t: "reply", now: performance.now(), status, error: r ? errorCode(r.data) : "" });
   rc = step.state;
   if (step.action.kind === "open" && opened) reopen(opened);
   else if (step.action.kind === "end") reconnectGaveUp(step.action.nothingSaved === true);
@@ -2216,7 +2227,7 @@ endContinue.addEventListener("click", () => {
     endContinue.disabled = false;
     endActions.hidden = false;
     const refusal = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data) : null;
-    if (refusal?.outcome === "nothing") {
+    if (r?.status === 404 && errorCode(r.data) === NOTHING_TO_CONTINUE) {
       // Nothing saved after all: Continue cannot work, so it goes, and a new conversation is offered instead.
       showNothingSaved();
       endNew.focus();
@@ -2224,6 +2235,8 @@ endContinue.addEventListener("click", () => {
     }
     // After a dropped line, a 409 means the old call has not cleared yet, not another window.
     if (r?.status === 409 && endView(state).kind === "dropped") endContinueStatus.textContent = DROPPED_STILL_CLOSING;
+    // Any other 404 (conversations switched off for now) says nothing about the saved place: Continue stays.
+    else if (refusal?.outcome === "nothing") endContinueStatus.textContent = COULD_NOT_OPEN;
     else endContinueStatus.textContent = refusal ? refusal.message : NETWORK_TRY_AGAIN;
   });
 });

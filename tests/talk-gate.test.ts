@@ -4,6 +4,7 @@ import {
   BUDGET_LEDE,
   BUSY_CARD,
   BUSY_CLEARS,
+  COULD_NOT_OPEN,
   DAILY_LIMIT,
   DECLINED_CLOSING,
   EXPIRED_GO,
@@ -11,6 +12,7 @@ import {
   confirmRefusal,
   entryFor,
   entryRefusal,
+  errorCode,
   idleSentence,
   connectFailedText,
   MIC_PROMPT_HELP_MS,
@@ -317,6 +319,13 @@ describe("a returning visitor", () => {
     expect(entryRefusal(409, { error: "busy" }).outcome).toBe("stop");
     expect(entryRefusal(429, { error: "too_many" }).outcome).toBe("retry");
     expect(entryRefusal(500, null).outcome).toBe("retry");
+    expect(entryRefusal(500, null).message).toBe(COULD_NOT_OPEN);
+  });
+
+  it("reads a refusal's error code, so a 404 can be told apart from a 404 (nothing saved, or switched off)", () => {
+    expect(errorCode({ error: "nothing_to_continue" })).toBe("nothing_to_continue");
+    expect(errorCode({ error: "closed" })).toBe("closed");
+    for (const body of [null, undefined, "not found", { error: 404 }, ["closed"], {}]) expect(errorCode(body)).toBe("");
   });
 });
 

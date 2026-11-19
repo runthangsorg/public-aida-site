@@ -3,6 +3,7 @@ import { parseFrame } from "../src/talk/protocol";
 import {
   DROPPED_STATUS,
   MAX_RECONNECTS,
+  NOTHING_TO_CONTINUE,
   RECONNECT_RETRY_MS,
   RECONNECT_WINDOW_MS,
   reconnecting,
@@ -49,15 +50,21 @@ describe("a dropped line reconnects on its own", () => {
   });
 
   it("404 (nothing to continue) or 401 (no cookie) stops at once: the line-dropped end screen", () => {
+    expect(run([{ t: "dropped", now: 0, live: true }, { t: "reply", now: 200, status: 404, error: NOTHING_TO_CONTINUE }]).actions).toEqual(["ask", "end"]);
     expect(run([{ t: "dropped", now: 0, live: true }, { t: "reply", now: 200, status: 404 }]).actions).toEqual(["ask", "end"]);
     expect(run([{ t: "dropped", now: 0, live: true }, { t: "reply", now: 200, status: 401 }]).actions).toEqual(["ask", "end"]);
   });
 
-  it("only a 404 says nothing is saved, so the end screen does not promise Continue", () => {
+  it("only a 404 nothing_to_continue says nothing is saved, so the end screen does not promise Continue", () => {
     const asked = stepReconnect(startReconnect(), { t: "dropped", now: 0, live: true }).state;
-    expect(stepReconnect(asked, { t: "reply", now: 200, status: 404 }).action).toEqual({ kind: "end", nothingSaved: true });
+    expect(stepReconnect(asked, { t: "reply", now: 200, status: 404, error: NOTHING_TO_CONTINUE }).action).toEqual({ kind: "end", nothingSaved: true });
     // No cookie: the call may well be saved; the end screen's Continue then asks for the emailed link.
-    expect(stepReconnect(asked, { t: "reply", now: 200, status: 401 }).action).toEqual({ kind: "end" });
+    expect(stepReconnect(asked, { t: "reply", now: 200, status: 401, error: "no_session" }).action).toEqual({ kind: "end" });
+    // The same 404 status for another reason says nothing about the saved call: conversations switched off for
+    // now ({ error: "closed" }), a 404 with no body, a 410. Those keep "your place is saved" and its Continue.
+    for (const [status, error] of [[404, "closed"], [404, ""], [404, undefined], [410, "gone"], [410, NOTHING_TO_CONTINUE]] as const) {
+      expect(stepReconnect(asked, { t: "reply", now: 200, status, ...(error === undefined ? {} : { error }) }).action).toEqual({ kind: "end" });
+    }
   });
 
   it("a drop the server cannot continue ends on the unsaved view, not 'your place is saved'", () => {
