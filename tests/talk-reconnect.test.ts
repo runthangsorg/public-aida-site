@@ -53,6 +53,22 @@ describe("a dropped line reconnects on its own", () => {
     expect(run([{ t: "dropped", now: 0, live: true }, { t: "reply", now: 200, status: 401 }]).actions).toEqual(["ask", "end"]);
   });
 
+  it("only a 404 says nothing is saved, so the end screen does not promise Continue", () => {
+    const asked = stepReconnect(startReconnect(), { t: "dropped", now: 0, live: true }).state;
+    expect(stepReconnect(asked, { t: "reply", now: 200, status: 404 }).action).toEqual({ kind: "end", nothingSaved: true });
+    // No cookie: the call may well be saved; the end screen's Continue then asks for the emailed link.
+    expect(stepReconnect(asked, { t: "reply", now: 200, status: 401 }).action).toEqual({ kind: "end" });
+  });
+
+  it("a drop the server cannot continue ends on the unsaved view, not 'your place is saved'", () => {
+    const live = reduce(initialState(), { kind: "aida", frame: { type: "ready", targetMinutes: 20, sections: [] } });
+    expect(endView(reduce(live, { kind: "closed", minutes: 3, nothingSaved: true }))).toEqual({ kind: "unsaved" });
+    expect(endView(reduce(live, { kind: "closed", minutes: 3 }))).toEqual({ kind: "dropped" });
+    // Ending on purpose is never "unsaved", whatever the flag says.
+    const ending = reduce(live, { kind: "end-pressed" });
+    expect(endView(reduce(ending, { kind: "closed", minutes: 3, nothingSaved: true }))).toEqual({ kind: "done" });
+  });
+
   it("gives up after 75 s of 409s (or network failures, or server errors)", () => {
     for (const status of [409, 0, 503]) {
       const events: ReconnectEvent[] = [{ t: "dropped", now: 0, live: true }];

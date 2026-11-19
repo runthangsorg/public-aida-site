@@ -3,7 +3,8 @@
 // the end screen: it shows the room's reconnecting state and asks the server to continue the call
 // (POST /api/talk/continue, by cookie). The server may still believe the old call is alive for a short
 // while (its heartbeat clears a dead call within about 40 s), so `409 busy` is retried every 5 s for up
-// to 75 s. `401` / `404` mean there is nothing to continue: the person gets the line-dropped end screen.
+// to 75 s. `401` / `404` mean there is nothing to continue: the person gets the line-dropped end screen. A `404`
+// (`nothing_to_continue`) means the server holds no saved place, so that screen must not offer to carry on.
 //
 // Pure: the page feeds it events and does what it says. Never a reconnect after `ended`, Pause, End or a
 // voice-only switch (the caller only reports a drop while the call is live), and at most three a page load.
@@ -45,8 +46,11 @@ export type ReconnectAction =
   | { kind: "ask" }
   /** Open the room again with the continued call. */
   | { kind: "open" }
-  /** Stop: show the line-dropped end screen with its continue options. */
-  | { kind: "end" };
+  /**
+   * Stop: show the line-dropped end screen with its continue options. `nothingSaved`: the server answered that
+   * there is no saved call to continue (404), so the screen offers a new conversation instead.
+   */
+  | { kind: "end"; nothingSaved?: true };
 
 export interface ReconnectStep {
   state: Reconnect;
@@ -68,9 +72,10 @@ export function stepReconnect(s: Reconnect, e: ReconnectEvent): ReconnectStep {
       if (s.phase !== "asking") return { state: s, action: none };
       if (e.status === 200) return { state: { ...s, phase: "done" }, action: { kind: "open" } };
       // Nothing to continue (no cookie, or no saved call): stop at once.
-      if (e.status === 401 || e.status === 403 || e.status === 404 || e.status === 410) {
-        return { state: { ...s, phase: "gave-up" }, action: { kind: "end" } };
+      if (e.status === 404 || e.status === 410) {
+        return { state: { ...s, phase: "gave-up" }, action: { kind: "end", nothingSaved: true } };
       }
+      if (e.status === 401 || e.status === 403) return { state: { ...s, phase: "gave-up" }, action: { kind: "end" } };
       // 409 (the old call not yet cleared), 429, 5xx, a network failure: ask again in 5 s, within 75 s.
       const nextAt = e.now + RECONNECT_RETRY_MS;
       if (nextAt - s.since > RECONNECT_WINDOW_MS) return { state: { ...s, phase: "gave-up" }, action: { kind: "end" } };

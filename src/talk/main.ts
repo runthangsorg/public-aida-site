@@ -23,6 +23,7 @@ import {
   SWITCHING_CLOSING,
   VIDEO_STOPPED_CLOSING,
   NETWORK_TRY_AGAIN,
+  NOTHING_SAVED_LEDE,
   confirmRefusal,
   entryFor,
   entryRefusal,
@@ -1085,7 +1086,7 @@ async function askToContinue(): Promise<void> {
   const step = stepReconnect(rc, { t: "reply", now: performance.now(), status: r ? (r.status === 200 && !opened ? 500 : r.status) : 0 });
   rc = step.state;
   if (step.action.kind === "open" && opened) reopen(opened);
-  else if (step.action.kind === "end") reconnectGaveUp();
+  else if (step.action.kind === "end") reconnectGaveUp(step.action.nothingSaved === true);
   else rcTimer = window.setTimeout(reconnectTick, RECONNECT_RETRY_MS);
 }
 
@@ -1124,12 +1125,15 @@ function reopen(opened: Opened): void {
   );
 }
 
-/** Reconnecting did not bring it back: the line-dropped end screen, with Continue. */
-function reconnectGaveUp(): void {
+/**
+ * Reconnecting did not bring it back: the line-dropped end screen, with Continue - or, when the server said it
+ * holds nothing to continue from, with a new conversation instead.
+ */
+function reconnectGaveUp(nothingSaved = false): void {
   window.clearTimeout(rcTimer);
   carriedStart = 0;
   voice.close();
-  dispatch({ kind: "closed", minutes: elapsed() / 60 });
+  dispatch({ kind: "closed", minutes: elapsed() / 60, nothingSaved });
 }
 
 /** End pressed, or the page going away, while reconnecting: stop asking. */
@@ -1707,6 +1711,20 @@ const endActions = byId("end-actions", HTMLDivElement);
 const endContinue = byId("end-continue", HTMLButtonElement);
 const endContinueStatus = byId("end-continue-status", HTMLParagraphElement);
 const endContinueLabel = endContinue.querySelector<HTMLElement>(".label");
+const endNew = byId("end-new", HTMLAnchorElement);
+
+/**
+ * The server holds no saved place for this call (it answered "nothing to continue"): say so, and offer a new
+ * conversation where Continue was. The link reloads the page, whose first screen knows this browser.
+ */
+function showNothingSaved(): void {
+  byId("end-lede", HTMLParagraphElement).textContent = NOTHING_SAVED_LEDE;
+  byId("end-more", HTMLParagraphElement).hidden = true;
+  endActions.hidden = false;
+  endContinue.hidden = true;
+  endContinueStatus.textContent = "";
+  endNew.hidden = false;
+}
 
 function showEnd(): void {
   const title = byId("end-title", HTMLHeadingElement);
@@ -1721,6 +1739,8 @@ function showEnd(): void {
   const next = byId("next-steps", HTMLElement);
   more.hidden = true;
   endActions.hidden = true;
+  endContinue.hidden = false;
+  endNew.hidden = true;
   endContinueStatus.textContent = "";
   next.hidden = view.kind !== "done" && view.kind !== "budget";
   choices.hidden = true;
@@ -1777,13 +1797,17 @@ function showEnd(): void {
     endContinue.disabled = false;
     if (endContinueLabel) endContinueLabel.textContent = "Continue";
   }
+  if (view.kind === "unsaved") {
+    title.textContent = "The line dropped";
+    showNothingSaved();
+  }
   if (view.kind === "budget") lede.textContent = BUDGET_LEDE;
   const minutes = state.ended?.minutes ?? elapsed() / 60;
   const ceiling = reason === "ceiling" ? " She stopped at the time limit." : "";
   byId("end-meta", HTMLParagraphElement).textContent = `You talked for ${Math.max(1, Math.round(minutes))} min.${ceiling}`;
   app.dataset.ending = reason ?? "";
   show("end");
-  if (session && view.kind !== "dropped") choices.hidden = false;
+  if (session && view.kind !== "dropped" && view.kind !== "unsaved") choices.hidden = false;
 }
 
 // ---------- continuing later ----------
@@ -2175,9 +2199,16 @@ endContinue.addEventListener("click", () => {
     }
     endContinue.disabled = false;
     endActions.hidden = false;
+    const refusal = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data) : null;
+    if (refusal?.outcome === "nothing") {
+      // Nothing saved after all: Continue cannot work, so it goes, and a new conversation is offered instead.
+      showNothingSaved();
+      endNew.focus();
+      return;
+    }
     // After a dropped line, a 409 means the old call has not cleared yet, not another window.
     if (r?.status === 409 && endView(state).kind === "dropped") endContinueStatus.textContent = DROPPED_STILL_CLOSING;
-    else endContinueStatus.textContent = r ? entryRefusal(r.status === 200 ? 500 : r.status, r.data).message : NETWORK_TRY_AGAIN;
+    else endContinueStatus.textContent = refusal ? refusal.message : NETWORK_TRY_AGAIN;
   });
 });
 
