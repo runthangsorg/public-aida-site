@@ -12,7 +12,7 @@
  *
  *   node scripts/talk-page-check.mjs [--shots .tmp/shots] [--only 1,5]   (sections: 1 face, 1b room, 2 start,
  *                                                                     3 reconnect, 4 busy card, 5 round 3,
- *                                                                     6 round 4, 7 layout)
+ *                                                                     6 round 4, 7 layout, 8 strategy)
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
@@ -32,6 +32,8 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   let p = url.pathname.endsWith('/') ? `${url.pathname}index.html` : url.pathname;
+  // Everything under /strategy/ is the one page: production rewrites it that way.
+  if (url.pathname.startsWith('/strategy/')) p = '/strategy/index.html';
   if (!existsSync(`${dist}${p}`)) p = `${p}/index.html`;
   try {
     // Read first: writeHead before a read that throws would send the 404 headers on top of a 200 and crash the server.
@@ -991,6 +993,144 @@ if (want('7')) {
       if (w === 1024) await page.screenshot({ path: `${shots}/layout-short-${w}x${h}-${state.replace('+', '-')}.png` });
       await ctx.close();
     }
+  }
+
+  // Long captions on every kind of screen (QA, 18 Nov): the person's caption was cut under the controls at
+  // 1280 x 800. Both end inside the captions box, theirs at least a line tall, each showing its newest words.
+  const LONG_YOU = ' Mostly it is the Friday check, because I have to look at every timesheet myself and then type it all in again.';
+  const LONG_HER = 'Let me read back what I have so far, and you tell me if I have any of it wrong. You run office cleaning with about forty people on two sites, the leads build the rotas, and everything waits for you on Friday, which means that when you are away, nobody gets paid on time.';
+  for (const [w, h, typing] of [[1280, 800], [1366, 768], [1440, 900], [1000, 700], [1280, 800, true], [390, 844], [844, 390], [640, 400], [320, 568]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h });
+    if (typing) await page.click('#type');
+    await page.evaluate(([you, her]) => {
+      const ws = window.__ws;
+      ws.push({ serverContent: { inputTranscription: { text: you } } });
+      ws.push({ serverContent: { turnComplete: true } });
+      for (const word of her.split(' ')) ws.push({ serverContent: { outputTranscription: { text: ` ${word}` } } });
+    }, [LONG_YOU, LONG_HER]);
+    await page.waitForTimeout(900);
+    const m = await page.evaluate(() => {
+      const captions = document.getElementById('captions').getBoundingClientRect();
+      const tail = (e) => Math.abs(e.scrollHeight - e.clientHeight - e.scrollTop) <= 2;
+      const you = document.getElementById('said-you');
+      const her = document.getElementById('said-aida');
+      return {
+        youInside: document.getElementById('line-you').getBoundingClientRect().bottom <= captions.bottom + 1,
+        youLine: you.getBoundingClientRect().height >= parseFloat(getComputedStyle(you).lineHeight) - 1,
+        newest: tail(you) && tail(her),
+        endInView: document.getElementById('end').getBoundingClientRect().bottom <= innerHeight,
+      };
+    });
+    check(`[${w}x${h}${typing ? ', typing' : ''}] long captions: theirs ends inside the captions box, a line or more tall, both showing their newest words`, m.youInside && m.youLine && m.newest && m.endInView, JSON.stringify(m));
+    await ctx.close();
+  }
+
+  // A phone on its side, or a laptop at 200% (QA, 18 Nov): the room was held at 560 px and Mute and End sat below
+  // the fold. Both are on screen without scrolling.
+  for (const [w, h] of [[844, 390], [667, 375], [740, 360], [640, 400]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h });
+    const m = await page.evaluate(() => ({ mute: document.getElementById('mute').getBoundingClientRect().bottom, end: document.getElementById('end').getBoundingClientRect().bottom, height: innerHeight }));
+    check(`[${w}x${h}] Mute and End are on screen without scrolling`, m.mute <= m.height && m.end <= m.height, JSON.stringify(m));
+    await ctx.close();
+  }
+
+  // Small phones (QA, 18 Nov): at 320 x 568 and 360 x 640 the open notebook was a 12-52 px sliver. A short phone
+  // keeps the strip that opens the notes; a phone with the height keeps the open notebook. End is on screen and
+  // the stage count ("4 of 7") whole either way.
+  for (const [w, h] of [[320, 568], [360, 640], [375, 667], [390, 844]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h });
+    const m = await page.evaluate(() => {
+      const count = document.getElementById('stage-count');
+      return {
+        notes: Math.round(document.getElementById('nb-notes').getBoundingClientRect().height),
+        strip: document.getElementById('nb-toggle').checkVisibility(),
+        endInView: document.getElementById('end').getBoundingClientRect().bottom <= innerHeight,
+        countWhole: count.getBoundingClientRect().right <= count.parentElement.getBoundingClientRect().right + 0.5,
+      };
+    });
+    const ok = h < 661 ? (m.strip || m.notes >= 100) && m.endInView && m.countWhole : !m.strip && m.notes >= 90 && m.endInView && m.countWhole;
+    check(`[${w}x${h}] ${h < 661 ? 'the notes strip (or notes of 100 px or more)' : 'the open notebook'}, End on screen, the stage count whole`, ok, JSON.stringify(m));
+    await ctx.close();
+  }
+
+  // The details form's one message (QA, 18 Nov): on a phone it sat a screen above Continue, and focus fell to the
+  // page while the button was disabled. A 429, a 500 and a dropped connection bring it into view and focus it; a
+  // refusal about one field leaves focus on that field.
+  const NO_TURNSTILE = "window.turnstile = { render: (c, o) => { window.__o = o; return 'w'; }, execute: () => setTimeout(() => window.__o.callback('t'), 20), reset: () => {} };";
+  const refusals = {
+    429: (r) => r.fulfill(json({ error: 'too_many', retryAfter: 300 }, 429)),
+    500: (r) => r.fulfill(json({ error: 'unavailable' }, 500)),
+    'a dropped connection': (r) => r.abort('connectionreset'),
+    '422 on the email': (r) => r.fulfill(json({ error: 'work_email', field: 'email' }, 422)),
+  };
+  for (const [name, reply] of Object.entries(refusals)) {
+    for (const [w, h] of [[390, 844], [360, 740]]) {
+      const { ctx, page } = await open(browser, { size: { width: w, height: h }, init: NO_TURNSTILE, routes: { '**/api/talk/start': reply } });
+      await page.click('.check .box');
+      await page.click('#start-top');
+      await page.waitForSelector('#details:not([hidden])');
+      for (const [id, value] of [['#f-name', 'Sam Example'], ['#f-role', 'Owner'], ['#f-company', 'Acme Cleaning'], ['#f-industry', 'Commercial cleaning'], ['#f-email', ['sam', 'acme.example'].join('@')]]) await page.fill(id, value);
+      await page.click('#team-sizes label:nth-child(3)');
+      await page.locator('#details-go').scrollIntoViewIfNeeded();
+      await page.click('#details-go');
+      await page.waitForTimeout(1000);
+      const m = await page.evaluate(() => {
+        const alert = document.getElementById('form-alert');
+        const box = alert.getBoundingClientRect();
+        return { inView: !alert.hidden && box.top >= 0 && box.bottom <= innerHeight, focus: document.activeElement?.id ?? '' };
+      });
+      const ok = name.startsWith('422') ? m.focus === 'f-email' : m.inView && m.focus === 'form-alert';
+      check(`[${w}x${h}] details form, ${name}: ${name.startsWith('422') ? 'focus on the email field' : 'the message is in view and focused'}`, ok, JSON.stringify(m));
+      await ctx.close();
+    }
+  }
+  await browser.close();
+}
+
+// ---------- 8. the strategy page: signing out (review, 19 Nov) ----------
+if (want('8')) {
+  const browser = await chrome();
+  const view = {
+    company: 'Acme Cleaning (fictional)',
+    firstName: 'Sam',
+    publishedAt: '2026-10-20T09:00:00.000Z',
+    updatedAt: '2026-10-20T09:00:00.000Z',
+    contact: ['sam', 'acme.example'].join('@'),
+    deck: {
+      title: 'AI and automation strategy for Acme Cleaning (fictional)',
+      company: 'Acme Cleaning (fictional)',
+      dateLabel: '20 October 2026',
+      heard: { business: 'Acme Cleaning (fictional) cleans forty offices.', today: ['Two supervisors check every timesheet by hand.'], crux: 'Every approval waits on two supervisors.' },
+      swot: { strengths: ['A loyal team'], weaknesses: ['Rotas in three spreadsheets'], opportunities: ['Automate the approval list'], threats: ['Rising wages'] },
+      plays: [{ name: 'Friday approvals on one screen', whatWeWouldBuild: 'One approval list.', whatChangesForYou: 'Payroll starts on Friday.', firstStep: 'Map the spreadsheets.', evidence: 'Every approval waits on two supervisors.' }],
+      roadmap: [{ when: 'First 30 days', items: ['Map the spreadsheets'] }],
+      nextStep: 'Reply with a time next week.',
+      speaker: 'Aida',
+    },
+  };
+  // Signing out leaves the sign-in screen as a fresh visit would: the page's own title, the strategy gone from the
+  // page (not only hidden), and focus on the sign-in heading, so a screen reader hears where it is.
+  for (const [w, h] of [[390, 844], [1280, 800]]) {
+    let signedOut = false;
+    const { ctx, page } = await open(browser, {
+      size: { width: w, height: h },
+      goto: `/strategy/${'a'.repeat(43)}`,
+      routes: {
+        '**/api/strategy/view**': (r) => r.fulfill(signedOut ? json({ need: 'email', hint: 's***@acme.example' }, 401) : json(view)),
+        '**/api/strategy/signout**': (r) => {
+          signedOut = true;
+          return r.fulfill(json({ ok: true }));
+        },
+      },
+    });
+    await page.waitForSelector('#view:not([hidden])', { timeout: 10000 });
+    const before = await page.evaluate(() => document.getElementById('strategy').children.length);
+    await page.click('#signout');
+    await page.waitForSelector('#sign-in:not([hidden])', { timeout: 10000 });
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => ({ title: document.title, strategy: document.getElementById('strategy').children.length, focus: document.activeElement?.id ?? '' }));
+    check(`[${w}x${h}] strategy sign out: the base title, the strategy emptied (${before} parts before), focus on the sign-in heading`, before > 0 && m.title === 'Your AI and automation strategy — Aida' && m.strategy === 0 && m.focus === 'signin-title', JSON.stringify(m));
+    await ctx.close();
   }
   await browser.close();
 }
