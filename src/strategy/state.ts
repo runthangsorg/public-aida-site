@@ -194,6 +194,19 @@ export function landing(route: { token: string | null }): ScreenState {
   return route.token ? { screen: "loading" } : { screen: "not-found", incomplete: true };
 }
 
+/** No definitive answer: no connection (0), too many tries (429), or a fault at the server (5xx). */
+const inconclusive = (status: number): boolean => status === 0 || status === 429 || status >= 500;
+
+/**
+ * Should the one-time code stay in the address? Until there is a definitive answer, yes, so Try again (or a reload)
+ * can still spend it: it goes once the strategy opened (200) or the link is closed (404) without it, or once the
+ * server answered the code itself. `verifyStatus`: the answer to POST /verify, when the code was sent.
+ */
+export function keepCode(viewStatus: number, verifyStatus?: number): boolean {
+  if (verifyStatus !== undefined) return inconclusive(verifyStatus);
+  return viewStatus !== 200 && viewStatus !== 404;
+}
+
 /** The tab's title: the strategy's own title only while it is on screen. */
 export function pageTitle(state: ScreenState): string {
   return state.screen === "view" && state.view.deck.title ? `${state.view.deck.title} — Aida` : BASE_TITLE;

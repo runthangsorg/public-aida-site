@@ -7,6 +7,7 @@ import {
   NOT_FOUND_COPY,
   NOT_FOUND_TITLE,
   emailProblem,
+  keepCode,
   landing,
   newLinkMailto,
   pageTitle,
@@ -168,21 +169,21 @@ async function boot(focus = false): Promise<void> {
   let response = await loadView();
 
   if (response.status === 401 && route.code) {
-    // A one-time code in the address: spend it, then drop it from history.
+    // A one-time code in the address: spend it, then drop it from history (unless it never got an answer).
     const awaiting = reduce(state, { type: "view", status: 401, body: response.body });
     const verified = await request("/api/strategy/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ t: token, c: route.code }),
     });
-    dropCode();
+    if (!keepCode(response.status, verified.status)) dropCode();
     if (verified.status !== 200) {
       show(reduce(awaiting, { type: "verify", status: verified.status, body: verified.body }), focus);
       return;
     }
     show(reduce(state, { type: "verify", status: 200 }), focus);
     response = await loadView();
-  } else if (route.code) {
+  } else if (route.code && !keepCode(response.status)) {
     dropCode();
   }
 

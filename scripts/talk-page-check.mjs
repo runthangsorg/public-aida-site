@@ -1506,6 +1506,35 @@ if (want9('44')) {
   await browser.close();
 }
 
+if (want9('16')) {
+  // The strategy page dropped the one-time code from the address on any first answer but 401: after a dropped
+  // connection, Try again could only show the sign-in form, although the code was never used.
+  const browser = await chrome();
+  const code = 'b'.repeat(43);
+  let down = true;
+  const verified = [];
+  const { ctx, page } = await open(browser, {
+    size: PHONE,
+    goto: `/strategy/${'a'.repeat(43)}?c=${code}`,
+    routes: {
+      '**/api/strategy/view**': (r) => r.fulfill(down ? json({ error: 'unavailable' }, 503) : json({ need: 'email', hint: 's***@acme.example' }, 401)),
+      '**/api/strategy/verify': (r) => {
+        verified.push(JSON.parse(r.request().postData() ?? '{}').c);
+        return r.fulfill(json({ error: 'expired' }, 400));
+      },
+    },
+  });
+  await page.waitForSelector('#trouble:not([hidden])', { timeout: 10000 });
+  const kept = await page.evaluate(() => new URLSearchParams(location.search).get('c'));
+  down = false;
+  await page.click('#retry');
+  await page.waitForSelector('#sign-in:not([hidden])', { timeout: 10000 });
+  const after = await page.evaluate(() => ({ c: new URLSearchParams(location.search).get('c'), notice: document.querySelector('#signin-notice').textContent }));
+  check('strategy: the first request fails, so the sign-in code stays in the address and Try again uses it', kept === code && verified.length === 1 && verified[0] === code && after.c === null, JSON.stringify({ kept: kept === code, verified: verified.length, ...after }));
+  await ctx.close();
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);

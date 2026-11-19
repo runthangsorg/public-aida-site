@@ -5,6 +5,7 @@ import {
   EXPIRED_CODE_COPY,
   LOAD_FAILED_COPY,
   SEND_FAILED_COPY,
+  keepCode,
   newLinkMailto,
   pageTitle,
   reduce,
@@ -158,5 +159,22 @@ describe("signing out", () => {
     expect(pageTitle(out)).toBe(BASE_TITLE);
     expect(pageTitle(reduce(out, { type: "view", status: 401, body: { need: "email", hint: HINT } }))).toBe(BASE_TITLE);
     expect(pageTitle({ screen: "not-found" })).toBe(BASE_TITLE);
+  });
+});
+
+describe("the one-time code in the address", () => {
+  // Review round 3 (public-site-16): any answer but 401 dropped the code, so a dropped connection or a server fault on
+  // the first request lost it, and Try again could only show the sign-in form.
+  it("stays while the strategy request had no definitive answer", () => {
+    for (const status of [0, 429, 500, 503]) expect(keepCode(status)).toBe(true);
+  });
+
+  it("goes once the strategy opened without it, or the link is closed", () => {
+    for (const status of [200, 404]) expect(keepCode(status)).toBe(false);
+  });
+
+  it("stays while the code itself had no definitive answer, and goes once the server answered it", () => {
+    for (const status of [0, 429, 500, 503]) expect(keepCode(401, status)).toBe(true);
+    for (const status of [200, 400, 401, 404]) expect(keepCode(401, status)).toBe(false);
   });
 });
