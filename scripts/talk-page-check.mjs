@@ -1359,6 +1359,31 @@ if (want9('20')) {
     check(`End while the way back waits for the microphone: the end screen, no second line, the microphone off (asked ${asked})`, asked === 1 && m.screen === 'end' && m.sockets === 1 && m.live === 0, JSON.stringify(m));
     await ctx.close();
   }
+  {
+    // The voice-only line is open but not yet ready: End must still tell the server the call is over on that line,
+    // or the call the person ended stays open to continue (review, 19 Nov).
+    const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes: { '**/api/talk/continue': (r) => r.fulfill(json(continued)) } });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await ready(page, true);
+    await page.waitForSelector('#voice-only:not([hidden])');
+    await page.click('#voice-only');
+    await page.waitForFunction(() => (window.__sockets ?? 0) >= 2, null, { timeout: 10000 });
+    await page.waitForTimeout(200);
+    await page.click('#end');
+    await page.click('#confirm-yes');
+    const shown = await page.waitForSelector('#end-screen:not([hidden])', { timeout: 2500 }).then(() => true, () => false);
+    const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, sockets: window.__sockets, sent: window.__sent }));
+    const sentEnd = m.sent.some((s) => {
+      try {
+        return JSON.parse(s)?.aida?.type === 'end';
+      } catch {
+        return false;
+      }
+    });
+    check("End on the voice-only line once it is open, before it is ready: 'end' sent on that line, and the end screen", shown && m.screen === 'end' && m.sockets === 2 && sentEnd, JSON.stringify({ shown, ...m }));
+    await ctx.close();
+  }
   await browser.close();
 }
 

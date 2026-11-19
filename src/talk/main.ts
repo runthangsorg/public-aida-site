@@ -1752,10 +1752,11 @@ function awaitEnd(): void {
 byId("confirm-yes", HTMLButtonElement).addEventListener("click", () => {
   if (state.phase !== "live" && state.phase !== "connecting") return;
   if (reconnecting(rc) || state.switching || !voice.connected) {
-    // No line to end (reconnecting, moving to voice only, or the way back still waiting for the microphone):
-    // stop that and show the end screen now. A microphone question still open is answered into nothing.
+    // No line ready to end (reconnecting, moving to voice only, or the way back still waiting for the microphone):
+    // stop that and show the end screen now. A microphone question still open is answered into nothing. If the
+    // voice-only line is already open (not yet ready), it is still told the call is over, as End always did.
     stopReconnecting();
-    voice.stopMic();
+    voice.end();
     dispatch({ kind: "end-pressed" });
     dispatch({ kind: "closed", minutes: elapsed() / 60 });
     return;
