@@ -341,7 +341,8 @@ input[aria-invalid="true"]:hover {
 .screen-intro {
   display: grid;
   gap: 28px;
-  padding: 60px var(--gutter) 40px;
+  /* em, not px: grows with the text, so the wordmark above (24px at normal size) never reaches the portrait (retest TALK-R3-05). 3.34em is 60px at 18px. */
+  padding: 3.34em var(--gutter) 40px;
 }
 
 .portrait {
@@ -1730,7 +1731,7 @@ input[aria-invalid="true"]:hover {
     align-items: start;
     gap: clamp(32px, 5vw, 80px);
     min-height: 100svh;
-    padding: 80px clamp(32px, 5vw, 80px) 48px;
+    padding: 4.45em clamp(32px, 5vw, 80px) 48px;
   }
 
   .portrait {
