@@ -60,6 +60,8 @@ const rawFrames = frames.map((f) => Buffer.from(f)); // as ffmpeg wrote them: Ch
 // audio timeline has a one-packet hole at the start (0, 2048, 3072, ...), and the audio fragments declare a
 // sample duration of 0 (the muxer cannot know the next packet's time). The real stream has continuous PTS and
 // real durations (measured). Make the fixture match: audio frame n starts at n * 1024 and lasts 1024.
+/** Audio fragments in the stream: one AAC-LC frame (1024 samples at 24 kHz) each, so they give its length. */
+let audioFrames;
 {
   const kids = (buf, s, e) => {
     const out = [];
@@ -82,11 +84,13 @@ const rawFrames = frames.map((f) => Buffer.from(f)); // as ffmpeg wrote them: Ch
     else f.writeBigUInt64BE(BigInt(n * 1024), tfdt.o + 12);
     n++;
   }
+  audioFrames = n;
 }
 /** The server's envelope: pretty-printed, one base64 part, a trailing newline. */
 const envelope = (bytes) =>
   Buffer.from(JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'video/mp4', data: bytes.toString('base64') } }] } } }, null, 2) + '\n');
-const DT = 19333 / frames.length; // ms between messages: the stream is real-time paced
+// ms between messages: the stream is real-time paced, over its own length (not the 19.333 s of one recording).
+const DT = (audioFrames * 1024) / 24 / frames.length;
 
 const STREAM_S = 8;
 const perStream = Math.min(frames.length, Math.floor((STREAM_S * 1000) / DT));
