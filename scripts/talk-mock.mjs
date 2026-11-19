@@ -381,7 +381,12 @@ async function start(req, res) {
 
 async function serveFile(req, res) {
   const url = new URL(req.url ?? "/", "http://mock");
-  let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
+  let path;
+  try {
+    path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
+  } catch {
+    return json(res, 400, { error: "bad path" }); // "/%": not a path at all, and no reason to stop serving
+  }
   if (path.endsWith("/")) path += "index.html";
   let file = join(DIR, path);
   if (!file.startsWith(DIR)) return json(res, 403, { error: "forbidden" });
@@ -430,7 +435,12 @@ const server = createServer((req, res) => {
     res.writeHead(204); // the home page's own event beacon: accepted and ignored
     return void res.end();
   }
-  if (req.method === "GET" || req.method === "HEAD") return void serveFile(req, res);
+  if (req.method === "GET" || req.method === "HEAD") {
+    return void serveFile(req, res).catch(() => {
+      if (res.headersSent) res.destroy();
+      else json(res, 500, { error: "internal" });
+    });
+  }
   json(res, 405, { error: "method" });
 });
 
