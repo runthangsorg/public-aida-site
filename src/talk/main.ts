@@ -140,7 +140,13 @@ function show(name: Screen, focus = true, nav: "push" | "keep" = "push"): void {
   // In-app history per screen (QA round 2 E): the browser's Back button walks the person back through
   // the pages they have been on instead of leaving the site.
   const hs = history.state as { screen?: string } | null | undefined;
-  if (nav === "push" && hs?.screen !== name) history.pushState({ screen: name }, "");
+  if (nav === "push" && hs?.screen !== name) {
+    // The microphone screen and the room take each other's place (review round 3): the room replaces the question
+    // that opened it, and a line that did not open replaces the room, so Back never leads into a dead room.
+    const swap = (name === "room" && hs?.screen === "mic") || (name === "mic" && hs?.screen === "room");
+    if (swap) history.replaceState({ screen: name }, "");
+    else history.pushState({ screen: name }, "");
+  }
   // The person check's script is loaded the first time the details form is shown, never before.
   if (name === "details") void check.prepare().catch(() => undefined);
   window.scrollTo(0, 0);
@@ -175,8 +181,18 @@ window.addEventListener("popstate", () => {
   }
   const st = history.state as { screen?: string } | null | undefined;
   const target = typeof st?.screen === "string" ? (st.screen as Screen) : "intro";
+  if (target === "room" && !callOn()) {
+    // A room with no call in it is a dead end: stay where the person is.
+    history.replaceState({ screen: app.dataset.screen }, "");
+    return;
+  }
   if (target !== app.dataset.screen) show(target, false, "keep");
 });
+
+/** The room has a call in it: a line open or opening, a reconnect under way, or the move to voice only. */
+function callOn(): boolean {
+  return (state.phase === "live" || state.phase === "connecting") && (voice.connected || reconnecting(rc) || state.switching);
+}
 
 // ---------- her face, wherever the page shows her ----------
 

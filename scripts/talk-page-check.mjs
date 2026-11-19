@@ -1411,6 +1411,19 @@ if (want9('34')) {
   await browser.close();
 }
 
+if (want9('35')) {
+  // "The line did not open" sat on top of the room's history entry: Back led into a dead room with no line.
+  const browser = await chrome(FAKE_MIC);
+  const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], ws: 'close', goto: `/talk/?go=${GO}` });
+  await page.click('#go-go');
+  await page.waitForFunction(() => document.querySelector('#app').dataset.screen === 'mic' && !document.querySelector('#mic-actions').hidden, null, { timeout: 8000 });
+  const back = await travel(page, 'back');
+  const room = await page.evaluate(() => !document.querySelector('#room').hidden);
+  check('the line did not open, then Back: not the dead room', back !== 'room' && !room, JSON.stringify({ back, room }));
+  await ctx.close();
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);
