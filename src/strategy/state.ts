@@ -9,8 +9,16 @@ import { GATE_FAILED } from "../talk/turnstile";
 /** A link token and a sign-in code are both 43 characters of base64url. */
 export const CODE_RE = /^[A-Za-z0-9_-]{43}$/;
 
+export const BASE_TITLE = "Your AI and automation strategy — Aida";
+
+export const NOT_FOUND_TITLE = "This link is closed";
 export const NOT_FOUND_COPY =
   "This link has expired or was withdrawn. Ask the Aida team for a new one.";
+/** An address with no well-formed token: nothing was asked of the server, so nothing has expired. */
+export const INCOMPLETE_TITLE = "This link is incomplete";
+export const INCOMPLETE_COPY = "Part of the address is missing. Open the link again from your email.";
+/** The subject of the email the closed-link card offers to start. */
+export const NEW_LINK_SUBJECT = "New link to my strategy";
 export const EXPIRED_CODE_COPY =
   "That sign-in link has expired or was already used. Send a new one.";
 export const SENT_COPY =
@@ -62,11 +70,16 @@ export interface StrategyView {
 
 export type ScreenState =
   | { screen: "loading" }
-  | { screen: "not-found" }
+  /**
+   * `incomplete`: the address held no well-formed token (cut short, or mangled in the email), so the server was
+   * never asked. `contact`: an address to ask the team for a new link, when the server gave one.
+   */
+  | { screen: "not-found"; incomplete?: true; contact?: string }
   | { screen: "sign-in"; hint: string; notice: string | null }
   | { screen: "sent"; hint: string }
   | { screen: "view"; view: StrategyView }
-  | { screen: "trouble" };
+  /** `notice`: what to say instead of the connection message (how long to wait, after a 429). */
+  | { screen: "trouble"; notice?: string };
 
 export type StrategyEvent =
   | { type: "view"; status: number; body: unknown }
@@ -168,6 +181,24 @@ function readDeck(value: unknown): Deck | null {
   };
 }
 
+/** One plain address, never a list or anything that could carry more into a mailto: link. */
+export const PLAIN_ADDRESS = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+
+/** A mailto: link asking the team for a new link, with the subject filled in. */
+export function newLinkMailto(contact: string): string {
+  return `mailto:${contact}?subject=${encodeURIComponent(NEW_LINK_SUBJECT)}`;
+}
+
+/** The first screen for an address: a well-formed token is looked up; anything else is an incomplete link. */
+export function landing(route: { token: string | null }): ScreenState {
+  return route.token ? { screen: "loading" } : { screen: "not-found", incomplete: true };
+}
+
+/** The tab's title: the strategy's own title only while it is on screen. */
+export function pageTitle(state: ScreenState): string {
+  return state.screen === "view" && state.view.deck.title ? `${state.view.deck.title} — Aida` : BASE_TITLE;
+}
+
 /** The 200 body, if it is the shape the contract promises. */
 export function readView(value: unknown): StrategyView | null {
   if (
@@ -239,6 +270,11 @@ function retryFrom(body: unknown): number {
   return isRecord(body) && typeof body.retryAfter === "number" ? body.retryAfter : 60;
 }
 
+function contactFrom(body: unknown): string | null {
+  const contact = isRecord(body) && isText(body.contact) ? body.contact.trim() : "";
+  return PLAIN_ADDRESS.test(contact) ? contact : null;
+}
+
 /** The address the form was on, for the notice a 400 or a 429 leaves there. */
 function signIn(hint: string, notice: string | null): ScreenState {
   return { screen: "sign-in", hint, notice };
@@ -252,7 +288,12 @@ export function reduce(state: ScreenState, event: StrategyEvent): ScreenState {
         return view ? { screen: "view", view } : { screen: "trouble" };
       }
       if (event.status === 401) return signIn(hintFrom(event.body), null);
-      if (event.status === 404) return { screen: "not-found" };
+      if (event.status === 404) {
+        const contact = contactFrom(event.body);
+        return contact ? { screen: "not-found", contact } : { screen: "not-found" };
+      }
+      // Rate-limited: the connection is fine, and trying again at once fails again. Say how long to wait.
+      if (event.status === 429) return { screen: "trouble", notice: waitCopy(retryFrom(event.body)) };
       return { screen: "trouble" };
     }
     case "signin": {

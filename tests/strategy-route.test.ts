@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CODE_RE, emailProblem, readRoute } from "../src/strategy/state";
+import { CODE_RE, INCOMPLETE_COPY, NOT_FOUND_COPY, emailProblem, landing, readRoute } from "../src/strategy/state";
 import { CODE, TOKEN } from "./strategy-fixture";
 
 describe("the strategy address", () => {
@@ -31,6 +31,15 @@ describe("the strategy address", () => {
       `/strategy/../${TOKEN}`,
     ];
     for (const path of bad) expect(readRoute(path).token, path).toBeNull();
+  });
+
+  it("a link cut short or mangled is an incomplete link, not an expired one (nothing was asked of the server)", () => {
+    for (const path of [`/strategy/${TOKEN.slice(0, 40)}`, "/strategy/not-a-real-token", "/strategy/", `/strategy/${TOKEN})`]) {
+      expect(landing(readRoute(path)), path).toEqual({ screen: "not-found", incomplete: true });
+    }
+    expect(landing(readRoute(`/strategy/${TOKEN}`))).toEqual({ screen: "loading" });
+    expect(INCOMPLETE_COPY).not.toMatch(/expired|withdrawn/);
+    expect(NOT_FOUND_COPY).toMatch(/expired or was withdrawn/);
   });
 
   it("refuses a malformed code but still reads the token", () => {

@@ -28,9 +28,11 @@
       <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4.5 12h14M13 6.5l5.5 5.5-5.5 5.5" /></symbol>
     </svg>
 
-    <!-- Vera's still: the face on this page, wherever she appears (voice only included). -->
+    <!-- Vera's still: the face on this page, wherever she appears (voice only included). `sizes` is the first
+         screen's portrait, the largest she is drawn: 460 px wide from 560 to 999 px (92vw asked for 707 px at 768
+         and fetched the 1024 file), about 44vw from 1000 px up, and a phone keeps the lighter file. -->
     <template id="face-vera">
-      <img class="vera-still" src="/aida/vera-640.webp" srcset="/aida/vera-640.webp 640w, /aida/vera.webp 1024w" sizes="(min-width: 900px) 560px, (min-width: 560px) 92vw, 320px" width="1024" height="1024" alt="Aida, a calm woman with short silver hair" />
+      <img class="vera-still" src="/aida/vera-640.webp" srcset="/aida/vera-640.webp 640w, /aida/vera.webp 1024w" sizes="(min-width: 1000px) 560px, (min-width: 560px) 460px, 320px" width="1024" height="1024" alt="Aida, a calm woman with short silver hair" />
     </template>
 
     <div class="app" id="app" data-screen="intro">
@@ -278,13 +280,15 @@
             <p>The video is slow on this connection. Switch to voice only?</p>
             <button class="btn btn-quiet" type="button" id="slow-switch">Yes, switch</button>
           </div>
+          <!-- Each caption scrolls inside itself when it is longer than its lines: focusable and named, so a keyboard
+               can scroll back through it in every browser (Safari does not put a scroller in the tab order itself). -->
           <div class="line line-aida" id="line-aida" hidden>
             <p class="who">Aida</p>
-            <p class="said" id="said-aida"></p>
+            <p class="said" id="said-aida" role="region" aria-label="Aida’s words" tabindex="0"></p>
           </div>
           <div class="line line-you" id="line-you" hidden>
             <p class="who" id="who-you">You</p>
-            <p class="said" id="said-you"></p>
+            <p class="said" id="said-you" role="region" aria-label="Your words" tabindex="0"></p>
           </div>
           <p class="hint" id="hint">She will start in a moment — you can interrupt her once she does.</p>
         </div>
@@ -375,6 +379,9 @@
               <button class="btn btn-go" type="button" id="end-continue">
                 <span class="label">Continue</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
               </button>
+              <a class="btn btn-go" id="end-new" href="/talk/" hidden>
+                <span class="label">Start a new conversation</span> <svg class="ic" aria-hidden="true"><use href="#i-arrow" /></svg>
+              </a>
               <p class="welcome-status" id="end-continue-status" role="status"></p>
             </div>
           </div>

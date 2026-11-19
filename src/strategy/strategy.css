@@ -131,8 +131,11 @@ a:hover {
   }
 }
 
+/* One column as wide as the screen, never wider: an auto column grew to the card's widest content (the email
+   field's own width, with the text enlarged to 200% on a phone) and pushed the page sideways. */
 .screen-narrow {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: start center;
   align-content: start;
   min-height: calc(100svh - 150px);
@@ -207,6 +210,8 @@ a:hover {
   }
 }
 
+/* With the text enlarged (200% on a phone) a display word, or the masked address in the hint, can be wider than
+   the card: it breaks inside the card rather than running out of it. */
 .sheet {
   width: min(560px, 100%);
   margin-top: 4svh;
@@ -215,6 +220,7 @@ a:hover {
   border: 2px solid var(--ink);
   border-radius: 22px;
   box-shadow: 8px 8px 0 var(--pink);
+  overflow-wrap: anywhere;
 }
 
 .sheet .lede {

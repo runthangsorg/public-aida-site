@@ -22,6 +22,9 @@
   --gold: #f2b632;
   --rule: rgb(35 44 92 / 0.16);
   --line: rgb(35 44 92 / 0.32);
+  /* A field's edge is how a person finds the field: at least 3:1 against both the page and the field's own fill
+     (WCAG 1.4.11). --line, at about 1.7:1, stays for rules, rings and dividers. */
+  --field-line: rgb(35 44 92 / 0.6);
 
   --tint-s: #f6dc9a;
   --tint-w: #f7cfe0;
@@ -284,7 +287,7 @@ input[type="tel"] {
   width: 100%;
   min-height: 54px;
   padding: 12px 16px;
-  border: 2px solid var(--line);
+  border: 2px solid var(--field-line);
   border-radius: 14px;
   background: var(--paper-hi);
   color: var(--ink);
@@ -296,7 +299,7 @@ input[type="tel"] {
 input[type="text"]:hover,
 input[type="email"]:hover,
 input[type="tel"]:hover {
-  border-color: rgb(35 44 92 / 0.55);
+  border-color: var(--ink);
 }
 
 input[type="text"]:focus-visible,
@@ -496,9 +499,11 @@ input[aria-invalid="true"]:hover {
   margin-bottom: 28px;
 }
 
+/* These headings wrap on a phone: at the display's 0.94 the comma of "FIRST," met the T of the line below. */
 .sheet-head .display,
 .sheet-narrow .display {
   font-size: clamp(36px, 8.6vw, 60px);
+  line-height: 1.04;
 }
 
 .sheet-head .lede {
@@ -545,7 +550,7 @@ input[aria-invalid="true"]:hover {
   align-items: center;
   min-height: 46px;
   padding: 8px 18px;
-  border: 2px solid var(--line);
+  border: 2px solid var(--field-line);
   border-radius: 999px;
   background: var(--paper-hi);
   font-size: 17px;
@@ -682,17 +687,25 @@ input[aria-invalid="true"]:hover {
   min-width: 0;
 }
 
+/* The stage's name gives way on a narrow phone; its count ("4 of 7") stays whole. */
 .stage-now {
+  display: flex;
+  column-gap: 0.25em; /* the space between the two spans, which a flex row drops */
   margin: 0 0 8px;
-  overflow: hidden;
   font-size: 17px;
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+#stage-label {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .stage-now .count {
+  flex: none;
   margin-left: 6px;
   color: var(--muted);
   font-weight: 500;
@@ -905,11 +918,19 @@ input[aria-invalid="true"]:hover {
   display: none;
 }
 
+/* Each line carries its caption's size (the label keeps its own), so 1em on a line is its caption's size. */
+.line-aida {
+  font-size: 21px;
+}
+
+.line-you {
+  font-size: 17px;
+}
+
 /* A caption that has scrolled inside itself is clipped cleanly: no paper band over the first
    visible line (mobile, 18 Oct: the grey band made the start of a long caption unreadable). */
 .line-aida .said {
   max-height: calc(1.36em * 4);
-  font-size: 21px;
   font-weight: 650;
   line-height: 1.36;
 }
@@ -917,7 +938,6 @@ input[aria-invalid="true"]:hover {
 .line-you .said {
   max-height: calc(1.42em * 2);
   color: var(--ink-2);
-  font-size: 17px;
   line-height: 1.42;
 }
 
@@ -1156,8 +1176,11 @@ input[aria-invalid="true"]:hover {
   grid-area: controls;
 }
 
+/* With the text enlarged on a narrow phone the four buttons are wider than the screen: End goes to a second row
+   rather than past the edge, where the room's overflow cut "Mute" and "End" in half. */
 .controls {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: clamp(12px, 6vw, 36px);
   padding: 10px var(--gutter) calc(12px + env(safe-area-inset-bottom));
@@ -1168,7 +1191,6 @@ input[aria-invalid="true"]:hover {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  min-width: 76px;
   padding: 4px;
   border: 0;
   border-radius: 16px;
@@ -1199,6 +1221,15 @@ input[aria-invalid="true"]:hover {
 .ctl .ic {
   width: 26px;
   height: 26px;
+}
+
+/* Each button keeps its width (the floor sits on the label, so a button can still grow to fit its words), and a
+   label that has no room wraps inside its own button instead of running into the next one (text enlarged to
+   200% on a phone put "MuteTypeContinue laterEnd" on one line). */
+.ctl-label {
+  min-width: 68px;
+  text-align: center;
+  overflow-wrap: break-word;
 }
 
 .ctl:hover .ctl-ic {
@@ -1311,9 +1342,19 @@ input[aria-invalid="true"]:hover {
 
 .end-head {
   display: flex;
+  flex-wrap: wrap;
   gap: 18px;
   align-items: center;
   margin-bottom: 30px;
+}
+
+/* Her words sit beside her portrait, or under it when the column beside her would be narrower than 12 em or than
+   its longest word: on a 320 px phone "Start a new conversation" ran 21 px past the screen's edge. A word or a
+   button too wide even for the whole screen (text enlarged) breaks inside it. */
+.end-head > :not(.avatar) {
+  flex: 1 1 12rem;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .end-head .display {
@@ -1428,14 +1469,18 @@ input[aria-invalid="true"]:hover {
   background: var(--tint-t);
 }
 
+/* A quadrant is about 100 px wide on a 320 px phone: the heading scales with it ("OPPORTUNITIES" fits from
+   320 px up), and a word that still does not fit (enlarged text) breaks inside the quadrant instead of being cut. */
 .q h3 {
   margin: 0 0 10px;
   font-family: var(--display);
-  font-size: clamp(22px, 5.6vw, 38px);
+  font-size: clamp(16px, 5.6vw, 38px);
   font-weight: 400;
   letter-spacing: 0.01em;
   line-height: 1.04;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 .q ul,
@@ -1455,6 +1500,14 @@ input[aria-invalid="true"]:hover {
   font-size: 16px;
   line-height: 1.4;
   text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+/* About 100 px a quadrant: a long word ("spreadsheets") is hyphenated rather than cut at an arbitrary letter. */
+@media (max-width: 379px) {
+  .q li {
+    hyphens: auto;
+  }
 }
 
 .q li::before,
@@ -1699,11 +1752,12 @@ input[aria-invalid="true"]:hover {
 
   .screen-room {
     grid-template-columns: minmax(0, 1fr) minmax(420px, 42vw);
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
     grid-template-areas:
       "bar bar"
       "stage notes"
       "captions notes"
+      "idle notes"
       "typer notes"
       "controls notes";
     column-gap: 32px;
@@ -1777,11 +1831,11 @@ input[aria-invalid="true"]:hover {
     padding: 20px 4px 0;
   }
 
-  .line-aida .said {
+  .line-aida {
     font-size: 24px;
   }
 
-  .line-you .said {
+  .line-you {
     font-size: 18px;
   }
 
@@ -1964,13 +2018,13 @@ input[aria-invalid="true"]:hover {
   scroll-margin-top: 8px;
 }
 
+/* Quieter than the note by size and colour only: an opacity on top took it to 3:1, below what 12 px text needs. */
 .note-time {
   display: inline-block;
   margin-right: 8px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--muted, currentColor);
-  opacity: 0.65;
 }
 
 .choices { margin-top: 28px; display: grid; gap: 12px; }
@@ -2085,10 +2139,6 @@ input[aria-invalid="true"]:hover {
 @media (max-width: 480px) {
   .controls {
     gap: 4px;
-  }
-
-  .ctl {
-    min-width: 72px;
   }
 }
 
@@ -2279,9 +2329,18 @@ input[aria-invalid="true"]:hover {
 
 .end-actions {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: 8px;
   margin-top: 16px;
+}
+
+.end-actions .btn {
+  max-width: 100%;
+}
+
+.end-actions .btn .label {
+  min-width: 0;
 }
 
 .screen-room {
@@ -2316,12 +2375,18 @@ input[aria-invalid="true"]:hover {
   line-height: 1.35;
 }
 
+/* On a desk the card sits in the room's flow, in a row of its own between the captions and the typing box, as
+   wide as the captions: a 560 px card laid over the 630-720 px captions left a cut fragment of the person's words
+   showing beside it, and a card in the typing box's row covered the box and its Send while someone was typing.
+   Her window gives the room back for it (each caption scrolls to its newest words); End stays where it is. */
 @media (min-width: 1000px) {
   .idle {
-    right: auto;
-    left: 40px;
-    width: min(560px, calc(100% - 40vw - 80px));
-    bottom: 150px;
+    grid-area: idle;
+    position: relative;
+    inset: auto;
+    justify-self: center;
+    width: min(100%, 720px);
+    margin-top: 10px;
   }
 }
 
@@ -2485,7 +2550,7 @@ input[aria-invalid="true"]:hover {
 .choices textarea {
   min-height: 72px;
   padding: 10px 14px;
-  border: 2px solid var(--line);
+  border: 2px solid var(--field-line);
   border-radius: 14px;
   background: var(--paper-hi);
   color: var(--ink);
@@ -2524,11 +2589,23 @@ input[aria-invalid="true"]:hover {
 }
 
 /* A caption line that has less room than its text scrolls inside itself (newest words kept in view)
-   rather than being cut at the edge of the captions box. */
+   rather than being cut at the edge of the captions box. Yours gives way first, down to one line; hers only
+   after, down to two (at 1280 x 800 her four lines pushed the second line of yours under the controls). The
+   floors are the label (13 px, 1.2, 3 px under it) and the caption lines, in the line's own size. */
 .captions .line {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+}
+
+.captions .line-you {
+  flex-shrink: 100;
+  min-height: calc(13px * 1.2 + 3px + 1.42em);
+}
+
+.captions .line-aida {
+  flex-shrink: 1;
+  min-height: calc(13px * 1.2 + 3px + 2 * 1.36em);
 }
 
 .captions .said {
@@ -2568,6 +2645,7 @@ input[aria-invalid="true"]:hover {
 .nb-tabs {
   flex: none;
   display: flex;
+  flex-wrap: wrap; /* text enlarged on a narrow phone: Transcript goes under Notes, not past the edge */
   gap: 6px;
   margin-top: 8px;
   padding-bottom: 6px;
@@ -2664,9 +2742,28 @@ input[aria-invalid="true"]:hover {
 }
 
 @media (min-width: 1000px) {
-  /* Her window gives way before the captions do: room for four lines of hers and two of yours, always. */
+  /* Her window gives way before the captions do: room for four lines of hers and two of yours, always. Those
+     need about 250 px with their labels; 460 px left them 220 at 1280 x 800, and the second line of yours went
+     under the controls. --beside-stage is the height kept for everything else in the column: the bar, those
+     captions and the controls, and the typing box (65 px) and the idle card (95 px) while they show. */
+  .screen-room {
+    --beside-stage: 490px;
+  }
+
+  .screen-room:has(.typer:not([hidden])) {
+    --beside-stage: 555px;
+  }
+
+  .screen-room:has(.idle:not([hidden])) {
+    --beside-stage: 585px;
+  }
+
+  .screen-room:has(.typer:not([hidden])):has(.idle:not([hidden])) {
+    --beside-stage: 650px;
+  }
+
   .stage {
-    width: min(100%, 44vh, 420px, calc(100svh - 460px));
+    width: min(100%, 44vh, 420px, max(120px, calc(100svh - var(--beside-stage))));
   }
 
   .nb-body,
@@ -2680,19 +2777,90 @@ input[aria-invalid="true"]:hover {
 }
 
 @media (min-width: 1000px) and (max-height: 900px) {
-  .screen-room:has(.typer:not([hidden])) .stage {
-    width: min(100%, 36vh, 420px, calc(100svh - 525px));
+  /* On a laptop screen the typing box and the idle card take room from her captions: her window gives it back. */
+  .screen-room:has(.typer:not([hidden])) .stage,
+  .screen-room:has(.idle:not([hidden])) .stage {
+    width: min(100%, 36vh, 420px, max(120px, calc(100svh - var(--beside-stage))));
   }
 }
 
-/* A phone: the notebook sits open under her face and her captions, about 40% of the height, newest at the
-   bottom (owner, 20 Oct: collapsed, it was not obvious she was taking notes). Her window is smaller to make
-   the room; the captions keep their own height. */
-@media (max-width: 480px) {
-  .screen-room {
-    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+/* A short desk window: a 1366 x 768 or 1280 x 800 laptop once the browser's own bars are drawn, or a laptop
+   zoomed in (1280 x 720 at 125% is 1024 x 576). Her window went down to 70-88 px, and to nothing with the typing
+   box open, with "Listening" cut to "Liste" across her face. The bar, the controls and the idle card draw
+   tighter here (about 80 px back), the column keeps that much less beside her window, and her window never goes
+   below 120 px: the captions give way instead, each scrolling to its newest words. */
+@media (min-width: 1000px) and (max-height: 700px) {
+  .bar {
+    padding-block: 10px 8px;
   }
 
+  .captions {
+    padding-top: 4px;
+  }
+
+  [data-screen="room"] .mark {
+    top: 16px;
+  }
+
+  .controls {
+    padding-block: 4px 12px;
+  }
+
+  .ctl-ic {
+    width: 48px;
+    height: 48px;
+  }
+
+  .ctl-later .ctl-label {
+    max-width: none;
+  }
+
+  .idle {
+    margin-top: 6px;
+    padding-block: 8px;
+  }
+
+  .idle .btn {
+    min-height: 44px;
+    padding-block: 8px;
+  }
+
+  .screen-room {
+    --beside-stage: 407px;
+  }
+
+  .screen-room:has(.typer:not([hidden])) {
+    --beside-stage: 472px;
+  }
+
+  .screen-room:has(.idle:not([hidden])) {
+    --beside-stage: 483px;
+  }
+
+  .screen-room:has(.typer:not([hidden])):has(.idle:not([hidden])) {
+    --beside-stage: 548px;
+  }
+}
+
+/* Her window at its smallest (a short desk window, a short phone, a phone on its side): the on-air tag at the
+   phone's size, so "Listening" stays whole and off her face. */
+@container (max-width: 159px) {
+  .status {
+    top: 6px;
+    left: 6px;
+    gap: 6px;
+    padding: 4px 9px 4px 7px;
+    font-size: 13px;
+  }
+
+  .status .dot {
+    width: 8px;
+    height: 8px;
+  }
+}
+
+/* A phone: her window is smaller to make room for the notes; the captions keep their own height. */
+@media (max-width: 480px) {
   .bar {
     padding-block: 8px 6px;
   }
@@ -2741,12 +2909,46 @@ input[aria-invalid="true"]:hover {
     padding-top: 8px;
   }
 
-  .line-aida .said {
+  .line-aida {
     font-size: 19px;
   }
 
-  .line-you .said {
+  .line-you {
     font-size: 16px;
+  }
+
+  .controls {
+    padding-top: 6px;
+  }
+
+  .ctl {
+    gap: 4px;
+    font-size: 14px;
+  }
+
+  .ctl-label {
+    min-width: 58px;
+  }
+
+  .ctl-ic {
+    width: 48px;
+    height: 48px;
+  }
+
+  /* "Continue later" on one line where it fits: four buttons fit across a 360 px phone. Narrower, or with the
+     text enlarged, it wraps inside its own button. */
+  .ctl-later .ctl-label {
+    max-width: none;
+  }
+}
+
+/* A phone with the height for it: the notebook sits open under her face and her captions, about 40% of the
+   height, newest at the bottom (owner, 20 Oct: collapsed, it was not obvious she was taking notes). A shorter
+   phone (320 x 568, 360 x 640) left the open notes 12-52 px, a sliver: there it keeps the strip with her newest
+   note, which opens the notes as a sheet. */
+@media (max-width: 480px) and (min-height: 661px) {
+  .screen-room {
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   }
 
   .notebook {
@@ -2817,27 +3019,6 @@ input[aria-invalid="true"]:hover {
     padding-block: 6px;
     font-size: 16px;
   }
-
-  .controls {
-    padding-top: 6px;
-  }
-
-  .ctl {
-    min-width: 66px;
-    gap: 4px;
-    font-size: 14px;
-  }
-
-  .ctl-ic {
-    width: 48px;
-    height: 48px;
-  }
-
-  /* "Continue later" on one line: four buttons fit across a 360 px phone. */
-  .ctl-later .ctl-label {
-    max-width: none;
-    white-space: nowrap;
-  }
 }
 
 /* Her window is small on a phone: the pill says "Voice only" (its name for screen readers stays whole). */
@@ -2885,5 +3066,67 @@ input[aria-invalid="true"]:hover {
 @media (max-width: 480px) {
   .slow-offer p {
     font-size: 14px;
+  }
+}
+
+/* A short screen: a phone on its side (844 x 390, 667 x 375) or a laptop zoomed to 200% (640 x 400). The room
+   was held at 560 px, so Mute and End sat below the fold. Here it fits the screen: her window beside her
+   captions, the notes strip beside the controls. */
+@media (min-width: 560px) and (max-width: 999px) and (max-height: 559px) {
+  .screen-room {
+    min-height: 0;
+    grid-template-columns: calc(var(--gutter) + clamp(96px, calc(100svh - 190px), 200px)) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "bar bar"
+      "stage captions"
+      "stage typer"
+      "notes controls";
+  }
+
+  .bar {
+    padding-block: 8px 6px;
+  }
+
+  .stage-now {
+    margin-bottom: 6px;
+  }
+
+  .stage {
+    align-self: start;
+    width: calc(100% - var(--gutter));
+    margin: 0 0 0 var(--gutter);
+    border-radius: 20px;
+  }
+
+  .captions {
+    padding-top: 0;
+  }
+
+  .notebook {
+    align-self: center;
+  }
+
+  .nb-peek {
+    width: calc(100% - var(--gutter));
+    margin: 0 0 0 var(--gutter);
+  }
+
+  .controls,
+  .confirm {
+    padding-block: 6px calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .controls {
+    gap: clamp(8px, 3vw, 28px);
+  }
+
+  .ctl-ic {
+    width: 48px;
+    height: 48px;
+  }
+
+  .idle {
+    bottom: calc(96px + env(safe-area-inset-bottom));
   }
 }

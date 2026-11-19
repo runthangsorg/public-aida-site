@@ -11,11 +11,12 @@
  *      Transcribing…, Noted, the notebook open on a phone with its transcript, and the QA findings of 18 Oct.
  *
  *   node scripts/talk-page-check.mjs [--shots .tmp/shots] [--only 1,5]   (sections: 1 face, 1b room, 2 start,
- *                                                                     3 reconnect, 4 busy card, 5 round 3)
+ *                                                                     3 reconnect, 4 busy card, 5 round 3,
+ *                                                                     6 round 4, 7 layout, 8 strategy)
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
-/* global window, document, getComputedStyle, innerHeight, location, matchMedia */
+/* global window, document, getComputedStyle, innerHeight, innerWidth, location, matchMedia */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -31,6 +32,8 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   let p = url.pathname.endsWith('/') ? `${url.pathname}index.html` : url.pathname;
+  // Everything under /strategy/ is the one page: production rewrites it that way.
+  if (url.pathname.startsWith('/strategy/')) p = '/strategy/index.html';
   if (!existsSync(`${dist}${p}`)) p = `${p}/index.html`;
   try {
     // Read first: writeHead before a read that throws would send the 404 headers on top of a 200 and crash the server.
@@ -321,7 +324,10 @@ if (want('3')) {
   const browser = await chrome(FAKE_MIC);
   const resumedBody = { id: 's1', targetMinutes: 5, sections, name: 'Sam', resumed: { minutesSoFar: 2, stage: 'tools', hasSummary: false, notes: [{ section: 'org', text: 'Forty staff on two sites', at: 40 }] } };
   let roomAt = 0;
-  /** Opens a live call, drops its line, answers /continue with `replies` in turn (the last repeats). */
+  /**
+   * Opens a live call, drops its line, answers /continue with `replies` in turn (the last repeats). A reply is a
+   * status (with the server's usual error code for it) or [status, error code].
+   */
   async function dropped(tag, size, replies, { clock = false, mute = false } = {}) {
     const asked = [];
     const { ctx, page, errors } = await open(browser, {
@@ -330,9 +336,11 @@ if (want('3')) {
       goto: `/talk/?go=${GO}`,
       routes: {
         '**/api/talk/continue': async (r) => {
-          const status = replies[Math.min(asked.length, replies.length - 1)];
+          const reply = replies[Math.min(asked.length, replies.length - 1)];
+          const [status, code] = Array.isArray(reply) ? reply : [reply];
           asked.push(status);
-          await r.fulfill(status === 200 ? json(resumedBody) : json({ error: status === 409 ? 'busy' : 'nothing_to_continue' }, status));
+          const error = code ?? (status === 409 ? 'busy' : status === 401 ? 'no_session' : 'nothing_to_continue');
+          await r.fulfill(status === 200 ? json(resumedBody) : json({ error }, status));
         },
       },
     });
@@ -373,13 +381,44 @@ if (want('3')) {
       check(`[${tag}] muted before the drop: still muted after the reconnect, and the new microphone track is off`, m.pressed === 'true' && /Unmute/.test(m.label) && m.live === false && m.streams >= 2, JSON.stringify(m));
       await ctx.close();
     }
+    const endState = (page) =>
+      page.evaluate(() => ({
+        title: document.querySelector('#end-title').textContent,
+        lede: document.querySelector('#end-lede').textContent,
+        choices: document.querySelector('#choices').hidden,
+        actions: !document.querySelector('#end-actions').hidden,
+        cont: !document.querySelector('#end-continue').hidden,
+        label: document.querySelector('#end-continue .label').textContent,
+        newConversation: document.querySelector('#end-new').hidden ? null : document.querySelector('#end-new').getAttribute('href'),
+      }));
     if (tag === 'phone') {
+      // 404: the server holds nothing to continue from, so the screen must not promise "your place is saved"
+      // (UI review, 19 Nov): it says so and offers a new conversation instead of a Continue that would fail.
       const { ctx, page, asked } = await dropped(tag, size, [404]);
       await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
       await page.waitForTimeout(500);
-      const end = await page.evaluate(() => ({ title: document.querySelector('#end-title').textContent, lede: document.querySelector('#end-lede').textContent, choices: document.querySelector('#choices').hidden, cont: !document.querySelector('#end-actions').hidden, label: document.querySelector('#end-continue .label').textContent }));
-      check(`[${tag}] 404: the line-dropped end screen, with Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && /place is saved/.test(end.lede) && end.cont && end.label === 'Continue' && end.choices, JSON.stringify(end));
+      const end = await endState(page);
+      check(`[${tag}] 404: the line-dropped end screen says nothing is saved and offers a new conversation, no Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && !/place is saved/.test(end.lede) && /nothing saved/.test(end.lede) && end.actions && !end.cont && end.newConversation === '/talk/' && end.choices, JSON.stringify(end));
       await page.screenshot({ path: `${shots}/review-end-dropped-${tag}.png`, fullPage: true });
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      // 404 for another reason (conversations switched off for now: { error: 'closed' }) says nothing about the
+      // saved call: the line-dropped end screen keeps "your place is saved" and Continue (review, 19 Nov).
+      const { ctx, page, asked } = await dropped(tag, size, [[404, 'closed']]);
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(500);
+      const end = await endState(page);
+      check(`[${tag}] 404 closed: the line-dropped end screen still says the place is saved, with Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && /place is saved/.test(end.lede) && end.cont && end.newConversation === null, JSON.stringify(end));
+      await ctx.close();
+    }
+    if (tag === 'phone') {
+      // 401: no cookie, but the call may well be saved: the line-dropped end screen with Continue, as before.
+      const { ctx, page, asked } = await dropped(tag, size, [401]);
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(500);
+      const end = await endState(page);
+      check(`[${tag}] 401: the line-dropped end screen, with Continue (asked ${asked.length} time)`, asked.length === 1 && end.title === 'The line dropped' && /place is saved/.test(end.lede) && end.actions && end.cont && end.label === 'Continue' && end.newConversation === null && end.choices, JSON.stringify(end));
       await ctx.close();
     }
     if (tag === 'phone') {
@@ -413,6 +452,24 @@ if (want('3')) {
         check(`[${tag}] no reconnect after ${how === 'ended' ? 'the call ended' : 'Pause'}`, asked.length === 0 && (await page.evaluate(() => window.__sockets)) === 1);
         await ctx.close();
       }
+    }
+  }
+  // The smallest phone, light and dark (review, 19 Nov): beside her portrait "Start a new conversation" ran 21 px
+  // past the edge of a 320 px screen. The page must not scroll sideways, and both buttons stay inside the gutters.
+  for (const scheme of ['light', 'dark']) {
+    for (const [w, h] of [[320, 568], [360, 740]]) {
+      const { ctx, page } = await dropped('small', { width: w, height: h }, [404]);
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.waitForSelector('#end-new:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(400);
+      const m = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        width: innerWidth,
+        buttons: [...document.querySelectorAll('#end-screen .btn')].filter((b) => b.checkVisibility()).map((b) => [Math.round(b.getBoundingClientRect().left), Math.round(b.getBoundingClientRect().right)]),
+      }));
+      check(`[${w} ${scheme}] nothing saved: no sideways scroll, "Start a new conversation" inside the screen`, m.scroll === m.width && m.buttons.length >= 1 && m.buttons.every(([l, r]) => l >= 15 && r <= m.width - 15), JSON.stringify(m));
+      if (w === 320) await page.screenshot({ path: `${shots}/review-end-nothing-saved-320-${scheme}.png`, fullPage: true });
+      await ctx.close();
     }
   }
   await browser.close();
@@ -802,6 +859,278 @@ if (want('6')) {
       );
       await ctx.close();
     }
+  }
+  await browser.close();
+}
+
+// ---------- 7. layout: the room and the end screen on the screens people use (review, 19 Nov) ----------
+if (want('7')) {
+  const browser = await chrome(FAKE_MIC);
+  /** A live call a few minutes in: her question, the person's answer, three notes. */
+  const liveRoom = async (size, { routes = {}, colorScheme } = {}) => {
+    const opened = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes });
+    const { page } = opened;
+    if (colorScheme) await page.emulateMedia({ colorScheme });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await page.evaluate((s) => {
+      const ws = window.__ws;
+      ws.push({ aida: { type: 'ready', targetMinutes: 20, sections: s, avatar: false } });
+      ws.push({ serverContent: { outputTranscription: { text: 'Walk me through a normal week, from the rota to people being paid. What goes wrong most often?' } } });
+      ws.push({ serverContent: { turnComplete: true } });
+      ws.push({ serverContent: { inputTranscription: { text: 'Hours come out of the app, I check them against the rota, then type them into payroll.' } } });
+      const notes = [['org', 'Office cleaning, about forty staff across two sites'], ['tools', 'Rotas kept in spreadsheets, one per site'], ['workflows', 'Hours are re-typed into payroll every week']];
+      for (const [section, text] of notes) ws.push({ aida: { type: 'note', section, text } });
+    }, sections);
+    await page.waitForTimeout(800);
+    return opened;
+  };
+  // Every font size (and line height) on the page doubled: how a phone's text scaling at 200% lays the page out.
+  const DOUBLE = () => {
+    const els = [...document.querySelectorAll('body *')];
+    const sizes = els.map((e) => [parseFloat(getComputedStyle(e).fontSize), getComputedStyle(e).lineHeight]);
+    els.forEach((e, i) => {
+      const [fs, lh] = sizes[i];
+      e.style.fontSize = `${fs * 2}px`;
+      if (lh.endsWith('px')) e.style.lineHeight = `${parseFloat(lh) * 2}px`;
+    });
+  };
+
+  // Text at 200% on a narrow phone: the room's four buttons were wider than the screen and the room's overflow cut
+  // "Mute" and "End" in half; the end screen scrolled sideways by 22 px.
+  for (const w of [320, 360]) {
+    {
+      const { ctx, page } = await liveRoom({ width: w, height: 740 });
+      await page.evaluate(DOUBLE);
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        width: innerWidth,
+        cut: [...document.querySelectorAll('.controls .ctl, .nb-tab')].filter((e) => e.checkVisibility()).filter((e) => e.getBoundingClientRect().left < -0.5 || e.getBoundingClientRect().right > innerWidth + 0.5).map((e) => e.id),
+      }));
+      check(`[${w}, text x2] the call's buttons and the notebook's tabs are whole on screen, no sideways scroll`, m.cut.length === 0 && m.scroll === m.width, JSON.stringify(m));
+      await page.screenshot({ path: `${shots}/layout-room-text2x-${w}.png` });
+      await ctx.close();
+    }
+    {
+      const { ctx, page } = await liveRoom({ width: w, height: 740 });
+      await page.evaluate(() => window.__ws.push({ aida: { type: 'ended', reason: 'complete', minutes: 3 } }));
+      await page.waitForSelector('#end-screen:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(400);
+      await page.evaluate(DOUBLE);
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));
+      check(`[${w}, text x2] the end screen does not scroll sideways`, m.scroll === m.width, JSON.stringify(m));
+      await ctx.close();
+    }
+  }
+
+  // "Still there?" on a desk (review, 19 Nov): someone slowly typing a long answer sends nothing, so the idle card
+  // comes. In the typing box's row it covered the focused box and its Send; over the captions it cut the person's
+  // words. It has a row of its own: no overlap with the typing box or the person's caption, End in view.
+  for (const [w, h] of [[1000, 700], [1280, 800], [1440, 900]]) {
+    for (const typing of [true, false]) {
+      const { ctx, page } = await liveRoom({ width: w, height: h });
+      if (typing) {
+        await page.click('#type');
+        await page.keyboard.type('We use three spreadsheets and');
+      }
+      await page.evaluate(() => window.__ws.push({ aida: { type: 'idle_warning', secondsLeft: 30 } }));
+      await page.waitForSelector('#idle:not([hidden])');
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => {
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        const meets = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+        const idle = box('idle');
+        const typer = document.getElementById('typer');
+        const send = typer.querySelector('button').getBoundingClientRect();
+        const onTop = document.elementFromPoint(send.x + send.width / 2, send.y + send.height / 2);
+        const end = box('end');
+        return {
+          overTyper: !typer.hidden && meets(idle, typer.getBoundingClientRect()),
+          overYou: document.getElementById('said-you').checkVisibility() && meets(idle, box('said-you')),
+          sendClear: typer.hidden || typer.querySelector('button').contains(onTop),
+          focus: document.activeElement?.id ?? '',
+          inView: idle.top >= 0 && idle.bottom <= innerHeight && end.bottom <= innerHeight,
+        };
+      });
+      const ok = !m.overTyper && !m.overYou && m.sendClear && m.inView && (!typing || m.focus === 'typed');
+      check(`[${w}x${h}${typing ? ', typing' : ''}] the idle card covers neither the typing box (nor its Send) nor the person's words; End in view`, ok, JSON.stringify(m));
+      if (w === 1280 && typing) await page.screenshot({ path: `${shots}/layout-idle-typing-${w}.png` });
+      await ctx.close();
+    }
+  }
+
+  // A short desk window (review, 19 Nov): at 1024 x 576 (1280 x 720 at 125%) her window was 70-88 px with
+  // "Listening" cut to "Liste" across her face, and next to nothing with the typing box open. Her window keeps
+  // 120 px, her status tag is whole and inside it, both captions end inside their box, and End is in view.
+  for (const [w, h] of [[1000, 560], [1024, 576], [1366, 657], [1280, 690]]) {
+    for (const state of ['voice', 'typing', 'typing+idle']) {
+      const { ctx, page } = await liveRoom({ width: w, height: h });
+      if (state !== 'voice') await page.click('#type');
+      if (state === 'typing+idle') {
+        await page.evaluate(() => window.__ws.push({ aida: { type: 'idle_warning', secondsLeft: 30 } }));
+        await page.waitForSelector('#idle:not([hidden])');
+      }
+      await page.waitForTimeout(400);
+      const m = await page.evaluate(() => {
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        const stage = box('stage');
+        const tag = box('status');
+        const text = document.getElementById('status-text');
+        const captions = box('captions');
+        const lines = ['line-aida', 'line-you'].filter((id) => document.getElementById(id).checkVisibility());
+        return {
+          stage: Math.round(stage.width),
+          tag: text.textContent,
+          tagWhole: tag.right <= stage.right - 2 && tag.bottom <= stage.bottom && text.scrollWidth <= text.clientWidth + 1,
+          captionsWhole: lines.length > 0 && lines.every((id) => box(id).bottom <= captions.bottom + 1),
+          endInView: box('end').bottom <= innerHeight,
+          scroll: document.documentElement.scrollWidth - innerWidth,
+        };
+      });
+      check(`[${w}x${h}, ${state}] her window ${m.stage} px (at least 120), "${m.tag}" whole inside it, the captions not cut, End in view`, m.stage >= 120 && m.tagWhole && m.captionsWhole && m.endInView && m.scroll === 0, JSON.stringify(m));
+      if (w === 1024) await page.screenshot({ path: `${shots}/layout-short-${w}x${h}-${state.replace('+', '-')}.png` });
+      await ctx.close();
+    }
+  }
+
+  // Long captions on every kind of screen (QA, 18 Nov): the person's caption was cut under the controls at
+  // 1280 x 800. Both end inside the captions box, theirs at least a line tall, each showing its newest words.
+  const LONG_YOU = ' Mostly it is the Friday check, because I have to look at every timesheet myself and then type it all in again.';
+  const LONG_HER = 'Let me read back what I have so far, and you tell me if I have any of it wrong. You run office cleaning with about forty people on two sites, the leads build the rotas, and everything waits for you on Friday, which means that when you are away, nobody gets paid on time.';
+  for (const [w, h, typing] of [[1280, 800], [1366, 768], [1440, 900], [1000, 700], [1280, 800, true], [390, 844], [844, 390], [640, 400], [320, 568]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h });
+    if (typing) await page.click('#type');
+    await page.evaluate(([you, her]) => {
+      const ws = window.__ws;
+      ws.push({ serverContent: { inputTranscription: { text: you } } });
+      ws.push({ serverContent: { turnComplete: true } });
+      for (const word of her.split(' ')) ws.push({ serverContent: { outputTranscription: { text: ` ${word}` } } });
+    }, [LONG_YOU, LONG_HER]);
+    await page.waitForTimeout(900);
+    const m = await page.evaluate(() => {
+      const captions = document.getElementById('captions').getBoundingClientRect();
+      const tail = (e) => Math.abs(e.scrollHeight - e.clientHeight - e.scrollTop) <= 2;
+      const you = document.getElementById('said-you');
+      const her = document.getElementById('said-aida');
+      return {
+        youInside: document.getElementById('line-you').getBoundingClientRect().bottom <= captions.bottom + 1,
+        youLine: you.getBoundingClientRect().height >= parseFloat(getComputedStyle(you).lineHeight) - 1,
+        newest: tail(you) && tail(her),
+        endInView: document.getElementById('end').getBoundingClientRect().bottom <= innerHeight,
+      };
+    });
+    check(`[${w}x${h}${typing ? ', typing' : ''}] long captions: theirs ends inside the captions box, a line or more tall, both showing their newest words`, m.youInside && m.youLine && m.newest && m.endInView, JSON.stringify(m));
+    await ctx.close();
+  }
+
+  // A phone on its side, or a laptop at 200% (QA, 18 Nov): the room was held at 560 px and Mute and End sat below
+  // the fold. Both are on screen without scrolling.
+  for (const [w, h] of [[844, 390], [667, 375], [740, 360], [640, 400]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h });
+    const m = await page.evaluate(() => ({ mute: document.getElementById('mute').getBoundingClientRect().bottom, end: document.getElementById('end').getBoundingClientRect().bottom, height: innerHeight }));
+    check(`[${w}x${h}] Mute and End are on screen without scrolling`, m.mute <= m.height && m.end <= m.height, JSON.stringify(m));
+    await ctx.close();
+  }
+
+  // Small phones (QA, 18 Nov): at 320 x 568 and 360 x 640 the open notebook was a 12-52 px sliver. A short phone
+  // keeps the strip that opens the notes; a phone with the height keeps the open notebook. End is on screen and
+  // the stage count ("4 of 7") whole either way.
+  for (const [w, h] of [[320, 568], [360, 640], [375, 667], [390, 844]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h });
+    const m = await page.evaluate(() => {
+      const count = document.getElementById('stage-count');
+      return {
+        notes: Math.round(document.getElementById('nb-notes').getBoundingClientRect().height),
+        strip: document.getElementById('nb-toggle').checkVisibility(),
+        endInView: document.getElementById('end').getBoundingClientRect().bottom <= innerHeight,
+        countWhole: count.getBoundingClientRect().right <= count.parentElement.getBoundingClientRect().right + 0.5,
+      };
+    });
+    const ok = h < 661 ? (m.strip || m.notes >= 100) && m.endInView && m.countWhole : !m.strip && m.notes >= 90 && m.endInView && m.countWhole;
+    check(`[${w}x${h}] ${h < 661 ? 'the notes strip (or notes of 100 px or more)' : 'the open notebook'}, End on screen, the stage count whole`, ok, JSON.stringify(m));
+    await ctx.close();
+  }
+
+  // The details form's one message (QA, 18 Nov): on a phone it sat a screen above Continue, and focus fell to the
+  // page while the button was disabled. A 429, a 500 and a dropped connection bring it into view and focus it; a
+  // refusal about one field leaves focus on that field.
+  const NO_TURNSTILE = "window.turnstile = { render: (c, o) => { window.__o = o; return 'w'; }, execute: () => setTimeout(() => window.__o.callback('t'), 20), reset: () => {} };";
+  const refusals = {
+    429: (r) => r.fulfill(json({ error: 'too_many', retryAfter: 300 }, 429)),
+    500: (r) => r.fulfill(json({ error: 'unavailable' }, 500)),
+    'a dropped connection': (r) => r.abort('connectionreset'),
+    '422 on the email': (r) => r.fulfill(json({ error: 'work_email', field: 'email' }, 422)),
+  };
+  for (const [name, reply] of Object.entries(refusals)) {
+    for (const [w, h] of [[390, 844], [360, 740]]) {
+      const { ctx, page } = await open(browser, { size: { width: w, height: h }, init: NO_TURNSTILE, routes: { '**/api/talk/start': reply } });
+      await page.click('.check .box');
+      await page.click('#start-top');
+      await page.waitForSelector('#details:not([hidden])');
+      for (const [id, value] of [['#f-name', 'Sam Example'], ['#f-role', 'Owner'], ['#f-company', 'Acme Cleaning'], ['#f-industry', 'Commercial cleaning'], ['#f-email', ['sam', 'acme.example'].join('@')]]) await page.fill(id, value);
+      await page.click('#team-sizes label:nth-child(3)');
+      await page.locator('#details-go').scrollIntoViewIfNeeded();
+      await page.click('#details-go');
+      await page.waitForTimeout(1000);
+      const m = await page.evaluate(() => {
+        const alert = document.getElementById('form-alert');
+        const box = alert.getBoundingClientRect();
+        return { inView: !alert.hidden && box.top >= 0 && box.bottom <= innerHeight, focus: document.activeElement?.id ?? '' };
+      });
+      const ok = name.startsWith('422') ? m.focus === 'f-email' : m.inView && m.focus === 'form-alert';
+      check(`[${w}x${h}] details form, ${name}: ${name.startsWith('422') ? 'focus on the email field' : 'the message is in view and focused'}`, ok, JSON.stringify(m));
+      await ctx.close();
+    }
+  }
+  await browser.close();
+}
+
+// ---------- 8. the strategy page: signing out (review, 19 Nov) ----------
+if (want('8')) {
+  const browser = await chrome();
+  const view = {
+    company: 'Acme Cleaning (fictional)',
+    firstName: 'Sam',
+    publishedAt: '2026-10-20T09:00:00.000Z',
+    updatedAt: '2026-10-20T09:00:00.000Z',
+    contact: ['sam', 'acme.example'].join('@'),
+    deck: {
+      title: 'AI and automation strategy for Acme Cleaning (fictional)',
+      company: 'Acme Cleaning (fictional)',
+      dateLabel: '20 October 2026',
+      heard: { business: 'Acme Cleaning (fictional) cleans forty offices.', today: ['Two supervisors check every timesheet by hand.'], crux: 'Every approval waits on two supervisors.' },
+      swot: { strengths: ['A loyal team'], weaknesses: ['Rotas in three spreadsheets'], opportunities: ['Automate the approval list'], threats: ['Rising wages'] },
+      plays: [{ name: 'Friday approvals on one screen', whatWeWouldBuild: 'One approval list.', whatChangesForYou: 'Payroll starts on Friday.', firstStep: 'Map the spreadsheets.', evidence: 'Every approval waits on two supervisors.' }],
+      roadmap: [{ when: 'First 30 days', items: ['Map the spreadsheets'] }],
+      nextStep: 'Reply with a time next week.',
+      speaker: 'Aida',
+    },
+  };
+  // Signing out leaves the sign-in screen as a fresh visit would: the page's own title, the strategy gone from the
+  // page (not only hidden), and focus on the sign-in heading, so a screen reader hears where it is.
+  for (const [w, h] of [[390, 844], [1280, 800]]) {
+    let signedOut = false;
+    const { ctx, page } = await open(browser, {
+      size: { width: w, height: h },
+      goto: `/strategy/${'a'.repeat(43)}`,
+      routes: {
+        '**/api/strategy/view**': (r) => r.fulfill(signedOut ? json({ need: 'email', hint: 's***@acme.example' }, 401) : json(view)),
+        '**/api/strategy/signout**': (r) => {
+          signedOut = true;
+          return r.fulfill(json({ ok: true }));
+        },
+      },
+    });
+    await page.waitForSelector('#view:not([hidden])', { timeout: 10000 });
+    const before = await page.evaluate(() => document.getElementById('strategy').children.length);
+    await page.click('#signout');
+    await page.waitForSelector('#sign-in:not([hidden])', { timeout: 10000 });
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => ({ title: document.title, strategy: document.getElementById('strategy').children.length, focus: document.activeElement?.id ?? '' }));
+    check(`[${w}x${h}] strategy sign out: the base title, the strategy emptied (${before} parts before), focus on the sign-in heading`, before > 0 && m.title === 'Your AI and automation strategy — Aida' && m.strategy === 0 && m.focus === 'signin-title', JSON.stringify(m));
+    await ctx.close();
   }
   await browser.close();
 }

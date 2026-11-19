@@ -4,6 +4,7 @@ import {
   BUDGET_LEDE,
   BUSY_CARD,
   BUSY_CLEARS,
+  COULD_NOT_OPEN,
   DAILY_LIMIT,
   DECLINED_CLOSING,
   EXPIRED_GO,
@@ -11,6 +12,7 @@ import {
   confirmRefusal,
   entryFor,
   entryRefusal,
+  errorCode,
   idleSentence,
   connectFailedText,
   MIC_PROMPT_HELP_MS,
@@ -269,13 +271,25 @@ describe("a returning visitor", () => {
     expect(limitMessage("busy")).toMatch(/another window/);
   });
 
-  it("today's limit hides Start, and the wording no longer offers to start afresh", () => {
+  it("today's limit hides Start and Continue (the server refuses both), and says the place is kept", () => {
+    // What /api/talk/me says for anyone with a saved call at the limit; /api/talk/continue answers 429 daily_limit.
     const me = readMe({ known: true, name: "Sam", canContinue: true, minutesSoFar: 3, canStartNew: false, reasonIfNot: "daily_limit" });
     if (!me) throw new Error("expected a known visitor");
     const copy = knownCopy(me);
-    expect(copy.detail).toBe("You have talked for 3 min so far. Pick it up where you stopped.");
+    expect(copy.detail).toBe("You have talked for 3 min so far. Your place is saved.");
+    expect(copy.detail).not.toMatch(/Pick it up/);
     expect(copy.limit).toBe(DAILY_LIMIT);
     expect(copy.busy).toBe(false);
+    expect(copy.continueNow).toBe(false);
+  });
+
+  it("offers Continue whenever there is a saved call and no limit", () => {
+    const me = readMe({ known: true, name: "Sam", canContinue: true, minutesSoFar: 3, canStartNew: true });
+    if (!me) throw new Error("expected a known visitor");
+    expect(knownCopy(me).continueNow).toBe(true);
+    expect(knownCopy({ ...me, canContinue: false }).continueNow).toBe(false);
+    // Busy keeps its own rule: Continue shown but held, beside "already open".
+    expect(knownCopy({ ...me, canStartNew: false, reasonIfNot: "busy" }).continueNow).toBe(true);
   });
 
   it("busy: the card says so, with how it clears, never beside an active button", () => {
@@ -305,6 +319,13 @@ describe("a returning visitor", () => {
     expect(entryRefusal(409, { error: "busy" }).outcome).toBe("stop");
     expect(entryRefusal(429, { error: "too_many" }).outcome).toBe("retry");
     expect(entryRefusal(500, null).outcome).toBe("retry");
+    expect(entryRefusal(500, null).message).toBe(COULD_NOT_OPEN);
+  });
+
+  it("reads a refusal's error code, so a 404 can be told apart from a 404 (nothing saved, or switched off)", () => {
+    expect(errorCode({ error: "nothing_to_continue" })).toBe("nothing_to_continue");
+    expect(errorCode({ error: "closed" })).toBe("closed");
+    for (const body of [null, undefined, "not found", { error: 404 }, ["closed"], {}]) expect(errorCode(body)).toBe("");
   });
 });
 

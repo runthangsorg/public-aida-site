@@ -100,7 +100,8 @@ export type TalkEvent =
   | { kind: "line-dropped" }
   | { kind: "video-stopped"; switching: boolean }
   | { kind: "switching" }
-  | { kind: "closed"; minutes: number };
+  /** `nothingSaved`: the line dropped and the server holds no saved place to continue from. */
+  | { kind: "closed"; minutes: number; nothingSaved?: boolean };
 
 const MAX_TURNS = 60;
 const MAX_NOTES = 200;
@@ -304,7 +305,10 @@ export function reduce(state: TalkState, event: TalkEvent): TalkState {
         s.link = s.link === "lost" ? "lost" : "closed";
         return s;
       }
-      finish(s, s.phase === "ending" ? (s.pausing ? "paused" : "user") : "lost", event.minutes);
+      {
+        const reason = s.phase === "ending" ? (s.pausing ? "paused" : "user") : "lost";
+        finish(s, reason, event.minutes, reason === "lost" && event.nothingSaved ? { resumable: false } : {});
+      }
       return s;
     case "model":
       if (s.phase === "ended") return state;
@@ -497,7 +501,7 @@ export function chipWakeAt(c: ChipClock, now: number): number | null {
 export type EndView =
   | { kind: "paused" | "saved"; emailed: boolean | undefined }
   | { kind: "video"; switching: boolean }
-  | { kind: "idle" | "declined" | "budget" | "dropped" | "done" };
+  | { kind: "idle" | "declined" | "budget" | "dropped" | "unsaved" | "done" };
 
 export function endView(s: TalkState): EndView {
   const e = s.ended;
@@ -509,7 +513,8 @@ export function endView(s: TalkState): EndView {
   if (e.reason === "budget") return { kind: "budget" };
   if (e.resumable && (e.abandoned || e.reason === "error")) return { kind: "saved", emailed: e.emailed };
   // The socket closed with no `ended` and reconnecting did not bring it back: the server keeps a dropped
-  // call resumable, so this screen offers Continue as well as the notes.
-  if (e.reason === "lost") return { kind: "dropped" };
+  // call resumable, so this screen offers Continue as well as the notes - unless the server already said it
+  // holds nothing to continue from, when it offers a new conversation instead.
+  if (e.reason === "lost") return e.resumable === false ? { kind: "unsaved" } : { kind: "dropped" };
   return { kind: "done" };
 }
