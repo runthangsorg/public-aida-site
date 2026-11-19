@@ -38,6 +38,21 @@ describe("nothing is cut off or runs into its neighbour (320 px phones, text enl
     for (const body of rules(css, ".ctl-later .ctl-label")) expect(prop(body, "white-space")).not.toBe("nowrap");
   });
 
+  it("the end screen's words go under her portrait when the column beside it is too narrow, and its buttons stay inside it", () => {
+    // 320 px: beside the 108 px portrait, "Start a new conversation" ran 21 px past the screen's edge.
+    const [head] = rules(css, ".end-head");
+    expect(prop(head ?? "", "flex-wrap")).toBe("wrap");
+    const [words] = rules(css, ".end-head > :not(.avatar)");
+    expect(prop(words ?? "", "flex")).toMatch(/^1 1 \d+(\.\d+)?rem$/);
+    expect(prop(words ?? "", "max-width")).toBe("100%");
+    expect(prop(words ?? "", "overflow-wrap")).toBe("break-word");
+    // The actions' one column is never wider than the words above them, and a button never wider than that column.
+    const [actions] = rules(css, ".end-actions");
+    expect(prop(actions ?? "", "grid-template-columns")).toBe("minmax(0, 1fr)");
+    expect(prop(rules(css, ".end-actions .btn")[0] ?? "", "max-width")).toBe("100%");
+    expect(prop(rules(css, ".end-actions .btn .label")[0] ?? "", "min-width")).toBe("0");
+  });
+
   it("the strategy cards stay inside the screen: a one-column track that cannot grow, and words that can break", () => {
     const [narrow] = rules(strategyCss, ".screen-narrow");
     expect(prop(narrow ?? "", "grid-template-columns")).toBe("minmax(0, 1fr)");

@@ -15,7 +15,7 @@
  *
  * Needs a build (`npm run build`), Google Chrome and the `playwright` package (PLAYWRIGHT_MODULE if not importable).
  */
-/* global window, document, getComputedStyle, innerHeight, location, matchMedia */
+/* global window, document, getComputedStyle, innerHeight, innerWidth, location, matchMedia */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -449,6 +449,24 @@ if (want('3')) {
         check(`[${tag}] no reconnect after ${how === 'ended' ? 'the call ended' : 'Pause'}`, asked.length === 0 && (await page.evaluate(() => window.__sockets)) === 1);
         await ctx.close();
       }
+    }
+  }
+  // The smallest phone, light and dark (review, 19 Nov): beside her portrait "Start a new conversation" ran 21 px
+  // past the edge of a 320 px screen. The page must not scroll sideways, and both buttons stay inside the gutters.
+  for (const scheme of ['light', 'dark']) {
+    for (const [w, h] of [[320, 568], [360, 740]]) {
+      const { ctx, page } = await dropped('small', { width: w, height: h }, [404]);
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.waitForSelector('#end-new:not([hidden])', { timeout: 15000 });
+      await page.waitForTimeout(400);
+      const m = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        width: innerWidth,
+        buttons: [...document.querySelectorAll('#end-screen .btn')].filter((b) => b.checkVisibility()).map((b) => [Math.round(b.getBoundingClientRect().left), Math.round(b.getBoundingClientRect().right)]),
+      }));
+      check(`[${w} ${scheme}] nothing saved: no sideways scroll, "Start a new conversation" inside the screen`, m.scroll === m.width && m.buttons.length >= 1 && m.buttons.every(([l, r]) => l >= 15 && r <= m.width - 15), JSON.stringify(m));
+      if (w === 320) await page.screenshot({ path: `${shots}/review-end-nothing-saved-320-${scheme}.png`, fullPage: true });
+      await ctx.close();
     }
   }
   await browser.close();

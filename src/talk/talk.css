@@ -1339,9 +1339,19 @@ input[aria-invalid="true"]:hover {
 
 .end-head {
   display: flex;
+  flex-wrap: wrap;
   gap: 18px;
   align-items: center;
   margin-bottom: 30px;
+}
+
+/* Her words sit beside her portrait, or under it when the column beside her would be narrower than 12 em or than
+   its longest word: on a 320 px phone "Start a new conversation" ran 21 px past the screen's edge. A word or a
+   button too wide even for the whole screen (text enlarged) breaks inside it. */
+.end-head > :not(.avatar) {
+  flex: 1 1 12rem;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .end-head .display {
@@ -2315,9 +2325,18 @@ input[aria-invalid="true"]:hover {
 
 .end-actions {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: 8px;
   margin-top: 16px;
+}
+
+.end-actions .btn {
+  max-width: 100%;
+}
+
+.end-actions .btn .label {
+  min-width: 0;
 }
 
 .screen-room {
