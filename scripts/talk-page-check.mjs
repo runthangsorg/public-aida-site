@@ -1309,6 +1309,59 @@ if (want9('01')) {
   await browser.close();
 }
 
+if (want9('20')) {
+  // End pressed while there is no line to end. During the voice-only switch it waited 25 s on "Wrapping up"; while
+  // the way back after a drop waited for the microphone, it was undone and a new line opened.
+  const browser = await chrome(FAKE_MIC);
+  {
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      goto: `/talk/?go=${GO}`,
+      routes: { '**/api/talk/continue': async (r) => { await new Promise((d) => setTimeout(d, 3000)); await r.fulfill(json(continued)).catch(() => undefined); } },
+    });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await ready(page, true);
+    await page.waitForSelector('#voice-only:not([hidden])');
+    await page.click('#voice-only');
+    await page.waitForTimeout(300);
+    await page.click('#end');
+    await page.click('#confirm-yes');
+    const t0 = Date.now();
+    const shown = await page.waitForSelector('#end-screen:not([hidden])', { timeout: 2500 }).then(() => Date.now() - t0, () => null);
+    await page.waitForTimeout(3500); // past the delayed /continue
+    const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, sockets: window.__sockets }));
+    check('End during the voice-only switch: the end screen at once, and no new line after it', shown !== null && m.screen === 'end' && m.sockets === 1, JSON.stringify({ shownAfterMs: shown, ...m }));
+    await ctx.close();
+  }
+  {
+    // The second microphone question (the way back after the drop) takes 1.5 s to answer.
+    const slowMic = 'const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let n = 0; navigator.mediaDevices.getUserMedia = (c) => (++n === 1 ? g(c) : new Promise((d) => setTimeout(d, 1500)).then(() => g(c)));';
+    let asked = 0;
+    const { ctx, page } = await open(browser, {
+      size: PHONE,
+      perms: ['microphone'],
+      goto: `/talk/?go=${GO}`,
+      init: slowMic,
+      routes: { '**/api/talk/continue': (r) => { asked++; return r.fulfill(json(continued)); } },
+    });
+    await page.click('#go-go');
+    await page.waitForFunction(() => window.__ws);
+    await ready(page, false);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => window.__ws.drop());
+    for (let i = 0; i < 40 && !asked; i++) await page.waitForTimeout(50);
+    await page.waitForTimeout(200);
+    await page.click('#end');
+    await page.click('#confirm-yes');
+    await page.waitForTimeout(3000);
+    const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, sockets: window.__sockets, live: (window.__streams ?? []).filter((s) => s.getAudioTracks().some((t) => t.readyState === 'live')).length }));
+    check(`End while the way back waits for the microphone: the end screen, no second line, the microphone off (asked ${asked})`, asked === 1 && m.screen === 'end' && m.sockets === 1 && m.live === 0, JSON.stringify(m));
+    await ctx.close();
+  }
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);

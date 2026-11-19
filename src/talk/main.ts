@@ -793,6 +793,7 @@ async function switchToVoiceOnly(): Promise<void> {
     if (r && (r.status === 401 || r.status === 404)) break; // nothing to carry on: the end screen
     if (performance.now() >= deadline) break; // or it never cleared: the end screen, with Continue
     await new Promise<void>((resolve) => window.setTimeout(resolve, SWITCH_RETRY_MS));
+    if (!switchStillOn()) return; // End pressed while waiting to ask again: no further request
   }
   if (!switchStillOn()) return;
   dispatch({ kind: "video-stopped", switching: false });
@@ -1132,11 +1133,17 @@ function reopen(opened: Opened): void {
   // The microphone was allowed a minute ago, so this does not ask again; if it fails, the microphone screen says why.
   voice.openMic().then(
     () => {
+      // End was pressed while the browser was asked: it stays ended (End releases the microphone; this is a guard).
+      if (state.phase === "ending" || state.phase === "ended") {
+        voice.stopMic();
+        return;
+      }
       // The new microphone stream starts live: put the person's mute back before anything is sent.
       voice.setMuted(muted);
       startRoom(false);
     },
-    () => {
+    (err: unknown) => {
+      if (err instanceof MicSuperseded) return; // End (or the page going) released it while it was asked
       void askForMic();
     },
   );
@@ -1705,9 +1712,11 @@ function awaitEnd(): void {
 
 byId("confirm-yes", HTMLButtonElement).addEventListener("click", () => {
   if (state.phase !== "live" && state.phase !== "connecting") return;
-  if (reconnecting(rc)) {
-    // No line to end: stop reconnecting and show the end screen now.
+  if (reconnecting(rc) || state.switching || !voice.connected) {
+    // No line to end (reconnecting, moving to voice only, or the way back still waiting for the microphone):
+    // stop that and show the end screen now. A microphone question still open is answered into nothing.
     stopReconnecting();
+    voice.stopMic();
     dispatch({ kind: "end-pressed" });
     dispatch({ kind: "closed", minutes: elapsed() / 60 });
     return;
