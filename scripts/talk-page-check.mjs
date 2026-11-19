@@ -62,6 +62,8 @@ const chrome = (extra = []) =>
 /** A page with the stubbed server. `ws`: how the socket behaves ('ok' | 'throw' | 'close'). */
 async function open(browser, { size, perms = [], init = '', ws = 'ok', me = { known: false }, goto = '/talk/', routes = {}, hasTouch = false }) {
   const ctx = await browser.newContext({ viewport: size, permissions: perms, ...(hasTouch ? { hasTouch: true } : {}) });
+  // Nothing leaves this machine: a request for any other host (the person check's script) is refused.
+  await ctx.route((url) => url.host !== new URL(base).host, (r) => r.abort());
   const page = await ctx.newPage();
   const requests = [];
   const errors = [];
