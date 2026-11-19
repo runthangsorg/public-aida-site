@@ -61,6 +61,17 @@ function rules(selector: string): string[] {
 const paper = colour(token("paper"));
 const paperHi = colour(token("paper-hi"));
 
+describe("small text is readable (WCAG 1.4.3, 4.5:1)", () => {
+  it("a note's timestamp: --muted on the notebook paper, with no opacity taking it below 4.5:1", () => {
+    const bodies = rules(".note-time");
+    expect(bodies.length).toBeGreaterThan(0);
+    const opacity = Math.min(1, ...bodies.flatMap((b) => [...b.matchAll(/opacity:\s*([\d.]+)/g)].map((m) => Number(m[1]))));
+    const ink = over(colour(token("muted")), paperHi, opacity);
+    expect(ratio(ink, paperHi)).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(over(colour(token("muted")), paper, opacity), paper)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
 describe("form fields can be found (WCAG 1.4.11, 3:1)", () => {
   it("the field edge reaches 3:1 against the page and against the field's own fill", () => {
     const edge = over(colour(token("field-line")), paperHi);

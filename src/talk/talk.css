@@ -1967,13 +1967,13 @@ input[aria-invalid="true"]:hover {
   scroll-margin-top: 8px;
 }
 
+/* Quieter than the note by size and colour only: an opacity on top took it to 3:1, below what 12 px text needs. */
 .note-time {
   display: inline-block;
   margin-right: 8px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--muted, currentColor);
-  opacity: 0.65;
 }
 
 .choices { margin-top: 28px; display: grid; gap: 12px; }
