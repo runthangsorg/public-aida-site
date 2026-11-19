@@ -1976,12 +1976,16 @@ input[aria-invalid="true"]:hover {
 /* ---------- motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
+  /* No transitions at all, not 0.01 ms ones (retest, 19 Nov): with a 0.01 ms transition on every property, the room's
+     rows were still mid-transition when fitNotes measured them, so on a phone the notes flipped between the open
+     notebook and the strip every few frames and the sheet covered End. Nothing listens for transitionend. */
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
   }
 }
 

@@ -906,10 +906,10 @@ if (want('6')) {
 if (want('7')) {
   const browser = await chrome(FAKE_MIC);
   /** A live call a few minutes in: her question, the person's answer, three notes. */
-  const liveRoom = async (size, { routes = {}, colorScheme } = {}) => {
+  const liveRoom = async (size, { routes = {}, colorScheme, reducedMotion } = {}) => {
     const opened = await open(browser, { size, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes });
     const { page } = opened;
-    if (colorScheme) await page.emulateMedia({ colorScheme });
+    if (colorScheme || reducedMotion) await page.emulateMedia({ ...(colorScheme ? { colorScheme } : {}), ...(reducedMotion ? { reducedMotion } : {}) });
     await page.click('#go-go');
     await page.waitForFunction(() => window.__ws);
     await page.evaluate((s) => {
@@ -994,6 +994,41 @@ if (want('7')) {
       check(`[${w}, text x2] the end screen does not scroll sideways`, m.scroll === m.width, JSON.stringify(m));
       await ctx.close();
     }
+  }
+
+  // Reduced motion (retest, 19 Nov): the reduced-motion rule gave every element a 0.01 ms transition, so fitNotes
+  // measured the room's rows mid-transition, and on a phone the notes flipped between the open notebook and the strip
+  // every few frames (about 10 Hz), the sheet covering End in some frames. One sample cannot see it, so this samples
+  // the layout on 40 animation frames: it must not change.
+  for (const [w, h, scale] of [[320, 667, 1], [390, 844, 1.5]]) {
+    const { ctx, page } = await liveRoom({ width: w, height: h }, { reducedMotion: 'reduce' });
+    if (scale !== 1) {
+      await page.evaluate((k) => {
+        const els = [...document.querySelectorAll('body *')];
+        const sizes = els.map((e) => [parseFloat(getComputedStyle(e).fontSize), getComputedStyle(e).lineHeight]);
+        els.forEach((e, i) => {
+          const [fs, lh] = sizes[i];
+          e.style.fontSize = `${fs * k}px`;
+          if (lh.endsWith('px')) e.style.lineHeight = `${parseFloat(lh) * k}px`;
+        });
+      }, scale);
+    }
+    await page.waitForTimeout(500);
+    const states = await page.evaluate(
+      () =>
+        new Promise((done) => {
+          const seen = [];
+          const tick = () => {
+            seen.push(document.getElementById('room').dataset.notes ?? 'open');
+            if (seen.length < 40) window.requestAnimationFrame(tick);
+            else done(seen);
+          };
+          window.requestAnimationFrame(tick);
+        }),
+    );
+    const flips = states.filter((s, i) => i > 0 && s !== states[i - 1]).length;
+    check(`[${w}x${h}, text x${scale}, reduced motion] the notes layout holds still over 40 frames (no flicker between the notebook and the strip)`, flips === 0, JSON.stringify({ flips, first: states[0], last: states.at(-1) }));
+    await ctx.close();
   }
 
   // At normal text size the four buttons share one row on every phone width (integration, 19 Nov): with the row
