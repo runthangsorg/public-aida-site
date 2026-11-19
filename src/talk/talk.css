@@ -499,9 +499,11 @@ input[aria-invalid="true"]:hover {
   margin-bottom: 28px;
 }
 
+/* These headings wrap on a phone: at the display's 0.94 the comma of "FIRST," met the T of the line below. */
 .sheet-head .display,
 .sheet-narrow .display {
   font-size: clamp(36px, 8.6vw, 60px);
+  line-height: 1.04;
 }
 
 .sheet-head .lede {

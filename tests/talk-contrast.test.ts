@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { rules as cssRules } from "./css-rules";
 
 const css = readFileSync(resolve(import.meta.dirname, "../src/talk/talk.css"), "utf8");
 
@@ -47,16 +48,7 @@ function ratio(a: Rgba, b: Rgba): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** The declarations of every rule whose selector list matches `selector` exactly (whitespace-insensitive). */
-function rules(selector: string): string[] {
-  const want = selector.replace(/\s+/g, " ").trim();
-  const out: string[] = [];
-  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const sel = (m[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
-    if (sel === want) out.push(m[2] ?? "");
-  }
-  return out;
-}
+const rules = (selector: string): string[] => cssRules(css, selector);
 
 const paper = colour(token("paper"));
 const paperHi = colour(token("paper-hi"));
