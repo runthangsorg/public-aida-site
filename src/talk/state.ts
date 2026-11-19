@@ -247,6 +247,16 @@ function addFragment(s: TalkState, who: Speaker, chunk: string): boolean {
   return true;
 }
 
+/**
+ * Would this fragment of the person's speech add words that show? The reducer's own answer for it, so the status
+ * chip agrees with the caption: the second half of a split marker (" speech>") looks like a word on its own but
+ * is not one. `state` is left as it was: addFragment replaces the copy's fields, never changes them in place.
+ */
+export function inputAddsWords(state: TalkState, chunk: string): boolean {
+  if (state.phase === "ended") return false;
+  return addFragment({ ...state }, "you", chunk);
+}
+
 function applyContent(s: TalkState, c: ServerContent): void {
   if (c.interrupted) closeOpen(s, "you", true);
   // Speaking counts as being there; a marker or a space in place of words does not.

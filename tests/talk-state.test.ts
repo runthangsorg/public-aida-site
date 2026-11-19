@@ -12,6 +12,7 @@ import {
   endView,
   groupNotes,
   initialState,
+  inputAddsWords,
   joinFragment,
   latestTurns,
   progress,
@@ -255,6 +256,28 @@ describe("the room's state", () => {
       ["aida", "So tell me about", false],
       ["you", "We run rotas", true],
     ]);
+  });
+
+  // Review of round 3: the chip judged each fragment on its own, so the second half of a split marker (" speech>")
+  // looked like words and said "Transcribing…" for hiss. It asks the reducer's own question instead.
+  it("the chip's 'their words arrived' agrees with the caption: a split marker is not words, either half", () => {
+    let s = feed(initialState(), ready);
+    for (const chunk of ["<no", " speech>", "<noise>", " "]) {
+      expect(inputAddsWords(s, chunk)).toBe(false);
+      s = feed(s, heard(chunk));
+    }
+    expect(s.turns).toEqual([]);
+    expect(inputAddsWords(s, " We")).toBe(true);
+    s = feed(s, heard(" We"));
+    expect(inputAddsWords(s, "<no")).toBe(false);
+    s = feed(s, heard("<no"));
+    expect(inputAddsWords(s, " speech>")).toBe(false);
+    s = feed(s, heard(" speech>"));
+    const asked = JSON.stringify(s);
+    expect(inputAddsWords(s, " run rotas")).toBe(true);
+    expect(JSON.stringify(s)).toBe(asked); // asking changes nothing
+    s = feed(s, heard(" run rotas"));
+    expect(turnsOf(s)).toEqual([["you", "We run rotas", true]]);
   });
 
   it("a marker is not the person speaking: the idle warning stays until real words arrive", () => {

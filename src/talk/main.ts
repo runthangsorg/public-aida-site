@@ -44,11 +44,11 @@ import {
 import {
   chipFor,
   chipWakeAt,
-  cleanTranscription,
   formatClock,
   groupNotes,
   noteStamp,
   initialState,
+  inputAddsWords,
   endView,
   latestTurns,
   progress,
@@ -941,8 +941,9 @@ function chipFrame(frame: ServerFrame): void {
   }
   const c = frame.content;
   if (c.output || c.audio.length) chip = stepChip(chip, { t: "her", now });
-  // A marker in place of words ("<noise>") is not the person talking: no "Transcribing…" for hiss.
-  else if (c.input && cleanTranscription(c.input) && !herSpeaking(state)) chip = stepChip(chip, { t: "you", now });
+  // A marker in place of words ("<noise>", or "<no" then " speech>") is not the person talking: no "Transcribing…"
+  // for hiss. Asked of the state before this frame, as the reducer will judge it, so the chip and the caption agree.
+  else if (c.input && !herSpeaking(state) && inputAddsWords(state, c.input)) chip = stepChip(chip, { t: "you", now });
 }
 
 // A small "78/80" once a capped field is within two characters of its limit — a silent cut is a bug
