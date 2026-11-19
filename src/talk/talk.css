@@ -1752,11 +1752,12 @@ input[aria-invalid="true"]:hover {
 
   .screen-room {
     grid-template-columns: minmax(0, 1fr) minmax(420px, 42vw);
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
     grid-template-areas:
       "bar bar"
       "stage notes"
       "captions notes"
+      "idle notes"
       "typer notes"
       "controls notes";
     column-gap: 32px;
@@ -2374,12 +2375,13 @@ input[aria-invalid="true"]:hover {
   line-height: 1.35;
 }
 
-/* On a desk the card sits in the room's flow, in the typing box's row above the controls and as wide as the
-   captions: a 560 px card laid over the 630-720 px captions left a cut fragment of the person's words showing
-   beside it. The captions give way to it (each scrolls to its newest words); End stays where it is. */
+/* On a desk the card sits in the room's flow, in a row of its own between the captions and the typing box, as
+   wide as the captions: a 560 px card laid over the 630-720 px captions left a cut fragment of the person's words
+   showing beside it, and a card in the typing box's row covered the box and its Send while someone was typing.
+   Her window gives the room back for it (each caption scrolls to its newest words); End stays where it is. */
 @media (min-width: 1000px) {
   .idle {
-    grid-area: typer;
+    grid-area: idle;
     position: relative;
     inset: auto;
     justify-self: center;
@@ -2742,9 +2744,26 @@ input[aria-invalid="true"]:hover {
 @media (min-width: 1000px) {
   /* Her window gives way before the captions do: room for four lines of hers and two of yours, always. Those
      need about 250 px with their labels; 460 px left them 220 at 1280 x 800, and the second line of yours went
-     under the controls. */
+     under the controls. --beside-stage is the height kept for everything else in the column: the bar, those
+     captions and the controls, and the typing box (65 px) and the idle card (95 px) while they show. */
+  .screen-room {
+    --beside-stage: 490px;
+  }
+
+  .screen-room:has(.typer:not([hidden])) {
+    --beside-stage: 555px;
+  }
+
+  .screen-room:has(.idle:not([hidden])) {
+    --beside-stage: 585px;
+  }
+
+  .screen-room:has(.typer:not([hidden])):has(.idle:not([hidden])) {
+    --beside-stage: 650px;
+  }
+
   .stage {
-    width: min(100%, 44vh, 420px, calc(100svh - 490px));
+    width: min(100%, 44vh, 420px, calc(100svh - var(--beside-stage)));
   }
 
   .nb-body,
@@ -2758,13 +2777,10 @@ input[aria-invalid="true"]:hover {
 }
 
 @media (min-width: 1000px) and (max-height: 900px) {
-  .screen-room:has(.typer:not([hidden])) .stage {
-    width: min(100%, 36vh, 420px, calc(100svh - 555px));
-  }
-
-  /* The idle card takes the same row: her window gives the room back for it too. */
+  /* On a laptop screen the typing box and the idle card take room from her captions: her window gives it back. */
+  .screen-room:has(.typer:not([hidden])) .stage,
   .screen-room:has(.idle:not([hidden])) .stage {
-    width: min(100%, 36vh, 420px, calc(100svh - 585px));
+    width: min(100%, 36vh, 420px, calc(100svh - var(--beside-stage)));
   }
 }
 

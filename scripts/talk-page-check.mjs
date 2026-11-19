@@ -922,6 +922,42 @@ if (want('7')) {
       await ctx.close();
     }
   }
+
+  // "Still there?" on a desk (review, 19 Nov): someone slowly typing a long answer sends nothing, so the idle card
+  // comes. In the typing box's row it covered the focused box and its Send; over the captions it cut the person's
+  // words. It has a row of its own: no overlap with the typing box or the person's caption, End in view.
+  for (const [w, h] of [[1000, 700], [1280, 800], [1440, 900]]) {
+    for (const typing of [true, false]) {
+      const { ctx, page } = await liveRoom({ width: w, height: h });
+      if (typing) {
+        await page.click('#type');
+        await page.keyboard.type('We use three spreadsheets and');
+      }
+      await page.evaluate(() => window.__ws.push({ aida: { type: 'idle_warning', secondsLeft: 30 } }));
+      await page.waitForSelector('#idle:not([hidden])');
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => {
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        const meets = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+        const idle = box('idle');
+        const typer = document.getElementById('typer');
+        const send = typer.querySelector('button').getBoundingClientRect();
+        const onTop = document.elementFromPoint(send.x + send.width / 2, send.y + send.height / 2);
+        const end = box('end');
+        return {
+          overTyper: !typer.hidden && meets(idle, typer.getBoundingClientRect()),
+          overYou: document.getElementById('said-you').checkVisibility() && meets(idle, box('said-you')),
+          sendClear: typer.hidden || typer.querySelector('button').contains(onTop),
+          focus: document.activeElement?.id ?? '',
+          inView: idle.top >= 0 && idle.bottom <= innerHeight && end.bottom <= innerHeight,
+        };
+      });
+      const ok = !m.overTyper && !m.overYou && m.sendClear && m.inView && (!typing || m.focus === 'typed');
+      check(`[${w}x${h}${typing ? ', typing' : ''}] the idle card covers neither the typing box (nor its Send) nor the person's words; End in view`, ok, JSON.stringify(m));
+      if (w === 1280 && typing) await page.screenshot({ path: `${shots}/layout-idle-typing-${w}.png` });
+      await ctx.close();
+    }
+  }
   await browser.close();
 }
 

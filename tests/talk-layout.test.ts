@@ -95,16 +95,35 @@ describe("the call room fits the screen it is on", () => {
   });
 
   it("on a desk her window leaves her captions the 250 px that four lines of hers and two of yours need", () => {
-    const desk = rules(css, ".stage", "min-width: 1000px").map((b) => prop(b, "width") ?? "");
-    const reserved = desk.map((w) => /calc\(100svh - (\d+)px\)/.exec(w)?.[1]).filter(Boolean).map(Number);
-    expect(reserved.length).toBeGreaterThan(0);
-    for (const r of reserved) expect(r).toBeGreaterThanOrEqual(490);
+    // What the column keeps beside her window: the bar, 250 px of captions and the controls (490 px), and more
+    // while the typing box (65 px) or the idle card (95 px) shows, so neither is paid for by her captions.
+    const kept = (selector: string): number => {
+      const value = rules(css, selector, "min-width: 1000px").map((b) => prop(b, "--beside-stage")).find(Boolean) ?? "";
+      return Number(/^(\d+)px$/.exec(value)?.[1]);
+    };
+    const plain = kept(".screen-room");
+    const typing = kept(".screen-room:has(.typer:not([hidden]))");
+    const idle = kept(".screen-room:has(.idle:not([hidden]))");
+    const both = kept(".screen-room:has(.typer:not([hidden])):has(.idle:not([hidden]))");
+    expect(plain).toBeGreaterThanOrEqual(490);
+    expect(typing - plain).toBeGreaterThanOrEqual(65);
+    expect(idle - plain).toBeGreaterThanOrEqual(95);
+    expect(both - plain).toBeGreaterThanOrEqual(65 + 95);
+    for (const body of rules(css, ".stage", "min-width: 1000px")) {
+      const width = prop(body, "width") ?? "";
+      if (width.includes("svh")) expect(width).toContain("calc(100svh - var(--beside-stage))");
+    }
   });
 
-  it("on a desk the idle card sits in the room's flow above the controls, as wide as the captions", () => {
+  it("on a desk the idle card has a row of its own, between the captions and the typing box, as wide as the captions", () => {
     const [idle] = rules(css, ".idle", "min-width: 1000px");
-    expect(prop(idle ?? "", "grid-area")).toBe("typer");
+    expect(prop(idle ?? "", "grid-area")).toBe("idle");
     expect(prop(idle ?? "", "position")).toBe("relative");
     expect(prop(idle ?? "", "width")).toBe("min(100%, 720px)");
+    // Its own row: never the typing box's (it covered the box and its Send while someone typed), never the captions'.
+    const desk = rules(css, ".screen-room", "min-width: 1000px").map((b) => prop(b, "grid-template-areas")).find(Boolean) ?? "";
+    expect(desk.replace(/\s+/g, " ")).toContain('"captions notes" "idle notes" "typer notes"');
+    const rows = rules(css, ".screen-room", "min-width: 1000px").map((b) => prop(b, "grid-template-rows")).find(Boolean) ?? "";
+    expect(rows.split(/\s+(?![^(]*\))/).length).toBe((desk.match(/"/g) ?? []).length / 2);
   });
 });
