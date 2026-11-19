@@ -1362,6 +1362,32 @@ if (want9('20')) {
   await browser.close();
 }
 
+if (want9('02')) {
+  // After one reconnect that worked, a later call on the same page whose line never opened was taken for a drop:
+  // silent /continue requests and "The line dropped", not "The line did not open" with Try again.
+  const browser = await chrome(FAKE_MIC);
+  const { ctx, page } = await open(browser, { size: PHONE, perms: ['microphone'], goto: `/talk/?go=${GO}`, routes: { '**/api/talk/continue': (r) => r.fulfill(json(continued)) } });
+  await page.click('#go-go');
+  await page.waitForFunction(() => window.__ws);
+  await ready(page, false);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__ws.drop());
+  await page.waitForFunction(() => window.__sockets >= 2, null, { timeout: 10000 });
+  await ready(page, false, continued.resumed);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__ws.push({ aida: { type: 'ended', reason: 'idle', minutes: 2, resumable: true } }));
+  await page.waitForSelector('#end-continue:not([hidden])', { timeout: 10000 });
+  await page.waitForTimeout(300);
+  await page.click('#end-continue');
+  await page.waitForFunction(() => window.__sockets >= 3, null, { timeout: 10000 });
+  await page.evaluate(() => window.__ws.drop()); // closes before `ready`
+  await page.waitForTimeout(2000);
+  const m = await page.evaluate(() => ({ screen: document.querySelector('#app').dataset.screen, title: document.querySelector('#mic-title').textContent, sockets: window.__sockets }));
+  check('a later call whose line never opens, after a reconnect earlier on the page: "The line did not open", not a drop', m.screen === 'mic' && m.title === 'The line did not open' && m.sockets === 3, JSON.stringify(m));
+  await ctx.close();
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);

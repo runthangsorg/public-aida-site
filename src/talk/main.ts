@@ -493,6 +493,7 @@ function openSession(opened: Opened): void {
     ...(opened.resumed ? { resumed: opened.resumed } : {}),
   };
   gateEmail = "";
+  settleReconnect(); // a new call: a line that never opens is a failed connect, not a drop
   void askForMic();
 }
 
@@ -737,6 +738,7 @@ function onAvatarFrame(frame: Parameters<typeof reduce>[1]): void {
       // The server's word is the truth: it falls back to voice when the avatar would not start.
       connectFails = 0;
       carriedStart = 0;
+      settleReconnect();
       if (f.avatar && avatarParamAsked) startAvatar();
       else stopAvatar();
     } else if (f.type === "reconnecting") player?.setReconnecting(true);
@@ -1158,6 +1160,14 @@ function reconnectGaveUp(nothingSaved = false): void {
   carriedStart = 0;
   voice.close();
   dispatch({ kind: "closed", minutes: elapsed() / 60, nothingSaved });
+}
+
+/**
+ * A reconnect is over once its line is up (or a new call begins): the next close is judged afresh, so a later
+ * call whose line never opens is a failed connect, not a drop. The page's count of reconnects is kept.
+ */
+function settleReconnect(): void {
+  if (rc.phase === "done") rc = { ...rc, phase: "idle" };
 }
 
 /** End pressed, or the page going away, while reconnecting: stop asking. */
