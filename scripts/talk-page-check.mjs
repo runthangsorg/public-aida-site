@@ -1535,6 +1535,49 @@ if (want9('16')) {
   await browser.close();
 }
 
+if (want9('30')) {
+  // A sign-out that failed was not reported: the strategy was fetched again and shown as if nothing had happened.
+  const browser = await chrome();
+  const view = {
+    company: 'Acme Cleaning (fictional)',
+    firstName: 'Sam',
+    publishedAt: '2026-10-20T09:00:00.000Z',
+    updatedAt: '2026-10-20T09:00:00.000Z',
+    contact: null,
+    deck: {
+      title: 'AI and automation strategy for Acme Cleaning (fictional)',
+      company: 'Acme Cleaning (fictional)',
+      dateLabel: '20 October 2026',
+      heard: { business: 'Acme Cleaning (fictional) cleans forty offices.', today: ['Two supervisors check every timesheet by hand.'], crux: 'Every approval waits on two supervisors.' },
+      swot: { strengths: ['A loyal team'], weaknesses: ['Rotas in three spreadsheets'], opportunities: ['Automate the approval list'], threats: ['Rising wages'] },
+      plays: [{ name: 'Friday approvals on one screen', whatWeWouldBuild: 'One approval list.', whatChangesForYou: 'Payroll starts on Friday.', firstStep: 'Map the spreadsheets.', evidence: 'Every approval waits on two supervisors.' }],
+      roadmap: [{ when: 'First 30 days', items: ['Map the spreadsheets'] }],
+      nextStep: 'Reply with a time next week.',
+      speaker: 'Aida',
+    },
+  };
+  const { ctx, page } = await open(browser, {
+    size: PHONE,
+    goto: `/strategy/${'a'.repeat(43)}`,
+    routes: {
+      '**/api/strategy/view**': (r) => r.fulfill(json(view)),
+      '**/api/strategy/signout**': (r) => r.fulfill(json({ error: 'unavailable' }, 503)),
+    },
+  });
+  await page.waitForSelector('#view:not([hidden])', { timeout: 10000 });
+  await page.click('#signout');
+  await page.waitForTimeout(800);
+  const m = await page.evaluate(() => ({
+    view: !document.querySelector('#view').hidden,
+    notice: document.querySelector('#signout-notice')?.hidden === false ? document.querySelector('#signout-notice').textContent : null,
+    button: !document.querySelector('#signout').disabled,
+  }));
+  check('strategy: a sign-out that failed says so, and the strategy and Sign out stay', m.view && m.notice === 'We could not sign you out. Check your connection and try again.' && m.button, JSON.stringify(m));
+  await page.locator('.strategy-foot').screenshot({ path: `${shots}/strategy-signout-failed-phone.png` });
+  await ctx.close();
+  await browser.close();
+}
+
 server.close();
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall passed');
 process.exit(failures.length ? 1 : 0);

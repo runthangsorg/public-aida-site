@@ -5,10 +5,12 @@ import {
   EXPIRED_CODE_COPY,
   LOAD_FAILED_COPY,
   SEND_FAILED_COPY,
+  SIGNOUT_FAILED_COPY,
   keepCode,
   newLinkMailto,
   pageTitle,
   reduce,
+  signOutDone,
   waitCopy,
   type ScreenState,
 } from "../src/strategy/state";
@@ -146,6 +148,14 @@ describe("what the page shows for POST /api/strategy/verify", () => {
 });
 
 describe("signing out", () => {
+  // Review round 3 (public-site-30): a sign-out the server never confirmed fetched the strategy again and showed it
+  // as if nothing had happened.
+  it("is done only when the server says so (or says there was no session); anything else is reported", () => {
+    for (const status of [200, 204, 401]) expect(signOutDone(status)).toBe(true);
+    for (const status of [0, 403, 429, 500, 503]) expect(signOutDone(status)).toBe(false);
+    expect(SIGNOUT_FAILED_COPY).toBe("We could not sign you out. Check your connection and try again.");
+  });
+
   it("shows the loading screen while the view is fetched again", () => {
     expect(reduce({ screen: "view", view: sampleView() }, { type: "signout" })).toEqual({
       screen: "loading",

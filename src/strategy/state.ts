@@ -26,6 +26,7 @@ export const SENT_COPY =
 export const BAD_EMAIL_COPY = "Check the email address and try again.";
 export const SEND_FAILED_COPY =
   "We could not send the link. Check your connection and try again.";
+export const SIGNOUT_FAILED_COPY = "We could not sign you out. Check your connection and try again.";
 export const LOAD_FAILED_COPY =
   "We could not load your strategy. Check your connection and try again.";
 
@@ -77,7 +78,8 @@ export type ScreenState =
   | { screen: "not-found"; incomplete?: true; contact?: string }
   | { screen: "sign-in"; hint: string; notice: string | null }
   | { screen: "sent"; hint: string }
-  | { screen: "view"; view: StrategyView }
+  /** `notice`: a sign-out that did not happen, said beside Sign out. */
+  | { screen: "view"; view: StrategyView; notice?: string }
   /** `notice`: what to say instead of the connection message (how long to wait, after a 429). */
   | { screen: "trouble"; notice?: string };
 
@@ -192,6 +194,11 @@ export function newLinkMailto(contact: string): string {
 /** The first screen for an address: a well-formed token is looked up; anything else is an incomplete link. */
 export function landing(route: { token: string | null }): ScreenState {
   return route.token ? { screen: "loading" } : { screen: "not-found", incomplete: true };
+}
+
+/** Signed out: the server said so (2xx), or that there was no session to end (401). Anything else is reported. */
+export function signOutDone(status: number): boolean {
+  return (status >= 200 && status < 300) || status === 401;
 }
 
 /** No definitive answer: no connection (0), too many tries (429), or a fault at the server (5xx). */
