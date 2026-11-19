@@ -278,13 +278,15 @@
             <p>The video is slow on this connection. Switch to voice only?</p>
             <button class="btn btn-quiet" type="button" id="slow-switch">Yes, switch</button>
           </div>
+          <!-- Each caption scrolls inside itself when it is longer than its lines: focusable and named, so a keyboard
+               can scroll back through it in every browser (Safari does not put a scroller in the tab order itself). -->
           <div class="line line-aida" id="line-aida" hidden>
             <p class="who">Aida</p>
-            <p class="said" id="said-aida"></p>
+            <p class="said" id="said-aida" role="region" aria-label="Aida’s words" tabindex="0"></p>
           </div>
           <div class="line line-you" id="line-you" hidden>
             <p class="who" id="who-you">You</p>
-            <p class="said" id="said-you"></p>
+            <p class="said" id="said-you" role="region" aria-label="Your words" tabindex="0"></p>
           </div>
           <p class="hint" id="hint">She will start in a moment — you can interrupt her once she does.</p>
         </div>
