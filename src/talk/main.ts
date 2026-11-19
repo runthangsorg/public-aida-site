@@ -2034,13 +2034,14 @@ function showKnown(me: NonNullable<ReturnType<typeof readMe>>): void {
   byId("known-title", HTMLElement).textContent = copy.title;
   byId("known-detail", HTMLElement).textContent = copy.detail;
   byId("known-forget", HTMLButtonElement).textContent = copy.notYou;
-  knownContinue.hidden = !me.canContinue;
+  // At today's limit the server refuses Continue too: the card says the place is kept, with no button that fails.
+  knownContinue.hidden = !copy.continueNow;
   knownNew.hidden = !me.canStartNew;
-  knownVoice.hidden = !me.canContinue; // a voice-only Continue beside an ordinary one, or nothing
+  knownVoice.hidden = !copy.continueNow; // a voice-only Continue beside an ordinary one, or nothing
   knownNew.textContent = copy.startLabel;
   // A confirmed interview waiting to be started is the one thing to do: Start is the main button.
   // With nothing to continue, Start is the one thing to do: the main button.
-  const startOnly = !me.canContinue;
+  const startOnly = !copy.continueNow;
   knownNew.classList.toggle("btn-go", startOnly);
   knownNew.classList.toggle("btn-quiet", !startOnly);
   knownStatus.textContent = copy.limit;

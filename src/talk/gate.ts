@@ -260,6 +260,11 @@ export interface KnownCopy {
    * Continue beside "already open"), and a quiet Check again re-reads /api/talk/me.
    */
   busy: boolean;
+  /**
+   * Continue is offered: there is a saved call and today's limit is not reached. At the limit the server
+   * refuses to continue as well as to start, so the card says the place is kept and offers no Continue.
+   */
+  continueNow: boolean;
 }
 
 /** The welcome-back card's wording for a returning visitor. */
@@ -267,11 +272,13 @@ export function knownCopy(me: Me): KnownCopy {
   const who = me.name;
   const mins = me.minutesSoFar === undefined ? 0 : Math.round(me.minutesSoFar);
   const busy = me.reasonIfNot === "busy";
+  const atLimit = me.reasonIfNot === "daily_limit";
   const startOnly = me.startReady === true && !me.canContinue;
   const sofar = mins >= 1 ? `You have talked for ${mins} min so far. ` : "";
   let detail: string;
   if (busy) detail = `${BUSY_CARD} ${BUSY_CLEARS}`;
   else if (startOnly) detail = "Your email is confirmed. Start whenever you are ready.";
+  else if (me.canContinue && atLimit) detail = `${sofar}Your place is saved.`;
   else if (me.canContinue && me.canStartNew) detail = `${sofar}Pick it up where you stopped, or start afresh.`;
   else if (me.canContinue) detail = `${sofar}Pick it up where you stopped.`;
   else if (me.canStartNew) detail = "Start a new conversation whenever you are ready.";
@@ -283,6 +290,7 @@ export function knownCopy(me: Me): KnownCopy {
     notYou: who ? `Not ${who}? Use a different email` : "Not you? Use a different email",
     limit: !busy && !me.canStartNew && me.reasonIfNot ? limitMessage(me.reasonIfNot) : "",
     busy,
+    continueNow: me.canContinue && !atLimit,
   };
 }
 
