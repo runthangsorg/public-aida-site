@@ -154,8 +154,15 @@ const browser = await chromium.launch({
 });
 console.log(`browser ${browser.version()}`);
 
-async function run(label, viewport, shotAt) {
+/** A context that refuses every request to another host: nothing leaves this machine. */
+async function context(viewport) {
   const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  await ctx.route((url) => url.host !== new URL(base).host, (r) => r.abort());
+  return ctx;
+}
+
+async function run(label, viewport, shotAt) {
+  const ctx = await context(viewport);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -329,7 +336,7 @@ async function runFailure(label, viewport, switching = false) {
     offsets.push([o, b.length]);
     o += b.length;
   }
-  const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  const ctx = await context(viewport);
   const page = await ctx.newPage();
   await page.addInitScript(() => {
     const made = new Set();
@@ -442,7 +449,7 @@ async function runFailure(label, viewport, switching = false) {
 /** A link that carries only 60% of real time: the video falls ~0.4 s further behind every second. */
 async function runSlow(label, viewport) {
   const PACE = 0.6;
-  const ctx = await browser.newContext({ viewport, permissions: ['microphone'] });
+  const ctx = await context(viewport);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
