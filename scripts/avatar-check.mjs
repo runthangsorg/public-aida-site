@@ -86,6 +86,11 @@ let audioFrames;
   }
   audioFrames = n;
 }
+// The pace below comes from the audio: with none, every message would go at once and the check fail unexplained.
+if (audioFrames === 0) {
+  console.error('the source needs an AAC audio track: the stream is paced by it (H.264 + AAC, see the header)');
+  process.exit(2);
+}
 /** The server's envelope: pretty-printed, one base64 part, a trailing newline. */
 const envelope = (bytes) =>
   Buffer.from(JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'video/mp4', data: bytes.toString('base64') } }] } } }, null, 2) + '\n');
