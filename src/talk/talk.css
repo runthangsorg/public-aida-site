@@ -2942,6 +2942,20 @@ input[aria-invalid="true"]:hover {
   }
 }
 
+/* Under 360 px "Continue later" wraps inside its own button and the labels' floor is lower, so the four buttons
+   keep one row at normal text size. A wrapping row moves a whole button down before any label wraps: from 320 to
+   346 px End went to a row of its own and took 80 px from the captions. From 360 px the row fits as it is, and a
+   375 x 667 phone keeps its open notebook. Enlarged text still wraps the row. */
+@media (max-width: 359px) {
+  .ctl-label {
+    min-width: 52px;
+  }
+
+  .ctl-later .ctl-label {
+    max-width: 5.6em;
+  }
+}
+
 /* A phone with the height for it: the notebook sits open under her face and her captions, about 40% of the
    height, newest at the bottom (owner, 20 Oct: collapsed, it was not obvious she was taking notes). A shorter
    phone (320 x 568, 360 x 640) left the open notes 12-52 px, a sliver: there it keeps the strip with her newest

@@ -925,6 +925,24 @@ if (want('7')) {
     }
   }
 
+  // At normal text size the four buttons share one row on every phone width (integration, 19 Nov): with the row
+  // free to wrap, End went to a row of its own from 320 to 346 px and took 80 px from the captions.
+  for (const w of [320, 340, 346, 360, 375, 390, 414, 480, 540]) {
+    const { ctx, page } = await liveRoom({ width: w, height: 640 });
+    const m = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('.controls .ctl')].filter((e) => e.checkVisibility());
+      return {
+        rows: new Set(btns.map((e) => Math.round(e.getBoundingClientRect().top))).size,
+        buttons: btns.length,
+        cut: btns.filter((e) => e.getBoundingClientRect().left < -0.5 || e.getBoundingClientRect().right > innerWidth + 0.5).map((e) => e.id),
+        scroll: document.documentElement.scrollWidth - innerWidth,
+      };
+    });
+    check(`[${w}x640] at normal text size Mute, Type, Continue later and End share one row, all on screen`, m.buttons === 4 && m.rows === 1 && m.cut.length === 0 && m.scroll <= 0, JSON.stringify(m));
+    if (w === 320) await page.screenshot({ path: `${shots}/layout-room-row-320.png` });
+    await ctx.close();
+  }
+
   // "Still there?" on a desk (review, 19 Nov): someone slowly typing a long answer sends nothing, so the idle card
   // comes. In the typing box's row it covered the focused box and its Send; over the captions it cut the person's
   // words. It has a row of its own: no overlap with the typing box or the person's caption, End in view.

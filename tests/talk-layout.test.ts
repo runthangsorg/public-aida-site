@@ -60,6 +60,28 @@ describe("nothing is cut off or runs into its neighbour (320 px phones, text enl
     expect(prop(rules(css, ".end-actions .btn .label")[0] ?? "", "min-width")).toBe("0");
   });
 
+  it("at normal text size the four call buttons share one row on a 320 px phone: End never gets a row of its own", () => {
+    // A wrapping row moves a whole button down before any label wraps: from 320 to 346 px End went to a second row
+    // and took 80 px from the captions. Under 360 px the labels' floor is lower and "Continue later" wraps inside
+    // its own button, so the row fits in 320 px less the gutters.
+    const px = (v: string | undefined): number => Number(/^([\d.]+)px$/.exec(v ?? "")?.[1]);
+    const em = (v: string | undefined): number => Number(/^([\d.]+)em$/.exec(v ?? "")?.[1]);
+    const first = (sel: string, name: string, media?: string): string | undefined =>
+      rules(css, sel, media).map((b) => prop(b, name)).find((v) => v !== undefined);
+    const narrow = "(max-width: 359px)";
+    const phone = "(max-width: 480px)";
+    const floor = px(first(".ctl-label", "min-width", narrow));
+    const later = em(first(".ctl-later .ctl-label", "max-width", narrow));
+    const font = px(first(".ctl", "font-size", phone));
+    const gap = px(first(".controls", "gap", phone));
+    const pad = px(prop(rules(css, ".ctl")[0] ?? "", "padding"));
+    const gutter = px(first(":root", "--gutter"));
+    const row = 3 * (floor + 2 * pad) + (later * font + 2 * pad) + 3 * gap;
+    expect(row).toBeLessThanOrEqual(320 - 2 * gutter);
+    // The narrow rules must come after the phone rule that sets "Continue later" on one line, or they lose to it.
+    expect(css.lastIndexOf("@media (max-width: 359px)")).toBeGreaterThan(css.lastIndexOf("max-width: none"));
+  });
+
   it("the strategy cards stay inside the screen: a one-column track that cannot grow, and words that can break", () => {
     const [narrow] = rules(strategyCss, ".screen-narrow");
     expect(prop(narrow ?? "", "grid-template-columns")).toBe("minmax(0, 1fr)");
