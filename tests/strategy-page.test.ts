@@ -18,7 +18,11 @@ const TEAM = ["team", "site.example"].join("@");
 
 const PAGE = readFileSync(resolve(import.meta.dirname, "../strategy/index.html"), "utf8");
 // The page's own <script> tag is left out: the test imports the module itself, under its fakes.
-const BODY = (/<body[^>]*>([\s\S]*)<\/body>/i.exec(PAGE)?.[1] ?? "").replace(/<script\b[\s\S]*?<\/script>/gi, "");
+const BODY = ((): string => {
+  const doc = new DOMParser().parseFromString(PAGE, "text/html");
+  for (const script of doc.querySelectorAll("script")) script.remove();
+  return doc.body.innerHTML;
+})();
 
 type Reply = { status: number; body?: unknown } | "network-error" | "bad-json";
 interface Call {
