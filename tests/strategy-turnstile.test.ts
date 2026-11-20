@@ -1,10 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { readStartReply } from "../src/talk/gate";
 import {
   CHALLENGE_TIMEOUT_MS,
-  GATE_FAILED,
   HumanCheck,
   SCRIPT_SRC,
   SITE_KEY,
@@ -14,7 +10,7 @@ import {
   type RenderOptions,
   type ScriptHost,
   type TurnstileApi,
-} from "../src/talk/turnstile";
+} from "../src/strategy/turnstile";
 
 /** A fake widget: remembers how it was drawn and lets the test play the vendor's callbacks. */
 function fakeWidget() {
@@ -89,19 +85,6 @@ describe("the script is not loaded until the details form is shown", () => {
     expect(widget.calls).toEqual(["render"]);
     expect(widget.say()).toMatchObject({ sitekey: SITE_KEY, execution: "execute", appearance: "interaction-only" });
     expect(SITE_KEY).toBe("0x4AAAAAAFZTdtD16pKQUQq6");
-  });
-
-  it("the intro page itself carries no reference to the vendor", () => {
-    const html = readFileSync(resolve(import.meta.dirname, "../talk/index.html"), "utf8");
-    expect(html).not.toMatch(/cloudflare/i);
-    expect(html).not.toMatch(/turnstile/i);
-    expect([...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0])).toEqual(['<script type="module" src="/src/talk/main.ts">']);
-  });
-
-  it("the only caller of prepare on a screen change is the details form", () => {
-    const main = readFileSync(resolve(import.meta.dirname, "../src/talk/main.ts"), "utf8");
-    expect(main).toContain('if (name === "details") void check.prepare()');
-    expect(main.match(/check\.prepare\(/g)).toHaveLength(1);
   });
 
   it("asks for the explicit-render script, and names the header the server reads", () => {
@@ -245,23 +228,6 @@ describe("a token is single-use: the widget is reset after every attempt", () =>
   });
 });
 
-describe("a refusal from the server is shown the same way", () => {
-  it("403 forbidden is the person-check failure, with Try again", () => {
-    const r = readStartReply(403, { error: "forbidden" });
-    expect(r).toEqual({ kind: "refused", refusal: { message: GATE_FAILED, gate: true } });
-    expect(GATE_FAILED).toBe(
-      "We could not check that you are a person. Switch off any blocker for this page, or try another browser.",
-    );
-  });
-
-  it("other refusals are not the check's", () => {
-    for (const status of [400, 422, 429, 503]) {
-      const r = readStartReply(status, { error: "x" });
-      expect(r.kind === "refused" && r.refusal.gate).toBeFalsy();
-    }
-  });
-});
-
 describe("the vendor script loader", () => {
   function host(opts: { present?: TurnstileApi; afterLoad?: TurnstileApi }) {
     const events: string[] = [];
@@ -320,7 +286,7 @@ describe("the vendor script loader", () => {
 
 describe("the key the widget uses", () => {
   it("is the live key everywhere but a local host, which gets Cloudflare's always-pass test key", async () => {
-    const { SITE_KEY, TEST_SITE_KEY, siteKeyFor } = await import("../src/talk/turnstile");
+    const { SITE_KEY, TEST_SITE_KEY, siteKeyFor } = await import("../src/strategy/turnstile");
     expect(siteKeyFor("aida.example.org")).toBe(SITE_KEY);
     expect(siteKeyFor("localhost.evil.example")).toBe(SITE_KEY);
     expect(siteKeyFor("127.0.0.1")).toBe(TEST_SITE_KEY);

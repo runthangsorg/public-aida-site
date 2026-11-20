@@ -46,7 +46,7 @@ html {
 body {
   margin: 0;
   min-height: 100svh;
-  background: var(--paper) url("/talk/paper.webp") 0 0 / 128px 128px repeat;
+  background: var(--paper) url("/aida/paper.webp") 0 0 / 128px 128px repeat;
   color: var(--ink);
   font-family: var(--sans);
   font-size: 18px;

@@ -14,7 +14,7 @@ import {
   waitCopy,
   type ScreenState,
 } from "../src/strategy/state";
-import { GATE_FAILED } from "../src/talk/turnstile";
+import { GATE_FAILED } from "../src/strategy/turnstile";
 import { HINT, sampleView } from "./strategy-fixture";
 
 const loading: ScreenState = { screen: "loading" };

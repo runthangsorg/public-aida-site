@@ -17,7 +17,7 @@ import {
   signOutDone,
   type ScreenState,
 } from "./state";
-import { GATE_FAILED, HumanCheck, loadTurnstile, withToken, type TurnstileApi } from "../talk/turnstile";
+import { GATE_FAILED, HumanCheck, loadTurnstile, withToken, type TurnstileApi } from "./turnstile";
 
 function byId<T extends HTMLElement>(id: string, type: new () => T): T {
   const node = document.getElementById(id);
@@ -90,15 +90,13 @@ async function request(path: string, init?: RequestInit): Promise<ApiResponse> {
   }
 }
 
-function loadView(): Promise<ApiResponse> {
-  if (!token) return Promise.resolve({ status: 404, body: null });
-  return request(`/api/strategy/view?t=${encodeURIComponent(token)}`);
+function loadView(t: string): Promise<ApiResponse> {
+  return request(`/api/strategy/view?t=${encodeURIComponent(t)}`);
 }
 
+/** Only called when the address carries a code: take it out of the address and the history entry. */
 function dropCode(): void {
-  if (new URLSearchParams(location.search).has("c")) {
-    history.replaceState(null, "", location.pathname);
-  }
+  history.replaceState(null, "", location.pathname);
 }
 
 /**
@@ -166,13 +164,11 @@ async function boot(focus = false): Promise<void> {
   const route = readRoute(location.href);
   token = route.token;
   const first = landing(route);
-  if (first.screen !== "loading") {
-    show(first, focus);
-    return;
-  }
-
   show(first, focus);
-  let response = await loadView();
+  // No token, no request: landing() has already shown the closed link.
+  const t = route.token;
+  if (!t) return;
+  let response = await loadView(t);
 
   if (response.status === 401 && route.code) {
     // A one-time code in the address: spend it, then drop it from history (unless it never got an answer).
@@ -180,7 +176,7 @@ async function boot(focus = false): Promise<void> {
     const verified = await request("/api/strategy/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ t: token, c: route.code }),
+      body: JSON.stringify({ t, c: route.code }),
     });
     if (!keepCode(response.status, verified.status)) dropCode();
     if (verified.status !== 200) {
@@ -188,7 +184,7 @@ async function boot(focus = false): Promise<void> {
       return;
     }
     show(reduce(state, { type: "verify", status: 200 }), focus);
-    response = await loadView();
+    response = await loadView(t);
   } else if (route.code && !keepCode(response.status)) {
     dropCode();
   }
@@ -229,7 +225,8 @@ form.addEventListener("submit", (event) => {
 });
 
 signoutButton.addEventListener("click", () => {
-  if (!token || signoutButton.disabled || state.screen !== "view") return;
+  const t = token;
+  if (!t || signoutButton.disabled || state.screen !== "view") return;
   signoutButton.disabled = true;
   const view = state.view;
   show({ screen: "view", view }); // a notice from an earlier try goes, so a new one is read out
@@ -237,7 +234,7 @@ signoutButton.addEventListener("click", () => {
     const out = await request("/api/strategy/signout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ t: token }),
+      body: JSON.stringify({ t }),
     });
     signoutButton.disabled = false;
     if (!signOutDone(out.status)) {
@@ -249,7 +246,7 @@ signoutButton.addEventListener("click", () => {
       return;
     }
     show(reduce(state, { type: "signout" }), true);
-    const response = await loadView();
+    const response = await loadView(t);
     show(reduce(state, { type: "view", status: response.status, body: response.body }), true);
   })();
 });
