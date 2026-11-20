@@ -101,14 +101,15 @@ describe("the page", () => {
       (path.startsWith("public/") && /\.(svg|webmanifest|txt|json)$/.test(path)),
   );
 
-  it("includes every page, not only the home page", () => {
-    expect(shipped).toContain("talk/index.html");
+  it("ships the strategy page, and no interview (retired 20 Nov 2026: /talk/ is a paused page in the private repo)", () => {
+    expect(shipped).toContain("strategy/index.html");
+    expect(shipped.filter((path) => path.startsWith("talk/") || path.startsWith("src/talk/"))).toEqual([]);
   });
 
   it("makes no third-party network requests", () => {
     // Only the XML namespace host may appear in shipped files, plus the one script the owner approved:
     // the invisible person check on the registration form (loaded only when that form is first shown;
-    // see tests/talk-turnstile.test.ts).
+    // see tests/strategy-turnstile.test.ts).
     const allowedHosts = new Set(["www.w3.org", "challenges.cloudflare.com"]);
     const hits: string[] = [];
     for (const path of shipped) {

@@ -4,7 +4,7 @@
 // status and body go in, the screen comes out — so every response in the
 // contract is tested in Node, away from the page.
 
-import { GATE_FAILED } from "../talk/turnstile";
+import { GATE_FAILED } from "./turnstile";
 
 /** A link token and a sign-in code are both 43 characters of base64url. */
 export const CODE_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -248,7 +248,7 @@ export function readView(value: unknown): StrategyView | null {
  * which would need a host of its own for a relative address: only the path and the query matter here.
  */
 export function readRoute(href: string): { token: string | null; code: string | null } {
-  const noFragment = href.split("#")[0] ?? "";
+  const noFragment = href.replace(/#.*$/s, "");
   const q = noFragment.indexOf("?");
   const rawPath = q < 0 ? noFragment : noFragment.slice(0, q);
   const query = q < 0 ? "" : noFragment.slice(q + 1);

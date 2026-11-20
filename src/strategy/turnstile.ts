@@ -167,20 +167,26 @@ export function loadTurnstile(host: ScriptHost): Promise<TurnstileApi> {
       resolve(present);
       return;
     }
-    const remove = host.add(
+    // The script is removed when it fails or leaves no global. A page may report that before add() returns (a
+    // synchronous error), when there is nothing to call yet: then it is removed as soon as add() hands it back.
+    let remove: (() => void) | null = null;
+    const early = { failed: false };
+    const fail = (reason: string): void => {
+      if (remove) remove();
+      else early.failed = true;
+      reject(new Error(reason));
+    };
+    remove = host.add(
       SCRIPT_SRC,
       () => {
         const api = host.find();
         if (api) resolve(api);
-        else {
-          remove();
-          reject(new Error("turnstile missing"));
-        }
+        else fail("turnstile missing");
       },
       () => {
-        remove();
-        reject(new Error("turnstile script failed"));
+        fail("turnstile script failed");
       },
     );
+    if (early.failed) remove();
   });
 }
